@@ -1,0 +1,25 @@
+---
+description: 관리자 인증 라우트와 공개 구매자 라우트의 경계 규칙
+alwaysApply: true
+---
+
+# Routing Auth Boundary
+
+관리자 영역과 공개 영역의 라우트를 명확히 분리한다.
+
+## 관리자 페이지
+
+- 인증이 필요한 백오피스 페이지는 모두 `/admin/*` 아래에 둔다.
+- 예: `/admin/login`, `/admin`, `/admin/product`, `/admin/product/specific/:productId`
+- 리다이렉트 추가 시 관리자 흐름과 공개 흐름을 섞지 않는다.
+
+## 공개/구매자 페이지
+
+- 로그인 없이 접근 가능한 구매자 페이지에는 `/admin/*` 네임스페이스를 사용하지 않는다.
+- 예: `/join/:productId`, `/submit/:productId`, `/review/:submissionId`
+
+## 접근 제어
+
+- 사이드바에서 메뉴를 숨기는 것만으로 권한 처리를 끝내지 않는다.
+- 직접 URL 접근도 같은 기준으로 제한하거나 권한 없음 상태를 보여준다.
+- 권한 조회 중에는 관리자 본문을 먼저 렌더링하지 말고 로딩 또는 오류 상태를 명확히 보여준다.

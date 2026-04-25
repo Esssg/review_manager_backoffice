@@ -1,0 +1,27 @@
+---
+description: public DB 스키마 변경 시 Supabase 재조회와 docs/guide_db.md 동기화를 강제하는 규칙
+alwaysApply: true
+---
+
+# Database Guide Sync
+
+Supabase 또는 MCP로 `public` 스키마를 변경했다면 같은 작업 안에서 반드시 `docs/guide_db.md`를 최신 상태로 갱신한다.
+
+## 적용 대상
+
+- 테이블 생성, 삭제, 이름 변경
+- 컬럼 추가, 삭제, 이름 변경, 타입 변경, 기본값 변경, Null 허용 여부 변경
+- Primary Key, Foreign Key, Unique, Index 변경
+- `public` 스키마 구조에 영향을 주는 모든 마이그레이션
+
+## 필수 작업
+
+1. 변경 적용 후 Supabase에서 최종 스키마를 다시 조회한다.
+2. 최종 상태에 맞게 `docs/guide_db.md`를 수정한다.
+3. 문서 안의 샘플 로우가 영향을 받으면 함께 최신화한다.
+4. 최종 응답에 `docs/guide_db.md`를 업데이트했다고 명시한다.
+
+## 범위
+
+- 기본 문서화 대상은 사용자가 관리하는 `public` 스키마 객체다.
+- `auth`, `storage` 같은 Supabase 내부 스키마는 별도 요청이 있을 때만 다룬다.

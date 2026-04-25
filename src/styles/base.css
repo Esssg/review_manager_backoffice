@@ -1,0 +1,227 @@
+:root {
+  --sky-100: #e0f4ff;
+  --sky-300: #87ceeb;
+  --sky-500: #38bdf8;
+  --sky-700: #0369a1;
+  --panel-bg: #f9fdff;
+  --text-primary: #0f172a;
+  --text-subtle: #4b5563;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Pretendard", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  color: var(--text-primary);
+  background: #f4fbff;
+}
+
+.login-message,
+.login-error {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
+.login-message {
+  color: #0369a1;
+}
+
+.login-error {
+  color: #b91c1c;
+}
+
+.admin-primary-button {
+  border: none;
+  border-radius: 10px;
+  height: 42px;
+  padding: 0 18px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(90deg, var(--sky-500), #0ea5e9);
+  cursor: pointer;
+}
+
+.admin-primary-button:disabled {
+  background: #e5e7eb;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.admin-link-button {
+  border: none;
+  background: transparent;
+  color: var(--sky-700);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-secondary-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  height: 42px;
+  padding: 0 18px;
+  font-weight: 700;
+  color: #0f172a;
+  background: #fff;
+  cursor: pointer;
+}
+
+.admin-danger-button {
+  height: 28px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.pretty-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.pretty-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pretty-checkbox .checkmark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid #7dd3fc;
+  background: #f0f9ff;
+  position: relative;
+  transition: all 120ms ease;
+}
+
+.pretty-checkbox .checkmark::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) scale(0);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.pretty-checkbox input:checked + .checkmark {
+  background: linear-gradient(180deg, #38bdf8, #0ea5e9);
+  border-color: #0ea5e9;
+}
+
+.pretty-checkbox input:checked + .checkmark::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.pretty-checkbox input:disabled + .checkmark {
+  background: #e5e7eb;
+  border-color: #cbd5e1;
+}
+
+.status-badge {
+  display: inline-block;
+  min-width: 54px;
+  text-align: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #075985;
+  background: #e0f2fe;
+}
+
+.app-alert-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.app-alert-dialog {
+  width: min(560px, 100%);
+  overflow: hidden;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+.app-alert-content {
+  padding: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 36%),
+    linear-gradient(180deg, #f8fdff 0%, #ffffff 100%);
+}
+
+.app-alert-dialog.is-danger .app-alert-content {
+  background:
+    radial-gradient(circle at top right, rgba(251, 113, 133, 0.16), transparent 36%),
+    linear-gradient(180deg, #fff7f8 0%, #ffffff 100%);
+}
+
+.app-alert-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-alert-dialog.is-danger .app-alert-badge {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.app-alert-content h2 {
+  margin: 14px 0 0;
+  font-size: 24px;
+}
+
+.app-alert-content p {
+  margin: 10px 0 0;
+  color: var(--text-subtle);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.app-alert-content strong {
+  color: #0f172a;
+}
+
+.app-alert-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.app-alert-actions .admin-secondary-button,
+.app-alert-actions .admin-primary-button,
+.app-alert-actions .admin-danger-button {
+  min-width: 92px;
+  min-height: 44px;
+  justify-content: center;
+}

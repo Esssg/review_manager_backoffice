@@ -1,0 +1,12 @@
+---
+description: 기본 alert/confirm 대신 공통 알림 모달을 사용하는 규칙
+alwaysApply: true
+---
+
+# App Alert Dialog
+
+- 브라우저 기본 `alert`, `confirm`, `prompt`를 새로 추가하지 않는다.
+- 사용자 확인, 경고, 삭제 확인이 필요하면 `src/components/common/AppAlertDialog.jsx`를 사용한다.
+- 버튼 라벨, 로딩 상태, 위험 동작 여부는 props로 표현하고 화면별로 별도 모달 디자인을 복제하지 않는다.
+- 위험 동작은 `variant="danger"`와 `admin-danger-button` 조합을 우선 사용한다.
+- 새 알림 디자인이 필요하면 먼저 `AppAlertDialog` 확장으로 해결할 수 있는지 검토한다.
