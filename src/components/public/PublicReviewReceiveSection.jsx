@@ -18,6 +18,40 @@ function renderPhotoCell(row, onOpenPhotoViewer) {
   ));
 }
 
+function getMobileFieldItems(row, options) {
+  const { rowNumber, showAssign, showDepositMeta } = options;
+
+  return [
+    { label: "순번", value: rowNumber ?? "-" },
+    showAssign ? { label: "배정", value: row.assign_name || "-" } : null,
+    { label: "주문번호", value: row.order_number || "-" },
+    { label: "구매자", value: row.buyer_name || "-" },
+    { label: "수취인", value: row.recipient_name || "-" },
+    { label: "구매계정", value: row.purchase_account || "-" },
+    { label: "연락처", value: row.contact || "-" },
+    { label: "주소", value: row.address || "-" },
+    {
+      label: "계좌",
+      value: formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder) || "-"
+    },
+    { label: "금액", value: row.amount ?? "-" },
+    showDepositMeta ? { label: "입금일", value: row.deposited_at || "-" } : null,
+    showDepositMeta ? { label: "실제입금자명", value: row.actual_depositor_name || "-" } : null
+  ].filter(Boolean);
+}
+
+function renderPhotoActionButton(row, onOpenPhotoManager) {
+  return (
+    <button
+      type="button"
+      className="admin-small-button public-photo-action-button"
+      onClick={() => onOpenPhotoManager(row)}
+    >
+      {row.hasPendingPhotoChanges ? "사진 수정" : row.photos?.length ? "사진 수정" : "사진 업로드"}
+    </button>
+  );
+}
+
 export default function PublicReviewReceiveSection({
   sectionKey,
   title,
@@ -40,6 +74,60 @@ export default function PublicReviewReceiveSection({
           <p>{description}</p>
         </div>
         <span className="status-badge">{`${rows.length}건`}</span>
+      </div>
+
+      <div className="public-review-mobile-list" aria-label={`${title} 모바일 목록`}>
+        {rows.length === 0 ? (
+          <div className="public-review-mobile-empty">{`${title} 상태의 제출 데이터가 없습니다.`}</div>
+        ) : (
+          rows.map((row) => {
+            const rowNumber = rowNumberMap[row.id] ?? "-";
+            const mobileFieldItems = getMobileFieldItems(row, {
+              rowNumber,
+              showAssign,
+              showDepositMeta
+            });
+
+            return (
+              <article key={row.id} className="public-review-mobile-card">
+                <div className="public-review-mobile-card-header">
+                  <div>
+                    <span className="public-review-mobile-card-eyebrow">{`순번 ${rowNumber}`}</span>
+                    <h3>{row.recipient_name || row.buyer_name || "제출 데이터"}</h3>
+                  </div>
+                  {showAssign && (
+                    <span className="public-review-mobile-card-badge">{`배정 ${row.assign_name || "-"}`}</span>
+                  )}
+                </div>
+
+                <div className="public-review-mobile-meta-grid">
+                  {mobileFieldItems.map((item) => (
+                    <div key={`${row.id}-${item.label}`} className="public-review-mobile-meta-item">
+                      <span>{item.label}</span>
+                      <strong>{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="public-review-mobile-photo-block">
+                  <span className="public-review-mobile-block-label">사진</span>
+                  <div className="photo-link-list public-review-photo-list">
+                    {renderPhotoCell(row, onOpenPhotoViewer)}
+                  </div>
+                </div>
+
+                {isPurchaseSection && (
+                  <div className="public-review-mobile-action-row">
+                    {renderPhotoActionButton(row, onOpenPhotoManager)}
+                    {row.hasPendingPhotoChanges && (
+                      <span className="public-photo-action-hint">임시변경 있음</span>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })
+        )}
       </div>
 
       <div className="table-scroll-wrap">
@@ -104,17 +192,7 @@ export default function PublicReviewReceiveSection({
                   {isPurchaseSection && (
                     <td className="public-photo-action-column">
                       <div className="public-photo-action-cell">
-                        <button
-                          type="button"
-                          className="admin-small-button public-photo-action-button"
-                          onClick={() => onOpenPhotoManager(row)}
-                        >
-                          {row.hasPendingPhotoChanges
-                            ? "사진 수정"
-                            : row.photos?.length
-                              ? "사진 수정"
-                              : "사진 업로드"}
-                        </button>
+                        {renderPhotoActionButton(row, onOpenPhotoManager)}
                         {row.hasPendingPhotoChanges && (
                           <span className="public-photo-action-hint">임시변경 있음</span>
                         )}
