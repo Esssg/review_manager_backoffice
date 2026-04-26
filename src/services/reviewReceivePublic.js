@@ -5,6 +5,10 @@ const PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT =
 const PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT =
   "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
 const REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION = "review-receive-photo-sync";
+const PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP = {
+  assign_name: "assign_name",
+  account_holder: "account_holder"
+};
 
 async function extractFunctionErrorMessage(response) {
   if (!response) {
@@ -54,12 +58,14 @@ export async function fetchPublicReviewReceiveProduct(productId) {
     .maybeSingle();
 }
 
-export async function fetchPublicReviewReceiveSubmissions(productId, assignName) {
+export async function fetchPublicReviewReceiveSubmissions(productId, lookupType, lookupValue) {
+  const lookupField = PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP[lookupType] ?? "assign_name";
+
   return supabase
     .from("submissions")
     .select(PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT)
     .eq("product_id", productId)
-    .eq("assign_name", assignName)
+    .eq(lookupField, lookupValue)
     .order("created_at", { ascending: true });
 }
 

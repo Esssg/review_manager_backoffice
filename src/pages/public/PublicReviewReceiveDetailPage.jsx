@@ -16,8 +16,18 @@ import {
   splitReviewReceiveRows
 } from "../../utils/reviewReceiveRows";
 
-function getStorageKey(productId) {
+const DEFAULT_LOOKUP_TYPE = "assign_name";
+const PUBLIC_LOOKUP_OPTIONS = [
+  { value: "assign_name", label: "배정명" },
+  { value: "account_holder", label: "입금주명" }
+];
+
+function getLookupValueStorageKey(productId) {
   return `review_receive_public_name:${productId}`;
+}
+
+function getLookupTypeStorageKey(productId) {
+  return `review_receive_public_lookup_type:${productId}`;
 }
 
 function createEmptyPhotoEditor() {
@@ -38,7 +48,20 @@ function readStoredAssignName(productId) {
     return "";
   }
 
-  return window.sessionStorage.getItem(getStorageKey(productId)) ?? "";
+  return window.sessionStorage.getItem(getLookupValueStorageKey(productId)) ?? "";
+}
+
+function readStoredLookupType(productId) {
+  if (typeof window === "undefined") {
+    return DEFAULT_LOOKUP_TYPE;
+  }
+
+  const storedType = window.sessionStorage.getItem(getLookupTypeStorageKey(productId));
+  return PUBLIC_LOOKUP_OPTIONS.some((option) => option.value === storedType) ? storedType : DEFAULT_LOOKUP_TYPE;
+}
+
+function getLookupTypeLabel(lookupType) {
+  return PUBLIC_LOOKUP_OPTIONS.find((option) => option.value === lookupType)?.label ?? "배정명";
 }
 
 function buildRowNumberMap(rows) {
@@ -145,7 +168,9 @@ async function uploadFileToPresignedUrl(uploadUrl, file) {
 export default function PublicReviewReceiveDetailPage() {
   const { productId } = useParams();
   const [lookupName, setLookupName] = useState(() => readStoredAssignName(productId));
+  const [lookupType, setLookupType] = useState(() => readStoredLookupType(productId));
   const [activeName, setActiveName] = useState(() => readStoredAssignName(productId));
+  const [activeLookupType, setActiveLookupType] = useState(() => readStoredLookupType(productId));
   const [lookupVersion, setLookupVersion] = useState(() => (readStoredAssignName(productId) ? 1 : 0));
   const [product, setProduct] = useState(null);
   const [rows, setRows] = useState([]);
@@ -190,6 +215,7 @@ export default function PublicReviewReceiveDetailPage() {
 
   useEffect(() => {
     const storedName = readStoredAssignName(productId);
+    const storedLookupType = readStoredLookupType(productId);
 
     Object.values(photoDraftsRef.current).forEach((draft) => {
       cleanupPhotoDraft(draft);
@@ -205,7 +231,9 @@ export default function PublicReviewReceiveDetailPage() {
     photoDraftsRef.current = {};
     setPhotoDrafts({});
     setLookupName(storedName);
+    setLookupType(storedLookupType);
     setActiveName(storedName);
+    setActiveLookupType(storedLookupType);
     setLookupVersion(storedName ? 1 : 0);
     setProduct(null);
     setRows([]);
@@ -261,7 +289,11 @@ export default function PublicReviewReceiveDetailPage() {
       setIsRowsLoading(true);
       setLookupErrorMessage("");
 
-      const { data: submissionData, error: submissionsError } = await fetchPublicReviewReceiveSubmissions(productId, activeName);
+      const { data: submissionData, error: submissionsError } = await fetchPublicReviewReceiveSubmissions(
+        productId,
+        activeLookupType,
+        activeName
+      );
 
       if (!isMounted) {
         return;
@@ -347,23 +379,26 @@ export default function PublicReviewReceiveDetailPage() {
     return () => {
       isMounted = false;
     };
-  }, [activeName, lookupVersion, product, productId]);
+  }, [activeLookupType, activeName, lookupVersion, product, productId]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
 
     const trimmedName = lookupName.trim();
+    const lookupTypeLabel = getLookupTypeLabel(lookupType);
 
     if (!trimmedName) {
-      setFormErrorMessage("이름을 입력해주세요.");
+      setFormErrorMessage(`${lookupTypeLabel}을 입력해주세요.`);
       return;
     }
 
-    window.sessionStorage.setItem(getStorageKey(productId), trimmedName);
+    window.sessionStorage.setItem(getLookupValueStorageKey(productId), trimmedName);
+    window.sessionStorage.setItem(getLookupTypeStorageKey(productId), lookupType);
     setFormErrorMessage("");
     setLookupErrorMessage("");
     setPhotoStatusMessage("");
     setActiveName(trimmedName);
+    setActiveLookupType(lookupType);
     setLookupName(trimmedName);
     setLookupVersion((prev) => prev + 1);
   };
@@ -507,7 +542,7 @@ export default function PublicReviewReceiveDetailPage() {
           const { data: prepareData, error: prepareError } = await preparePublicReviewReceivePhotoUpload({
             productId: Number(productId),
             submissionId: Number(photoEditor.row.id),
-            assignName: activeName,
+            assignName: photoEditor.row.assign_name,
             files: nextDraft.newPhotos.map((photo) => ({
               fileName: photo.file.name,
               contentType: photo.file.type || "application/octet-stream",
@@ -548,7 +583,7 @@ export default function PublicReviewReceiveDetailPage() {
         const { data: commitData, error: commitError } = await commitPublicReviewReceivePhotoUpload({
           productId: Number(productId),
           submissionId: Number(photoEditor.row.id),
-          assignName: activeName,
+          assignName: photoEditor.row.assign_name,
           removedImageUrls: nextDraft.removedExistingUrls,
           uploadedFiles
         });
@@ -587,7 +622,7 @@ export default function PublicReviewReceiveDetailPage() {
           await rollbackPublicReviewReceivePhotoUpload({
             productId: Number(productId),
             submissionId: Number(photoEditor.row.id),
-            assignName: activeName,
+            assignName: photoEditor.row.assign_name,
             objectKeys: uploadedFiles.map((item) => item.objectKey)
           });
         }
@@ -608,6 +643,8 @@ export default function PublicReviewReceiveDetailPage() {
     [rows]
   );
   const rowNumberMap = useMemo(() => buildRowNumberMap(rows), [rows]);
+  const lookupTypeLabel = getLookupTypeLabel(lookupType);
+  const activeLookupTypeLabel = getLookupTypeLabel(activeLookupType);
 
   return (
     <div className="public-review-page">
@@ -617,7 +654,7 @@ export default function PublicReviewReceiveDetailPage() {
             <p className="public-review-eyebrow">Review Receive</p>
             <h1>리뷰 제출 현황 확인</h1>
             <p className="public-review-description">
-              배정된 이름으로 조회하면 본인에게 연결된 제출 행만 확인할 수 있습니다.
+              배정명 또는 계좌주명으로 조회하면 본인에게 연결된 제출 행만 확인할 수 있습니다.
             </p>
           </div>
         </header>
@@ -659,23 +696,40 @@ export default function PublicReviewReceiveDetailPage() {
                   <span className="detail-summary-label">상품 제목</span>
                   <strong>{product?.title ?? "-"}</strong>
                 </div>
-                <p>이름을 입력하면 본인에게 배정된 제출 행만 표시합니다.</p>
+                <p>왼쪽 드롭다운에서 조회 기준을 고르고 정확히 일치하는 값으로 검색하세요.</p>
               </div>
 
               <form className="public-review-lookup-form" onSubmit={handleSubmit}>
                 <label className="public-review-field">
-                  <span>배정된 이름</span>
-                  <input
-                    type="text"
-                    className="public-review-input"
-                    value={lookupName}
-                    onChange={(event) => {
-                      setLookupName(event.target.value);
-                      setFormErrorMessage("");
-                    }}
-                    placeholder="이름을 입력해주세요"
-                    autoComplete="name"
-                  />
+                  <span>조회 값</span>
+                  <div className="public-review-input-combo">
+                    <select
+                      className="public-review-lookup-type-select"
+                      value={lookupType}
+                      onChange={(event) => {
+                        setLookupType(event.target.value);
+                        setFormErrorMessage("");
+                      }}
+                      aria-label="조회 기준"
+                    >
+                      {PUBLIC_LOOKUP_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      className="public-review-input public-review-input-combo-field"
+                      value={lookupName}
+                      onChange={(event) => {
+                        setLookupName(event.target.value);
+                        setFormErrorMessage("");
+                      }}
+                      placeholder={`${lookupTypeLabel}을 입력해주세요`}
+                      autoComplete={lookupType === "assign_name" ? "name" : "off"}
+                    />
+                  </div>
                 </label>
                 <button type="submit" className="admin-primary-button">
                   조회하기
@@ -684,7 +738,7 @@ export default function PublicReviewReceiveDetailPage() {
 
               {formErrorMessage && <p className="login-error">{formErrorMessage}</p>}
               {activeName && !formErrorMessage && (
-                <p className="public-review-active-name">{`현재 조회 이름: ${activeName}`}</p>
+                <p className="public-review-active-name">{`현재 조회 ${activeLookupTypeLabel}: ${activeName}`}</p>
               )}
             </>
           )}
@@ -692,12 +746,12 @@ export default function PublicReviewReceiveDetailPage() {
 
         {!isProductLoading && !productErrorMessage && product && activeName && (
           <div className="public-review-section-stack">
-            {isRowsLoading && <p className="login-message">배정된 제출 데이터를 불러오는 중...</p>}
+            {isRowsLoading && <p className="login-message">{`${activeLookupTypeLabel} 기준 제출 데이터를 불러오는 중...`}</p>}
             {!isRowsLoading && lookupErrorMessage && <p className="login-error">{lookupErrorMessage}</p>}
             {!isRowsLoading && !lookupErrorMessage && rows.length === 0 && (
-              <section className="dashboard-panel public-review-empty-state" aria-label="배정 없음">
-                <h2>배정된 제출이 없습니다.</h2>
-                <p>입력한 이름과 정확히 일치하는 제출 행이 아직 없거나 공개 조회 권한이 없는 상태입니다.</p>
+              <section className="dashboard-panel public-review-empty-state" aria-label="조회 결과 없음">
+                <h2>조회된 제출이 없습니다.</h2>
+                <p>{`입력한 ${activeLookupTypeLabel}과 정확히 일치하는 제출 행이 아직 없거나 공개 조회 권한이 없는 상태입니다.`}</p>
               </section>
             )}
             {!isRowsLoading && !lookupErrorMessage && rows.length > 0 && (

@@ -4,7 +4,7 @@ import { resolveAdminManagerScope } from "./adminScope";
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT =
   "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id,created_at";
-const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT = "id,is_deposit_verified,review_fee";
+const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT = "id,product_id,is_deposit_verified,review_fee,created_at";
 
 export async function fetchAdminProducts(adminId) {
   return supabase
@@ -33,15 +33,54 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
     };
   }
 
-  return supabase
+  const productsResult = await supabase
     .from("products")
-    .select(`${ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT},submissions(${ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT})`)
+    .select(ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT)
     .in("manager_id", scope.managerIds)
-    .order("id", { ascending: false })
-    .then((result) => ({
-      ...result,
+    .order("id", { ascending: false });
+
+  if (productsResult.error || !productsResult.data?.length) {
+    return {
+      ...productsResult,
       scope
-    }));
+    };
+  }
+
+  const productIds = productsResult.data.map((product) => product.id);
+  const submissionsResult = await supabase
+    .from("submissions")
+    .select(ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT)
+    .in("product_id", productIds)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (submissionsResult.error) {
+    return {
+      data: null,
+      error: submissionsResult.error,
+      scope
+    };
+  }
+
+  const submissionsByProductId = (submissionsResult.data ?? []).reduce((acc, submission) => {
+    const productId = submission.product_id;
+
+    if (!acc[productId]) {
+      acc[productId] = [];
+    }
+
+    acc[productId].push(submission);
+    return acc;
+  }, {});
+
+  return {
+    data: productsResult.data.map((product) => ({
+      ...product,
+      submissions: submissionsByProductId[product.id] ?? []
+    })),
+    error: null,
+    scope
+  };
 }
 
 export async function createAdminReviewReceiveProduct(payload) {

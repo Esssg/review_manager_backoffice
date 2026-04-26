@@ -89,6 +89,38 @@
   font-weight: 700;
 }
 
+.public-review-input-combo {
+  display: flex;
+  align-items: stretch;
+  min-height: 48px;
+  border: 1px solid #bae6fd;
+  border-radius: 14px;
+  background: #f8fcff;
+  overflow: hidden;
+}
+
+.public-review-input-combo:focus-within {
+  outline: 2px solid rgba(56, 189, 248, 0.3);
+  outline-offset: 1px;
+  border-color: #38bdf8;
+}
+
+.public-review-lookup-type-select {
+  min-width: 120px;
+  border: 0;
+  border-right: 1px solid #bae6fd;
+  padding: 0 16px;
+  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
+  color: #0369a1;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.public-review-lookup-type-select:focus {
+  outline: none;
+}
+
 .public-review-input {
   width: 100%;
   height: 48px;
@@ -103,6 +135,17 @@
   outline: 2px solid rgba(56, 189, 248, 0.3);
   outline-offset: 1px;
   border-color: #38bdf8;
+}
+
+.public-review-input-combo-field {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.public-review-input-combo-field:focus {
+  outline: none;
+  border-color: transparent;
 }
 
 .public-review-active-name {
@@ -403,6 +446,11 @@
 
   .public-review-input {
     font-size: 16px;
+  }
+
+  .public-review-lookup-type-select {
+    min-width: 110px;
+    padding: 0 14px;
   }
 
   .public-review-section {
