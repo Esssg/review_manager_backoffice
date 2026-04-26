@@ -696,7 +696,7 @@ export default function PublicReviewReceiveDetailPage() {
                   <span className="detail-summary-label">상품 제목</span>
                   <strong>{product?.title ?? "-"}</strong>
                 </div>
-                <p>왼쪽 드롭다운에서 배정명 / 계좌주명 선택 후 검색 해주세요.</p>
+                <p>왼쪽 드롭다운에서 배정명(카카오톡에 배정된 이름) / 계좌주명 선택 후 검색 해주세요.</p>
               </div>
 
               <form className="public-review-lookup-form" onSubmit={handleSubmit}>
