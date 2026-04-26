@@ -44,6 +44,40 @@ function parseAmount(value) {
   return digits ? Number(digits) : null;
 }
 
+function parseReviewFee(value) {
+  const trimmedValue = String(value ?? "").trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const parsedValue = Number(trimmedValue);
+  return Number.isInteger(parsedValue) && parsedValue >= 0 ? parsedValue : Number.NaN;
+}
+
+function getUniqueReviewFees(rows = []) {
+  return Array.from(new Set(rows.map((row) => row?.review_fee).filter((value) => value != null)));
+}
+
+function getDefaultReviewFee(rows = []) {
+  const reviewFees = getUniqueReviewFees(rows);
+  return reviewFees.length === 1 ? reviewFees[0] : null;
+}
+
+function formatReviewFeeSummary(rows = []) {
+  const reviewFees = getUniqueReviewFees(rows);
+
+  if (reviewFees.length === 0) {
+    return "-";
+  }
+
+  if (reviewFees.length === 1) {
+    return reviewFees[0];
+  }
+
+  return `혼합 (${reviewFees.length})`;
+}
+
 function buildInlinePurchaseInfoText(row, options = {}) {
   const { includeAssignName = true } = options;
   const accountChunk = row.accountInfoInput?.trim()
@@ -97,6 +131,7 @@ function buildEditableRow(item) {
     ...item,
     accountInfoInput: formatReviewReceiveAccount(item.bank_name, item.bank_account, item.account_holder),
     amountInput: item.amount == null ? "" : String(item.amount),
+    reviewFeeInput: item.review_fee == null ? "" : String(item.review_fee),
     inlinePurchaseInfoInput: "",
     inlinePurchaseInfoMessage: "",
     inlinePurchaseInfoMessageType: "info",
@@ -107,7 +142,7 @@ function buildEditableRow(item) {
   };
 }
 
-function createEmptyRow(productId) {
+function createEmptyRow(productId, reviewFee = null) {
   return {
     id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     product_id: Number(productId),
@@ -124,6 +159,8 @@ function createEmptyRow(productId) {
     accountInfoInput: "",
     amount: null,
     amountInput: "",
+    review_fee: reviewFee,
+    reviewFeeInput: reviewFee == null ? "" : String(reviewFee),
     inlinePurchaseInfoInput: "",
     inlinePurchaseInfoMessage: "",
     inlinePurchaseInfoMessageType: "info",
@@ -139,7 +176,7 @@ function createEmptyRow(productId) {
   };
 }
 
-function buildBlankPurchaseAssignPayload(productId, assignName) {
+function buildBlankPurchaseAssignPayload(productId, assignName, reviewFee = null) {
   return {
     product_id: Number(productId),
     assign_name: assignName?.trim() || null,
@@ -153,6 +190,7 @@ function buildBlankPurchaseAssignPayload(productId, assignName) {
     bank_account: null,
     account_holder: null,
     amount: null,
+    review_fee: reviewFee,
     is_review_verified: false,
     is_deposit_verified: false,
     deposited_at: null,
@@ -432,7 +470,7 @@ export default function AdminReviewReceiveDetailPage() {
 
   const handleAddRow = () => {
     setEditingRowId(null);
-    setRows((prev) => sortReviewReceiveRowsByCreatedAt([...prev, createEmptyRow(productId)]));
+    setRows((prev) => sortReviewReceiveRowsByCreatedAt([...prev, createEmptyRow(productId, getDefaultReviewFee(prev))]));
   };
 
   const openPurchaseBulkModal = () => {
@@ -766,6 +804,14 @@ export default function AdminReviewReceiveDetailPage() {
     setErrorMessage("");
 
     const accountInfo = parseReviewReceiveAccount(row.accountInfoInput);
+    const reviewFee = parseReviewFee(row.reviewFeeInput);
+
+    if (Number.isNaN(reviewFee)) {
+      setErrorMessage("리뷰비는 0 이상의 숫자로 입력해주세요.");
+      setUpdatingRowId(null);
+      return;
+    }
+
     const payload = {
       product_id: Number(productId),
       assign_name: row.assign_name?.trim() || null,
@@ -776,6 +822,7 @@ export default function AdminReviewReceiveDetailPage() {
       contact: row.contact?.trim() || null,
       address: row.address?.trim() || null,
       amount: parseAmount(row.amountInput),
+      review_fee: reviewFee,
       is_review_verified: Boolean(row.is_review_verified),
       is_deposit_verified: Boolean(row.is_deposit_verified),
       deposited_at: row.deposited_at || null,
@@ -872,6 +919,21 @@ export default function AdminReviewReceiveDetailPage() {
     for (let index = 0; index < parsedEntries.length; index += 1) {
       const row = shouldCreateNewRows ? null : targetRows[index];
       const entry = parsedEntries[index];
+      const reviewFee = row ? parseReviewFee(row.reviewFeeInput) : defaultReviewFee;
+
+      if (Number.isNaN(reviewFee)) {
+        if (savedRows.length > 0 || createdRows.length > 0) {
+          setRows((prev) => mergeReviewReceiveRows(prev, savedRows, createdRows));
+        }
+
+        setPurchaseBulkFeedback(
+          `${index + 1}번째 저장 전 리뷰비 값을 확인해주세요. 리뷰비는 0 이상의 숫자만 입력할 수 있습니다.`,
+          "error"
+        );
+        setIsApplyingPurchaseBulk(false);
+        return;
+      }
+
       const payload = {
         product_id: Number(productId),
         assign_name: (row?.assign_name ?? purchaseBulkAssignName)?.trim() || null,
@@ -882,6 +944,7 @@ export default function AdminReviewReceiveDetailPage() {
         contact: entry.contact,
         address: entry.address,
         amount: entry.amount,
+        review_fee: reviewFee,
         deposited_at: row?.deposited_at || null,
         actual_depositor_name: row?.actual_depositor_name?.trim() || null,
         is_review_verified: Boolean(row?.is_review_verified),
@@ -990,7 +1053,11 @@ export default function AdminReviewReceiveDetailPage() {
       const payload =
         purchaseAssignMode === "overwrite-rename-only"
           ? { assign_name: entry.assign_name?.trim() || null }
-          : buildBlankPurchaseAssignPayload(productId, entry.assign_name);
+          : buildBlankPurchaseAssignPayload(
+              productId,
+              entry.assign_name,
+              targetRow?.review_fee ?? defaultReviewFee
+            );
       const result = targetRow
         ? await updateReviewReceiveSubmission(targetRow.id, payload)
         : await createReviewReceiveSubmission(payload);
@@ -1147,6 +1214,8 @@ export default function AdminReviewReceiveDetailPage() {
 
   const { purchaseRows: purchaseCompletedRows, reviewRows: reviewCompletedRows, completeRows: fullyCompletedRows } =
     splitReviewReceiveRows(rows);
+  const reviewFeeSummaryText = formatReviewFeeSummary(rows);
+  const defaultReviewFee = getDefaultReviewFee(rows);
   const plannedDepositorName = product?.planned_depositor_name ?? "";
   const filteredPurchaseCompletedRows = filterReviewReceiveRows(
     purchaseCompletedRows,
@@ -1189,6 +1258,7 @@ export default function AdminReviewReceiveDetailPage() {
       <col className="review-col-contact" />
       <col className="review-col-address" />
       <col className="review-col-account" />
+      <col className="review-col-amount" />
       <col className="review-col-amount" />
       <col className="review-col-photo" />
       <col className="review-col-planned-depositor" />
@@ -1274,22 +1344,23 @@ export default function AdminReviewReceiveDetailPage() {
               <th>연락처</th>
               <th>주소</th>
               <th>계좌</th>
-                <th>금액</th>
-                <th>사진</th>
-                <th>입금자명(예정)</th>
-                <th>리뷰완료</th>
-                <th>입금완료</th>
-                {sectionKey !== "purchase" && <th>입금일</th>}
-                {sectionKey !== "purchase" && <th>실제입금자명</th>}
-                {sectionKey === "purchase" && <th>관리</th>}
+              <th>금액</th>
+              <th>리뷰비</th>
+              <th>사진</th>
+              <th>입금자명(예정)</th>
+              <th>리뷰완료</th>
+              <th>입금완료</th>
+              {sectionKey !== "purchase" && <th>입금일</th>}
+              {sectionKey !== "purchase" && <th>실제입금자명</th>}
+              {sectionKey === "purchase" && <th>관리</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={sectionKey === "purchase" ? 16 : 17}>{emptyMessage}</td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={sectionKey === "purchase" ? 15 : 16}>{emptyMessage}</td>
-                </tr>
-              ) : (
+            ) : (
                 filteredRows.map((row) => (
                   <Fragment key={row.id}>
                     <tr
@@ -1405,6 +1476,18 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.amount ?? "-"}</td>}
+                      {sectionKey === "purchase" && row.isEditing
+                        ? renderEditableCell(
+                            row,
+                            row.review_fee == null ? "" : String(row.review_fee),
+                            <input
+                              className="table-cell-input table-cell-input-number"
+                              value={row.reviewFeeInput ?? ""}
+                              onChange={(event) => handleFieldChange(row.id, "reviewFeeInput", event.target.value)}
+                              placeholder="리뷰비"
+                            />
+                          )
+                        : <td>{row.review_fee ?? "-"}</td>}
                       <td>
                         <div className="photo-link-list">
                           {row.photos?.length ? (
@@ -1519,7 +1602,7 @@ export default function AdminReviewReceiveDetailPage() {
                     </tr>
                     {sectionKey === "purchase" && row.isEditing && (
                       <tr className="review-receive-inline-fill-row" data-row-editor-id={row.id}>
-                        <td colSpan={15}>
+                        <td colSpan={16}>
                           <div className="review-receive-inline-fill-box">
                             <label className="review-receive-inline-fill-label" htmlFor={`inline-purchase-info-${row.id}`}>
                               구매정보 빠른입력
@@ -1603,7 +1686,7 @@ export default function AdminReviewReceiveDetailPage() {
             </div>
             <div className="detail-summary-item">
               <span className="detail-summary-label">리뷰비</span>
-              <strong>{product.review_fee ?? "-"}</strong>
+              <strong>{reviewFeeSummaryText}</strong>
             </div>
             <div className="detail-summary-item">
               <span className="detail-summary-label">상품 제목</span>

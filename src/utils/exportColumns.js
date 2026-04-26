@@ -33,6 +33,7 @@ export const SUBMISSION_EXPORT_COLUMNS = [
   { key: "submissions.bank_account", label: "계좌번호", source: "submissions", field: "bank_account", type: "text" },
   { key: "submissions.account_holder", label: "예금주", source: "submissions", field: "account_holder", type: "text" },
   { key: "submissions.amount", label: "금액", source: "submissions", field: "amount", type: "number" },
+  { key: "submissions.review_fee", label: "리뷰비", source: "submissions", field: "review_fee", type: "number" },
   {
     key: "submissions.assign_name",
     label: "배정명",
@@ -81,7 +82,6 @@ export const PRODUCT_EXPORT_COLUMNS = [
   { key: "products.company_name", label: "업체명", source: "products", field: "company_name", type: "text" },
   { key: "products.option_name", label: "옵션", source: "products", field: "option_name", type: "text" },
   { key: "products.review_type", label: "리뷰형태", source: "products", field: "review_type", type: "text" },
-  { key: "products.review_fee", label: "리뷰비", source: "products", field: "review_fee", type: "number" },
   { key: "products.deposit_date", label: "입금 예정일", source: "products", field: "deposit_date", type: "date" },
   {
     key: "products.planned_depositor_name",
@@ -156,7 +156,7 @@ export const EXPORT_COLUMNS = [
   { key: "submissions.bank_account", label: "계좌번호", source: "submissions", field: "bank_account", type: "text" },
   { key: "submissions.account_holder", label: "예금주", source: "submissions", field: "account_holder", type: "text" },
   { key: "submissions.amount", label: "금액", source: "submissions", field: "amount", type: "number" },
-  { key: "products.review_fee", label: "리뷰비", source: "products", field: "review_fee", type: "number" },
+  { key: "submissions.review_fee", label: "리뷰비", source: "submissions", field: "review_fee", type: "number" },
   {
     key: "products.planned_depositor_name",
     label: "입금자명(예정)",
@@ -236,7 +236,7 @@ const PRESET_COLUMN_KEYS = {
     "submissions.bank_account",
     "submissions.account_holder",
     "submissions.amount",
-    "products.review_fee",
+    "submissions.review_fee",
     "products.planned_depositor_name",
     "submissions.is_review_verified",
     "submissions.is_deposit_verified",
@@ -246,7 +246,7 @@ const PRESET_COLUMN_KEYS = {
   [EXPORT_COLUMN_PRESET.SETTLEMENT]: [
     "products.title",
     "products.product_name",
-    "products.review_fee",
+    "submissions.review_fee",
     "products.planned_depositor_name",
     "submissions.order_number",
     "submissions.buyer_name",

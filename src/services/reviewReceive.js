@@ -2,9 +2,9 @@ import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
 
 const REVIEW_RECEIVE_PRODUCT_SELECT =
-  "id,title,product_name,company_name,option_name,review_type,review_fee,planned_depositor_name,manager_id";
+  "id,title,product_name,company_name,option_name,review_type,planned_depositor_name,manager_id";
 const REVIEW_RECEIVE_SUBMISSIONS_SELECT =
-  "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
+  "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
 
 export async function fetchReviewReceiveDetail(productId, adminId) {
   const scope = await resolveAdminManagerScope(adminId, { includeCompanyData: true });

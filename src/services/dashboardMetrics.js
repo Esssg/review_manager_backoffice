@@ -2,9 +2,9 @@ import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
 
 const DASHBOARD_PRODUCTS_SELECT =
-  "id,manager_id,title,product_name,review_fee,review_type,company_name,option_name,is_real_shipping,created_at";
+  "id,manager_id,title,product_name,review_type,company_name,option_name,is_real_shipping,created_at";
 const DASHBOARD_SUBMISSIONS_SELECT =
-  "id,product_id,assign_name,order_number,buyer_name,recipient_name,is_review_verified,is_deposit_verified,deposited_at,created_at";
+  "id,product_id,assign_name,order_number,buyer_name,recipient_name,review_fee,is_review_verified,is_deposit_verified,deposited_at,created_at";
 const DASHBOARD_APPLICATIONS_SELECT = "id,product_id,is_confirmed,created_at";
 const DASHBOARD_EVIDENCE_PHOTOS_SELECT = "id,submission_id,photo_type,created_at";
 const DASHBOARD_COMPANY_MEMBERS_SELECT = "login_id,username,company";

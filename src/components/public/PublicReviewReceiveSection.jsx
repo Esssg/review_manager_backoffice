@@ -35,6 +35,7 @@ function getMobileFieldItems(row, options) {
       value: formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder) || "-"
     },
     { label: "금액", value: row.amount ?? "-" },
+    { label: "리뷰비", value: row.review_fee ?? "-" },
     showDepositMeta ? { label: "입금일", value: row.deposited_at || "-" } : null,
     showDepositMeta ? { label: "실제입금자명", value: row.actual_depositor_name || "-" } : null
   ].filter(Boolean);
@@ -64,7 +65,7 @@ export default function PublicReviewReceiveSection({
   const isPurchaseSection = sectionKey === "purchase";
   const showAssign = sectionKey === "purchase" || sectionKey === "complete";
   const showDepositMeta = sectionKey === "complete";
-  const emptyColumnCount = isPurchaseSection ? 12 : showDepositMeta ? 13 : 10;
+  const emptyColumnCount = isPurchaseSection ? 13 : showDepositMeta ? 14 : 11;
 
   return (
     <section className="dashboard-panel review-receive-section public-review-section" aria-label={title}>
@@ -143,6 +144,7 @@ export default function PublicReviewReceiveSection({
             <col className="review-col-address" />
             <col className="review-col-account" />
             <col className="review-col-amount" />
+            <col className="review-col-amount" />
             <col className="review-col-photo" />
             {isPurchaseSection && <col className="public-review-col-actions" />}
             {showDepositMeta && <col className="review-col-date" />}
@@ -160,6 +162,7 @@ export default function PublicReviewReceiveSection({
               <th>주소</th>
               <th>계좌</th>
               <th>금액</th>
+              <th>리뷰비</th>
               <th>사진</th>
               {isPurchaseSection && <th>사진관리</th>}
               {showDepositMeta && <th>입금일</th>}
@@ -184,6 +187,7 @@ export default function PublicReviewReceiveSection({
                   <td>{row.address || "-"}</td>
                   <td>{formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder) || "-"}</td>
                   <td>{row.amount ?? "-"}</td>
+                  <td>{row.review_fee ?? "-"}</td>
                   <td>
                     <div className="photo-link-list public-review-photo-list">
                       {renderPhotoCell(row, onOpenPhotoViewer)}

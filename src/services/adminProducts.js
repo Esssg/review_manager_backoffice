@@ -3,8 +3,8 @@ import { resolveAdminManagerScope } from "./adminScope";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT =
-  "id,title,product_name,description,company_name,option_name,review_type,review_fee,planned_depositor_name,manager_id,created_at";
-const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT = "id,is_deposit_verified";
+  "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id,created_at";
+const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT = "id,is_deposit_verified,review_fee";
 
 export async function fetchAdminProducts(adminId) {
   return supabase

@@ -22,7 +22,6 @@ const INITIAL_PRODUCT_FORM = {
   companyName: "",
   optionName: "",
   reviewType: "",
-  reviewFee: "",
   plannedDepositorName: "",
   description: ""
 };
@@ -39,7 +38,6 @@ function getProductFormFromProduct(product) {
     companyName: product.company_name ?? "",
     optionName: product.option_name ?? "",
     reviewType: product.review_type ?? "",
-    reviewFee: product.review_fee == null ? "" : String(product.review_fee),
     plannedDepositorName: product.planned_depositor_name ?? "",
     description: product.description ?? ""
   };
@@ -55,20 +53,6 @@ function getProductPayload(productForm, adminId) {
     };
   }
 
-  const reviewFeeText = productForm.reviewFee.trim();
-  const reviewFee =
-    reviewFeeText === ""
-      ? null
-      : Number.isInteger(Number(reviewFeeText)) && Number(reviewFeeText) >= 0
-        ? Number(reviewFeeText)
-        : NaN;
-
-  if (Number.isNaN(reviewFee)) {
-    return {
-      errorMessage: "리뷰비는 0 이상의 숫자로 입력해주세요."
-    };
-  }
-
   return {
     payload: {
       manager_id: adminId,
@@ -78,10 +62,29 @@ function getProductPayload(productForm, adminId) {
       company_name: normalizeOptionalValue(productForm.companyName),
       option_name: normalizeOptionalValue(productForm.optionName),
       review_type: normalizeOptionalValue(productForm.reviewType),
-      review_fee: reviewFee,
       planned_depositor_name: normalizeOptionalValue(productForm.plannedDepositorName)
     }
   };
+}
+
+function getProductReviewFeeSummary(product) {
+  const fees = Array.from(
+    new Set(
+      (product?.submissions ?? [])
+        .map((submission) => submission?.review_fee)
+        .filter((value) => value != null)
+    )
+  );
+
+  if (fees.length === 0) {
+    return "-";
+  }
+
+  if (fees.length === 1) {
+    return fees[0];
+  }
+
+  return `혼합 (${fees.length})`;
 }
 
 function getReviewReceiveProductStatus(product) {
@@ -392,7 +395,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       <td>{product.product_name ?? "-"}</td>
                       <td>{product.option_name ?? "-"}</td>
                       <td>{product.review_type ?? "-"}</td>
-                      <td>{product.review_fee ?? "-"}</td>
+                      <td>{getProductReviewFeeSummary(product)}</td>
                       <td>{product.manager_id ?? "-"}</td>
                       <td>{product.created_at ? new Date(product.created_at).toLocaleDateString("ko-KR") : "-"}</td>
                       <td className="review-receive-actions-cell">
@@ -551,22 +554,6 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         value={productForm.reviewType}
                         onChange={handleProductFormChange}
                         placeholder="예: 텍스트 / 사진 / 영상"
-                      />
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
-                      <label className="detail-summary-label" htmlFor="review-receive-review-fee">
-                        리뷰비
-                      </label>
-                      <input
-                        id="review-receive-review-fee"
-                        name="reviewFee"
-                        type="number"
-                        min="0"
-                        step="1"
-                        className="table-cell-input table-cell-input-number"
-                        value={productForm.reviewFee}
-                        onChange={handleProductFormChange}
-                        placeholder="예: 1000"
                       />
                     </div>
                     <div className="detail-summary-item review-receive-create-product-field">

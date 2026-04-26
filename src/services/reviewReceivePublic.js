@@ -1,9 +1,9 @@
 import { supabase } from "../lib/supabase";
 
 const PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT =
-  "id,title,product_name,option_name,review_type,review_fee,description,planned_depositor_name";
+  "id,title,product_name,option_name,review_type,description,planned_depositor_name";
 const PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT =
-  "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
+  "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
 const REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION = "review-receive-photo-sync";
 
 async function extractFunctionErrorMessage(response) {

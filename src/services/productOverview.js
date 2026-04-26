@@ -2,9 +2,9 @@ import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
 
 const PRODUCT_OVERVIEW_PRODUCTS_SELECT =
-  "id,manager_id,title,product_name,deposit_date,description,is_real_shipping,company_name,option_name,review_type,review_fee,planned_depositor_name,created_at";
+  "id,manager_id,title,product_name,deposit_date,description,is_real_shipping,company_name,option_name,review_type,planned_depositor_name,created_at";
 const PRODUCT_OVERVIEW_SUBMISSIONS_SELECT =
-  "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
+  "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
 const PRODUCT_OVERVIEW_EVIDENCE_PHOTOS_SELECT = "submission_id,image_url";
 
 export async function fetchAdminProductOverview(adminId, options = {}) {

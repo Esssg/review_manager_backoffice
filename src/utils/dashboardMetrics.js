@@ -164,10 +164,6 @@ export function countSubmissionsMissingReviewPhoto(submissions = [], evidencePho
   }, 0);
 }
 
-function getProductReviewFee(product) {
-  return safeNumber(product?.review_fee);
-}
-
 export function buildDashboardSummary({
   products = [],
   submissions = [],
@@ -180,7 +176,6 @@ export function buildDashboardSummary({
   const startOfMonth = getStartOfMonth(now);
   const todayKey = getDayKey(startOfToday);
 
-  const productMap = new Map(products.map((product) => [product.id, product]));
   const evidencePhotoIndex = buildEvidencePhotoIndex(evidencePhotos);
 
   const productsToday = products.filter((product) => isOnOrAfterStartOfDay(product.created_at, startOfToday)).length;
@@ -214,10 +209,10 @@ export function buildDashboardSummary({
     return getDayKey(submission.deposited_at) === todayKey;
   });
   const depositVerifiedTodayCount = depositVerifiedToday.length;
-  const depositVerifiedTodayAmountSum = depositVerifiedToday.reduce((acc, submission) => {
-    const product = productMap.get(submission.product_id);
-    return acc + getProductReviewFee(product);
-  }, 0);
+  const depositVerifiedTodayAmountSum = depositVerifiedToday.reduce(
+    (acc, submission) => acc + safeNumber(submission.review_fee),
+    0
+  );
 
   const applicationsToday = applications.filter((application) =>
     isOnOrAfterStartOfDay(application.created_at, startOfToday)
@@ -270,8 +265,7 @@ export function buildDashboardSummary({
       return acc;
     }
 
-    const product = productMap.get(submission.product_id);
-    return acc + getProductReviewFee(product);
+    return acc + safeNumber(submission.review_fee);
   }, 0);
 
   return {

@@ -38,6 +38,7 @@ function buildReviewReceiveSearchText(row, plannedDepositorName) {
       row.address,
       row.accountInfoInput || formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder),
       row.amount == null ? "" : String(row.amount),
+      row.review_fee == null ? "" : String(row.review_fee),
       plannedDepositorName,
       row.deposited_at,
       row.actual_depositor_name

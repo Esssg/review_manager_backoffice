@@ -638,10 +638,6 @@ export default function PublicReviewReceiveDetailPage() {
                 <strong>{product.review_type ?? "-"}</strong>
               </div>
               <div className="detail-summary-item">
-                <span className="detail-summary-label">리뷰비</span>
-                <strong>{product.review_fee ?? "-"}</strong>
-              </div>
-              <div className="detail-summary-item">
                 <span className="detail-summary-label">설명</span>
                 <strong>{product.description ?? "-"}</strong>
               </div>
