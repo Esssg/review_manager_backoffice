@@ -256,6 +256,7 @@ export function useAdminProductDetail({ adminId, productId }) {
       const payload = {
         product_id: Number(productId),
         ...parsed,
+        assign_name: String(parsed.assign_name ?? "").trim() || null,
         order_number: normalizedOrderNumber
       };
 
