@@ -19,7 +19,7 @@ import {
 const DEFAULT_LOOKUP_TYPE = "assign_name";
 const PUBLIC_LOOKUP_OPTIONS = [
   { value: "assign_name", label: "배정명" },
-  { value: "account_holder", label: "입금주명" }
+  { value: "account_holder", label: "계좌주명" }
 ];
 
 function getLookupValueStorageKey(productId) {
@@ -696,7 +696,7 @@ export default function PublicReviewReceiveDetailPage() {
                   <span className="detail-summary-label">상품 제목</span>
                   <strong>{product?.title ?? "-"}</strong>
                 </div>
-                <p>왼쪽 드롭다운에서 조회 기준을 고르고 정확히 일치하는 값으로 검색하세요.</p>
+                <p>왼쪽 드롭다운에서 배정명 / 계좌주명 선택 후 검색 해주세요.</p>
               </div>
 
               <form className="public-review-lookup-form" onSubmit={handleSubmit}>
