@@ -3,6 +3,40 @@ function parseAmount(value) {
   return digits ? Number(digits) : null;
 }
 
+function formatLinePrefix(lineNumber) {
+  return lineNumber ? `${lineNumber}번째 입력: ` : "";
+}
+
+function buildPurchaseFormatMessage(includeAssignName) {
+  return includeAssignName
+    ? "'배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액', '배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액' 형식으로 입력해주세요."
+    : "'주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액', '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액' 형식으로 입력해주세요.";
+}
+
+function buildAccountFieldError(lineNumber) {
+  return `${formatLinePrefix(lineNumber)}계좌 정보는 '은행 계좌번호 입금주' 또는 '은행 / 계좌번호 / 입금주' 형식이어야 합니다.`;
+}
+
+function normalizeAccountFields(bankName, bankAccount, accountHolder, lineNumber) {
+  const normalizedBankName = String(bankName ?? "").trim();
+  const normalizedBankAccount = String(bankAccount ?? "").replace(/\s+/g, "");
+  const normalizedAccountHolder = String(accountHolder ?? "").trim();
+
+  if (!normalizedBankName || !normalizedBankAccount || !normalizedAccountHolder) {
+    throw new Error(buildAccountFieldError(lineNumber));
+  }
+
+  if (!/^\d[\d-]*\d$/.test(normalizedBankAccount)) {
+    throw new Error(`${formatLinePrefix(lineNumber)}계좌번호는 숫자로 시작해서 숫자로 끝나야 합니다.`);
+  }
+
+  return {
+    bank_name: normalizedBankName,
+    bank_account: normalizedBankAccount,
+    account_holder: normalizedAccountHolder
+  };
+}
+
 function hasMeaningfulValue(value) {
   if (typeof value === "number") {
     return true;
@@ -21,23 +55,23 @@ function normalizeLines(rawText) {
 function parseAccountChunk(accountChunk, lineNumber) {
   if (accountChunk.includes("/")) {
     throw new Error(
-      `${lineNumber}번째 입력: 계좌 정보는 '은행 계좌번호 입금주' 형식이어야 합니다. '/'는 사용할 수 없습니다.`
+      `${formatLinePrefix(lineNumber)}계좌 정보는 '은행 계좌번호 입금주' 형식이어야 합니다. '/'는 사용할 수 없습니다.`
     );
   }
 
-  const accountParts = accountChunk.split(/\s+/).filter(Boolean);
+  const rawChunk = String(accountChunk ?? "").trim();
+  const matched = rawChunk.match(/^(.+?)(\d(?:[\d-\s]*\d)?)(\D.+)$/);
 
-  if (accountParts.length < 3) {
-    throw new Error(
-      `${lineNumber}번째 입력: 계좌 정보는 '은행 계좌번호 입금주' 형식이어야 합니다.`
-    );
+  if (!matched) {
+    throw new Error(buildAccountFieldError(lineNumber));
   }
 
-  return {
-    bank_name: accountParts[0],
-    bank_account: accountParts[1],
-    account_holder: accountParts.slice(2).join(" ")
-  };
+  const [, bankName, bankAccount, accountHolder] = matched;
+  return normalizeAccountFields(bankName, bankAccount, accountHolder, lineNumber);
+}
+
+function parseSeparatedAccountFields(bankName, bankAccount, accountHolder, lineNumber) {
+  return normalizeAccountFields(bankName, bankAccount, accountHolder, lineNumber);
 }
 
 function parseOptionalAccountChunk(accountChunk, lineNumber) {
@@ -52,6 +86,118 @@ function parseOptionalAccountChunk(accountChunk, lineNumber) {
   return parseAccountChunk(accountChunk, lineNumber);
 }
 
+function parseOptionalSeparatedAccountFields(bankName, bankAccount, accountHolder, lineNumber) {
+  if (![bankName, bankAccount, accountHolder].some((value) => String(value ?? "").trim())) {
+    return {
+      bank_name: "",
+      bank_account: "",
+      account_holder: ""
+    };
+  }
+
+  return parseSeparatedAccountFields(bankName, bankAccount, accountHolder, lineNumber);
+}
+
+function parsePurchaseLineParts(parts, lineNumber, options = {}) {
+  const { allowAssignName = false, allowPartial = false } = options;
+  const startsWithOrderNumber = /^\d+$/.test(parts[0] ?? "");
+  const hasAssignName = allowAssignName && !startsWithOrderNumber;
+  const assignName = hasAssignName ? parts[0] : "";
+  const valueParts = hasAssignName ? parts.slice(1) : parts;
+  const fieldCount = valueParts.length;
+  const usesSeparatedAccountFields = fieldCount === 9 || fieldCount === 10;
+  const hasPurchaseAccount = fieldCount === 8 || fieldCount === 10;
+
+  if (![7, 8, 9, 10].includes(fieldCount)) {
+    throw new Error(`${formatLinePrefix(lineNumber)}${buildPurchaseFormatMessage(hasAssignName)}`);
+  }
+
+  const [
+    orderNumber,
+    buyerName,
+    recipientName,
+    purchaseAccountOrContact,
+    contactOrAddress,
+    addressOrAccountChunkOrBankName,
+    accountChunkOrBankAccount,
+    maybeAccountHolderOrAmountText,
+    maybeAmountText,
+    maybeTrailingAmountText
+  ] = valueParts;
+
+  const purchaseAccount = hasPurchaseAccount ? purchaseAccountOrContact : "";
+  const contactText = hasPurchaseAccount ? contactOrAddress : purchaseAccountOrContact;
+  const address = hasPurchaseAccount ? addressOrAccountChunkOrBankName : contactOrAddress;
+  const trimmedContact = String(contactText ?? "").trim();
+  const contact = trimmedContact ? trimmedContact.replace(/\D/g, "") : "";
+  const accountChunk = hasPurchaseAccount ? accountChunkOrBankAccount : addressOrAccountChunkOrBankName;
+  const bankName = hasPurchaseAccount ? accountChunkOrBankAccount : addressOrAccountChunkOrBankName;
+  const bankAccount = hasPurchaseAccount ? maybeAccountHolderOrAmountText : accountChunkOrBankAccount;
+  const accountHolder = hasPurchaseAccount ? maybeAmountText : maybeAccountHolderOrAmountText;
+  const amountText = usesSeparatedAccountFields
+    ? hasPurchaseAccount
+      ? maybeTrailingAmountText
+      : maybeAmountText
+    : hasPurchaseAccount
+      ? maybeAccountHolderOrAmountText
+      : accountChunkOrBankAccount;
+  const trimmedAmountText = String(amountText ?? "").trim();
+  const amount = trimmedAmountText ? parseAmount(trimmedAmountText) : null;
+  const parsedAccount = usesSeparatedAccountFields
+    ? allowPartial
+      ? parseOptionalSeparatedAccountFields(bankName, bankAccount, accountHolder, lineNumber)
+      : parseSeparatedAccountFields(bankName, bankAccount, accountHolder, lineNumber)
+    : allowPartial
+      ? parseOptionalAccountChunk(accountChunk, lineNumber)
+      : parseAccountChunk(accountChunk, lineNumber);
+
+  if (!allowPartial) {
+    if (!orderNumber) {
+      throw new Error(`${formatLinePrefix(lineNumber)}주문번호가 비어 있습니다.`);
+    }
+
+    if (!buyerName) {
+      throw new Error(`${formatLinePrefix(lineNumber)}구매자가 비어 있습니다.`);
+    }
+
+    if (!recipientName) {
+      throw new Error(`${formatLinePrefix(lineNumber)}수취인이 비어 있습니다.`);
+    }
+
+    if (contact.length < 8) {
+      throw new Error(`${formatLinePrefix(lineNumber)}연락처 형식이 올바르지 않습니다.`);
+    }
+
+    if (!address) {
+      throw new Error(`${formatLinePrefix(lineNumber)}주소가 비어 있습니다.`);
+    }
+
+    if (amount == null) {
+      throw new Error(`${formatLinePrefix(lineNumber)}금액 형식이 올바르지 않습니다.`);
+    }
+  } else {
+    if (trimmedContact && contact.length < 8) {
+      throw new Error(`${formatLinePrefix(lineNumber)}연락처 형식이 올바르지 않습니다.`);
+    }
+
+    if (trimmedAmountText && amount == null) {
+      throw new Error(`${formatLinePrefix(lineNumber)}금액 형식이 올바르지 않습니다.`);
+    }
+  }
+
+  return {
+    assign_name: assignName || "",
+    order_number: orderNumber || "",
+    buyer_name: buyerName || "",
+    recipient_name: recipientName || "",
+    purchase_account: purchaseAccount || "",
+    contact,
+    address: address || "",
+    amount,
+    ...parsedAccount
+  };
+}
+
 export function parsePurchaseBulkInput(rawText) {
   const lines = normalizeLines(rawText);
 
@@ -60,67 +206,15 @@ export function parsePurchaseBulkInput(rawText) {
   }
 
   return lines.map((line, index) => {
-    const lineNumber = index + 1;
-    const parts = line.split("/").map((part) => part.trim());
-
-    if (parts.length !== 7 && parts.length !== 8) {
-      throw new Error(
-        `${lineNumber}번째 입력: '주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 또는 '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 형식으로 입력해주세요.`
-      );
-    }
-
-    const hasPurchaseAccount = parts.length === 8;
-    const [
-      orderNumber,
-      buyerName,
-      recipientName,
-      purchaseAccountOrContact,
-      contactOrAddress,
-      addressOrAccountChunk,
-      accountChunkOrAmountText,
-      maybeAmountText
-    ] = parts;
-    const purchaseAccount = hasPurchaseAccount ? purchaseAccountOrContact : null;
-    const contactText = hasPurchaseAccount ? contactOrAddress : purchaseAccountOrContact;
-    const address = hasPurchaseAccount ? addressOrAccountChunk : contactOrAddress;
-    const accountChunk = hasPurchaseAccount ? accountChunkOrAmountText : addressOrAccountChunk;
-    const amountText = hasPurchaseAccount ? maybeAmountText : accountChunkOrAmountText;
-    const contact = contactText.replace(/\D/g, "");
-    const amount = parseAmount(amountText);
-
-    if (!orderNumber) {
-      throw new Error(`${lineNumber}번째 입력: 주문번호가 비어 있습니다.`);
-    }
-
-    if (!buyerName) {
-      throw new Error(`${lineNumber}번째 입력: 구매자가 비어 있습니다.`);
-    }
-
-    if (!recipientName) {
-      throw new Error(`${lineNumber}번째 입력: 수취인이 비어 있습니다.`);
-    }
-
-    if (contact.length < 8) {
-      throw new Error(`${lineNumber}번째 입력: 연락처 형식이 올바르지 않습니다.`);
-    }
-
-    if (!address) {
-      throw new Error(`${lineNumber}번째 입력: 주소가 비어 있습니다.`);
-    }
-
-    if (amount == null) {
-      throw new Error(`${lineNumber}번째 입력: 금액 형식이 올바르지 않습니다.`);
-    }
+    const entry = parsePurchaseLineParts(
+      line.split("/").map((part) => part.trim()),
+      index + 1,
+      { allowAssignName: false, allowPartial: false }
+    );
 
     return {
-      order_number: orderNumber,
-      buyer_name: buyerName,
-      recipient_name: recipientName,
-      purchase_account: purchaseAccount || null,
-      contact,
-      address,
-      amount,
-      ...parseAccountChunk(accountChunk, lineNumber)
+      ...entry,
+      purchase_account: entry.purchase_account || null
     };
   });
 }
@@ -136,74 +230,18 @@ export function parseInlinePurchaseInput(rawText) {
     throw new Error("구매정보 빠른입력은 한 줄만 입력할 수 있습니다.");
   }
 
-  const parts = lines[0].split("/").map((part) => part.trim());
-
-  const startsWithOrderNumber = /^\d+$/.test(parts[0] ?? "");
-
-  if (
-    (startsWithOrderNumber && parts.length !== 7 && parts.length !== 8) ||
-    (!startsWithOrderNumber && parts.length !== 8 && parts.length !== 9)
-  ) {
-    throw new Error(
-      startsWithOrderNumber
-        ? "'주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 또는 '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 형식으로 입력해주세요."
-        : "'배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 또는 '배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 형식으로 입력해주세요."
-    );
-  }
-
-  const hasAssignName = !startsWithOrderNumber;
-  const assignName = hasAssignName ? parts[0] : "";
-  const offset = hasAssignName ? 1 : 0;
-  const hasPurchaseAccount = parts.length - offset === 8;
-  const [
-    orderNumber,
-    buyerName,
-    recipientName,
-    purchaseAccountOrContact,
-    contactOrAddress,
-    addressOrAccountChunk,
-    accountChunkOrAmountText,
-    maybeAmountText
-  ] = parts.slice(offset);
-  const purchaseAccount = hasPurchaseAccount ? purchaseAccountOrContact : "";
-  const contactText = hasPurchaseAccount ? contactOrAddress : purchaseAccountOrContact;
-  const address = hasPurchaseAccount ? addressOrAccountChunk : contactOrAddress;
-  const accountChunk = hasPurchaseAccount ? accountChunkOrAmountText : addressOrAccountChunk;
-  const amountText = hasPurchaseAccount ? maybeAmountText : accountChunkOrAmountText;
-  const trimmedContact = String(contactText ?? "").trim();
-  const contact = trimmedContact ? trimmedContact.replace(/\D/g, "") : "";
-
-  if (trimmedContact && contact.length < 8) {
-    throw new Error("연락처 형식이 올바르지 않습니다.");
-  }
-
-  const trimmedAmountText = String(amountText ?? "").trim();
-  const amount = trimmedAmountText ? parseAmount(trimmedAmountText) : null;
-
-  if (trimmedAmountText && amount == null) {
-    throw new Error("금액 형식이 올바르지 않습니다.");
-  }
-
-  return {
-    assign_name: assignName || "",
-    order_number: orderNumber || "",
-    buyer_name: buyerName || "",
-    recipient_name: recipientName || "",
-    purchase_account: purchaseAccount || "",
-    contact,
-    address: address || "",
-    amount,
-    ...parseOptionalAccountChunk(accountChunk, 1)
-  };
+  return parsePurchaseLineParts(
+    lines[0].split("/").map((part) => part.trim()),
+    null,
+    { allowAssignName: true, allowPartial: true }
+  );
 }
 
 export function parseExistingRowPurchaseInfoInput(rawText) {
   const entry = parseInlinePurchaseInput(rawText);
 
   if (entry.assign_name) {
-    throw new Error(
-      "'주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 또는 '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액' 형식으로 입력해주세요."
-    );
+    throw new Error(buildPurchaseFormatMessage(false));
   }
 
   return entry;

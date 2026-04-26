@@ -13,7 +13,9 @@ export default function SubmissionInput({
           rows={3}
           value={newSubmissionText}
           onChange={(event) => onSubmissionTextChange(event.target.value)}
-          placeholder="주문번호/구매자/수령인/구매계정/연락처/주소/계좌정보/금액"
+          placeholder={
+            "배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
+          }
         />
         <button type="button" className="admin-primary-button" onClick={onAddSubmission} disabled={isAddingSubmission}>
           정보 추가하기
