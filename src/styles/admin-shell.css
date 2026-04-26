@@ -363,6 +363,10 @@
   color: #0369a1;
 }
 
+.required-indicator {
+  color: #b91c1c;
+}
+
 .detail-summary-item strong {
   font-size: 15px;
   color: #0f172a;

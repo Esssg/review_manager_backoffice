@@ -1215,7 +1215,6 @@ export default function AdminReviewReceiveDetailPage() {
 
   const { purchaseRows: purchaseCompletedRows, reviewRows: reviewCompletedRows, completeRows: fullyCompletedRows } =
     splitReviewReceiveRows(rows);
-  const reviewFeeSummaryText = formatReviewFeeSummary(rows);
   const defaultReviewFee = getDefaultReviewFee(rows);
   const plannedDepositorName = product?.planned_depositor_name ?? "";
   const filteredPurchaseCompletedRows = filterReviewReceiveRows(
@@ -1710,8 +1709,8 @@ export default function AdminReviewReceiveDetailPage() {
               <strong>{product.review_type ?? "-"}</strong>
             </div>
             <div className="detail-summary-item">
-              <span className="detail-summary-label">리뷰비</span>
-              <strong>{reviewFeeSummaryText}</strong>
+              <span className="detail-summary-label">설명</span>
+              <strong>{product.description ?? "-"}</strong>
             </div>
             <div className="detail-summary-item">
               <span className="detail-summary-label">상품 제목</span>

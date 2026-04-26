@@ -68,26 +68,6 @@ function getProductPayload(productForm, adminId) {
   };
 }
 
-function getProductReviewFeeSummary(product) {
-  const fees = Array.from(
-    new Set(
-      (product?.submissions ?? [])
-        .map((submission) => submission?.review_fee)
-        .filter((value) => value != null)
-    )
-  );
-
-  if (fees.length === 0) {
-    return "-";
-  }
-
-  if (fees.length === 1) {
-    return fees[0];
-  }
-
-  return `혼합 (${fees.length})`;
-}
-
 function getReviewReceiveProductStatus(product) {
   const submissions = Array.isArray(product?.submissions) ? product.submissions : [];
 
@@ -377,7 +357,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                   <th>품명</th>
                   <th>옵션</th>
                   <th>리뷰형태</th>
-                  <th>리뷰비</th>
+                  <th>설명</th>
                   <th>담당자</th>
                   <th>생성일</th>
                   <th className="review-receive-actions-column">관리</th>
@@ -404,7 +384,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       <td>{product.product_name ?? "-"}</td>
                       <td>{product.option_name ?? "-"}</td>
                       <td>{product.review_type ?? "-"}</td>
-                      <td>{getProductReviewFeeSummary(product)}</td>
+                      <td>{product.description ?? "-"}</td>
                       <td>{product.manager_id ?? "-"}</td>
                       <td>{product.created_at ? new Date(product.created_at).toLocaleDateString("ko-KR") : "-"}</td>
                       <td className="review-receive-actions-cell">
@@ -486,7 +466,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                   <div className="review-receive-review-batch-grid review-receive-create-product-grid">
                     <div className="detail-summary-item review-receive-create-product-field is-full-width">
                       <label className="detail-summary-label" htmlFor="review-receive-product-title">
-                        상품 제목
+                        상품 제목 <span className="required-indicator" aria-hidden="true">*</span>
                       </label>
                       <input
                         id="review-receive-product-title"
@@ -528,7 +508,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                     </div>
                     <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-product-name">
-                        품명
+                        품명 <span className="required-indicator" aria-hidden="true">*</span>
                       </label>
                       <input
                         id="review-receive-product-name"
