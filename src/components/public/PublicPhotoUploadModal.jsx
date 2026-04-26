@@ -22,12 +22,16 @@ export default function PublicPhotoUploadModal({
   onResetDraft,
   onSaveDraft
 }) {
+  const hasExistingSubmission = (editorState?.existingPhotos?.length ?? 0) > 0;
+  const submitActionLabel = hasExistingSubmission ? "사진 재제출" : "사진 제출";
+  const submitButtonLabel = hasExistingSubmission ? "재제출하기" : "제출하기";
+
   const saveDraftEnterConfirm = useModalEnterConfirm({
     isOpen: Boolean(editorState?.isOpen),
     isDisabled:
       Boolean(editorState?.isLocked) || Boolean(editorState?.isSaving) || (editorState?.newPhotos?.length ?? 0) === 0,
-    actionLabel: "사진 재제출",
-    confirmButtonLabel: "재제출하기",
+    actionLabel: submitActionLabel,
+    confirmButtonLabel: submitButtonLabel,
     onConfirm: onSaveDraft
   });
   const dragDepthRef = useRef(0);
@@ -114,7 +118,6 @@ export default function PublicPhotoUploadModal({
     row,
     rowNumber,
     isLocked,
-    existingPhotos,
     newPhotos,
     feedbackMessage,
     isSaving
@@ -189,11 +192,17 @@ export default function PublicPhotoUploadModal({
 
         <div className="review-receive-modal-body public-photo-modal-body">
           <div className={`public-photo-modal-note${isLocked ? " is-locked" : ""}`}>
-            <strong>{isLocked ? "사진 수정이 잠겼습니다." : "새 사진으로 재제출하면 기존 사진은 모두 교체됩니다."}</strong>
+            <strong>
+              {isLocked
+                ? "사진 수정이 잠겼습니다."
+                : hasExistingSubmission
+                  ? "새 사진으로 재제출하면 기존 사진은 모두 교체됩니다."
+                  : "사진을 제출하면 바로 반영됩니다."}
+            </strong>
             <p>
               {isLocked
                 ? "관리자가 리뷰완료 처리한 행은 더 이상 수정할 수 없습니다."
-                : "파일 선택, 드래그앤드롭, Ctrl+V 붙여넣기로 새 사진을 넣은 뒤 재제출할 수 있습니다."}
+                : `파일 선택, 드래그앤드롭, Ctrl+V 붙여넣기로 새 사진을 넣은 뒤 ${submitButtonLabel.replace("하기", "")}할 수 있습니다.`}
             </p>
           </div>
 
@@ -209,10 +218,14 @@ export default function PublicPhotoUploadModal({
                   event.target.value = "";
                 }}
               />
-              새 사진 선택하기
+              {hasExistingSubmission ? "새 사진 선택하기" : "사진 선택하기"}
             </label>
             <span className="public-photo-upload-summary">
-              {canSubmitReplacement ? `재제출 예정 ${totalAfterSave}장` : "새 사진을 추가하면 기존 사진이 교체됩니다."}
+              {canSubmitReplacement
+                ? `${submitButtonLabel.replace("하기", "")} 예정 ${totalAfterSave}장`
+                : hasExistingSubmission
+                  ? "새 사진을 추가하면 기존 사진이 교체됩니다."
+                  : "제출할 사진을 추가해주세요."}
             </span>
           </div>
 
@@ -226,7 +239,11 @@ export default function PublicPhotoUploadModal({
               aria-hidden={isDropDisabled}
             >
               <strong>사진을 여기로 끌어다 놓거나 Ctrl+V로 붙여넣을 수 있습니다.</strong>
-              <p>{isDropDisabled ? "현재는 드래그 업로드를 사용할 수 없습니다." : "데스크톱에서 여러 이미지를 한 번에 넣어 재제출할 수 있습니다."}</p>
+              <p>
+                {isDropDisabled
+                  ? "현재는 드래그 업로드를 사용할 수 없습니다."
+                  : `데스크톱에서 여러 이미지를 한 번에 넣어 ${submitButtonLabel.replace("하기", "")}할 수 있습니다.`}
+              </p>
             </div>
           )}
 
@@ -234,37 +251,17 @@ export default function PublicPhotoUploadModal({
 
           <div className="public-photo-modal-section">
             <div className="public-photo-modal-section-header">
-              <h3>현재 제출된 사진</h3>
-              <p>재제출을 완료하면 아래 사진은 모두 새 사진으로 교체됩니다.</p>
-            </div>
-            <div className="public-photo-grid">
-              {existingPhotos.length === 0 ? (
-                <div className="public-photo-empty-card">
-                  <p>기존에 저장된 사진이 없습니다.</p>
-                </div>
-              ) : (
-                existingPhotos.map((photo, index) => (
-                  <div key={photo.id} className="public-photo-card">
-                    <img src={photo.url} alt={`기존 사진 ${index + 1}`} className="public-photo-card-image" />
-                    <div className="public-photo-card-body">
-                      <strong>{`기존 사진 ${index + 1}`}</strong>
-                      <p>재제출 전 현재 저장된 사진</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="public-photo-modal-section">
-            <div className="public-photo-modal-section-header">
-              <h3>재제출할 새 사진</h3>
-              <p>여기에 있는 사진들로 기존 사진 전체가 교체됩니다.</p>
+              <h3>{hasExistingSubmission ? "재제출할 새 사진" : "제출할 사진"}</h3>
+              <p>
+                {hasExistingSubmission
+                  ? "여기에 있는 사진들로 기존 사진 전체가 교체됩니다."
+                  : "여기에 있는 사진들이 새로 제출됩니다."}
+              </p>
             </div>
             <div className="public-photo-grid">
               {newPhotos.length === 0 ? (
                 <div className="public-photo-empty-card">
-                  <p>아직 재제출할 새 사진이 없습니다.</p>
+                  <p>{hasExistingSubmission ? "아직 재제출할 새 사진이 없습니다." : "아직 제출할 사진이 없습니다."}</p>
                 </div>
               ) : (
                 newPhotos.map((photo, index) => (
@@ -302,7 +299,7 @@ export default function PublicPhotoUploadModal({
             onClick={onSaveDraft}
             disabled={isLocked || isSaving || !canSubmitReplacement}
           >
-            {isSaving ? "업로드 중..." : "재제출하기"}
+            {isSaving ? "업로드 중..." : submitButtonLabel}
           </button>
         </div>
 
