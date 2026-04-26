@@ -15,6 +15,7 @@ import {
 } from "../../services/reviewReceive";
 import {
   filterReviewReceiveRows,
+  formatPurchaseBuyerClipboardText,
   formatReviewReceiveAccount,
   parseReviewReceiveAccount
 } from "../../utils/reviewReceiveTable";
@@ -937,9 +938,7 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    const text = filteredPurchaseCompletedRows
-      .map((row) => `${rowNumberMap[row.id] ?? "-"} ${row.assign_name ?? ""}`.trim())
-      .join("\n");
+    const text = formatPurchaseBuyerClipboardText(filteredPurchaseCompletedRows, rowNumberMap);
 
     try {
       await navigator.clipboard.writeText(text);

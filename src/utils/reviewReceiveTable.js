@@ -56,3 +56,33 @@ export function filterReviewReceiveRows(rows, query, plannedDepositorName) {
     buildReviewReceiveSearchText(row, plannedDepositorName).includes(normalizedQuery)
   );
 }
+
+export function formatPurchaseBuyerClipboardText(rows, rowNumberMap) {
+  const nameCounts = rows.reduce((acc, row) => {
+    const assignName = String(row.assign_name ?? "").trim();
+
+    if (!assignName) {
+      return acc;
+    }
+
+    acc[assignName] = (acc[assignName] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const duplicateNameIndexes = {};
+
+  return rows
+    .map((row) => {
+      const rowNumber = rowNumberMap[row.id] ?? "-";
+      const assignName = String(row.assign_name ?? "").trim();
+      const columns = [String(rowNumber), assignName];
+
+      if (assignName && nameCounts[assignName] > 1) {
+        duplicateNameIndexes[assignName] = (duplicateNameIndexes[assignName] ?? 0) + 1;
+        columns.push(String(duplicateNameIndexes[assignName]));
+      }
+
+      return columns.join("\t").trimEnd();
+    })
+    .join("\n");
+}
