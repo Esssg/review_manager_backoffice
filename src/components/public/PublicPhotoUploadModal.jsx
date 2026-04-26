@@ -1,3 +1,6 @@
+import AppAlertDialog from "../common/AppAlertDialog";
+import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
+
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return "0 B";
@@ -19,6 +22,14 @@ export default function PublicPhotoUploadModal({
   onResetDraft,
   onSaveDraft
 }) {
+  const saveDraftEnterConfirm = useModalEnterConfirm({
+    isOpen: Boolean(editorState?.isOpen),
+    isDisabled: Boolean(editorState?.isLocked) || Boolean(editorState?.isSaving),
+    actionLabel: "저장",
+    confirmButtonLabel: "저장하기",
+    onConfirm: onSaveDraft
+  });
+
   if (!editorState?.isOpen) {
     return null;
   }
@@ -44,6 +55,7 @@ export default function PublicPhotoUploadModal({
         aria-modal="true"
         aria-label="사진 업로드 관리"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={saveDraftEnterConfirm.handleModalKeyDown}
       >
         <div className="review-receive-modal-header">
           <div>
@@ -163,6 +175,8 @@ export default function PublicPhotoUploadModal({
             {isSaving ? "업로드 중..." : "저장하기"}
           </button>
         </div>
+
+        <AppAlertDialog {...saveDraftEnterConfirm.confirmDialogProps} />
       </div>
     </div>
   );

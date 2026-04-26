@@ -4,6 +4,7 @@ import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerM
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
+import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import {
   createReviewReceiveSubmission,
@@ -1246,6 +1247,30 @@ export default function AdminReviewReceiveDetailPage() {
 
   const { rowNumberMap, rowByNumberMap, maxRowNumber } = buildReviewReceiveRowPositionMaps(rows);
   const purchaseAssignPreview = buildPurchaseAssignPreview(purchaseAssignText, rowByNumberMap, maxRowNumber);
+  const purchaseBulkEnterConfirm = useModalEnterConfirm({
+    isOpen: isPurchaseBulkModalOpen,
+    isDisabled: isApplyingPurchaseBulk || purchaseBulkPreview.status !== "ready",
+    actionLabel: "구매정보 입력 완료",
+    confirmButtonLabel: "완료하기",
+    onConfirm: handlePurchaseBulkApply
+  });
+  const reviewBatchEnterConfirm = useModalEnterConfirm({
+    isOpen: isReviewBatchModalOpen,
+    isDisabled: isApplyingReviewBatch || filteredReviewCompletedRows.length === 0,
+    actionLabel: "리뷰완료 일괄처리",
+    confirmButtonLabel: "확인",
+    onConfirm: handleReviewBatchApply
+  });
+  const purchaseAssignEnterConfirm = useModalEnterConfirm({
+    isOpen: isPurchaseAssignModalOpen,
+    isDisabled:
+      isApplyingPurchaseAssign ||
+      Boolean(purchaseAssignPreview.errorMessage) ||
+      purchaseAssignPreview.entries.length === 0,
+    actionLabel: "구매자 일괄 입력 완료",
+    confirmButtonLabel: "완료하기",
+    onConfirm: handlePurchaseAssignApply
+  });
 
   const renderTableColumns = (sectionKey) => (
     <colgroup>
@@ -1730,6 +1755,7 @@ export default function AdminReviewReceiveDetailPage() {
             aria-modal="true"
             aria-label="구매완료 일괄입력"
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={purchaseBulkEnterConfirm.handleModalKeyDown}
           >
             <div className="review-receive-modal-header">
               <div>
@@ -1848,6 +1874,7 @@ export default function AdminReviewReceiveDetailPage() {
             aria-modal="true"
             aria-label="리뷰완료 일괄처리"
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={reviewBatchEnterConfirm.handleModalKeyDown}
           >
             <div className="review-receive-modal-header">
               <div>
@@ -1961,6 +1988,7 @@ export default function AdminReviewReceiveDetailPage() {
             aria-modal="true"
             aria-label="구매자 일괄 입력"
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={purchaseAssignEnterConfirm.handleModalKeyDown}
           >
             <div className="review-receive-modal-header">
               <div>
@@ -2143,6 +2171,18 @@ export default function AdminReviewReceiveDetailPage() {
           </div>
         </div>
       )}
+
+      <AppAlertDialog
+        {...purchaseBulkEnterConfirm.confirmDialogProps}
+      />
+
+      <AppAlertDialog
+        {...reviewBatchEnterConfirm.confirmDialogProps}
+      />
+
+      <AppAlertDialog
+        {...purchaseAssignEnterConfirm.confirmDialogProps}
+      />
 
       <AppAlertDialog
         isOpen={Boolean(deleteTargetRow)}

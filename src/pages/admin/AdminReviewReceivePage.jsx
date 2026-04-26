@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
+import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import {
   ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
   ADMIN_STORAGE_KEY,
@@ -140,7 +141,15 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const [actionProductId, setActionProductId] = useState(null);
   const [productModalErrorMessage, setProductModalErrorMessage] = useState("");
   const [productForm, setProductForm] = useState(INITIAL_PRODUCT_FORM);
+  const productFormRef = useRef(null);
   const { toast, showToast } = useAppToast();
+  const productModalEnterConfirm = useModalEnterConfirm({
+    isOpen: isProductModalOpen,
+    isDisabled: isSavingProduct,
+    actionLabel: editingProduct ? "상품 수정" : "상품 추가",
+    confirmButtonLabel: editingProduct ? "상품 수정하기" : "상품 추가하기",
+    onConfirm: () => productFormRef.current?.requestSubmit()
+  });
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -450,6 +459,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             aria-modal="true"
             aria-label={editingProduct ? "리뷰받기 상품 수정" : "리뷰받기 상품 추가"}
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={productModalEnterConfirm.handleModalKeyDown}
           >
             <div className="review-receive-modal-header">
               <div>
@@ -470,7 +480,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
               </button>
             </div>
 
-            <form onSubmit={handleProductFormSubmit}>
+            <form ref={productFormRef} onSubmit={handleProductFormSubmit}>
               <div className="review-receive-modal-body review-receive-modal-body-single">
                 <div className="review-receive-review-batch-fields">
                   <div className="review-receive-review-batch-grid review-receive-create-product-grid">
@@ -598,6 +608,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
           </div>
         </div>
       )}
+
+      <AppAlertDialog
+        {...productModalEnterConfirm.confirmDialogProps}
+      />
 
       <AppAlertDialog
         isOpen={Boolean(deleteTargetProduct)}
