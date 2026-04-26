@@ -1,4 +1,5 @@
 export default function SubmissionInput({
+  actionButtons,
   addSubmissionMessage,
   isAddSubmissionError,
   isAddingSubmission,
@@ -17,9 +18,12 @@ export default function SubmissionInput({
             "배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
           }
         />
-        <button type="button" className="admin-primary-button" onClick={onAddSubmission} disabled={isAddingSubmission}>
-          정보 추가하기
-        </button>
+        <div className="submission-input-actions">
+          <button type="button" className="admin-primary-button" onClick={onAddSubmission} disabled={isAddingSubmission}>
+            정보 추가하기
+          </button>
+          {actionButtons}
+        </div>
       </div>
       {addSubmissionMessage && (
         <p className={`submission-input-message${isAddSubmissionError ? " error" : ""}`}>{addSubmissionMessage}</p>

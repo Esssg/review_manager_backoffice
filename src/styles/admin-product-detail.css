@@ -5,6 +5,16 @@
   gap: 8px;
 }
 
+.submission-input-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.submission-inline-secondary-button {
+  white-space: nowrap;
+}
+
 .submission-input-box textarea {
   flex: 1;
   min-width: 0;
@@ -270,6 +280,10 @@
   table-layout: fixed;
 }
 
+.submission-table .col-row-number {
+  width: 8%;
+}
+
 .submission-table .col-id {
   width: 8%;
 }
@@ -284,6 +298,10 @@
 
 .submission-table .col-recipient {
   width: 14%;
+}
+
+.submission-table .col-review-fee {
+  width: 10%;
 }
 
 .submission-table .col-amount {
@@ -339,6 +357,45 @@
   accent-color: #0ea5e9;
 }
 
+.review-fee-batch-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.review-fee-batch-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-fee-batch-field span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0c4a6e;
+}
+
+.review-fee-batch-field input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.review-fee-batch-hint {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.review-fee-batch-message {
+  margin-top: 10px;
+}
+
 @media (max-width: 1080px) {
   .submission-input-box {
     width: 100%;
@@ -366,5 +423,9 @@
     height: 46px;
     font-size: 16px;
     padding: 0 12px;
+  }
+
+  .review-fee-batch-form {
+    grid-template-columns: 1fr;
   }
 }

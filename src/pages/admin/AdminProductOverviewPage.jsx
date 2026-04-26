@@ -828,7 +828,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       const entry = purchaseBulkPreview.parsedEntries[index];
       const result = await updateReviewReceiveSubmission(targetRow.submission_id, {
         product_id: targetRow.product_id,
-        assign_name: targetRow.assign_name?.trim() || null,
+        assign_name: (entry.assign_name ?? targetRow.assign_name)?.trim() || null,
         order_number: entry.order_number,
         buyer_name: entry.buyer_name,
         recipient_name: entry.recipient_name,
@@ -1376,7 +1376,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                 <p>
                   {isPurchaseBulkSelectionMode
                     ? "선택한 행 중 구매정보가 비어 있는 기존 행에만 순서대로 반영합니다."
-                    : "현재 화면에 보이는 행 중 배정명이 같고 구매정보가 비어 있는 기존 행에만 순서대로 반영합니다."}
+                    : "배정명을 따로 입력하거나 각 줄 첫 칸에 배정명을 넣을 수 있습니다. 현재 화면의 빈 행에만 순서대로 반영합니다."}
                 </p>
               </div>
               <button
@@ -1399,7 +1399,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                       setPurchaseBulkAssignName(event.target.value);
                       setPurchaseBulkMessage("");
                     }}
-                    placeholder="배정명"
+                    placeholder="배정명 (선택)"
                     aria-label="구매정보 입력 배정명"
                     disabled={isApplyingPurchaseBulk}
                   />
@@ -1412,7 +1412,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                     setPurchaseBulkMessage("");
                   }}
                   placeholder={
-                    "주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액"
+                    "배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
                   }
                   aria-label="구매정보 입력 텍스트"
                   disabled={isApplyingPurchaseBulk}
@@ -1436,7 +1436,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                           <div className="review-receive-preview-item-title">
                             <strong>{index + 1}번째 입력</strong>
                             <span>
-                              {`${formatProductLabel(targetProduct)} / 배정 ${targetRow?.assign_name ?? "-"} / 주문 ${targetRow?.order_number ?? "-"}`}
+                              {`${formatProductLabel(targetProduct)} / 배정 ${entry.assign_name || targetRow?.assign_name || "-"} / 주문 ${targetRow?.order_number ?? "-"}`}
                             </span>
                           </div>
                           <p>{`${entry.order_number} / ${entry.buyer_name} / ${entry.recipient_name}`}</p>

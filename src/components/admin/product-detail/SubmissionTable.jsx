@@ -6,24 +6,31 @@ export default function SubmissionTable({
   onOpenPhotoViewer,
   onVerifyChange
 }) {
+  const showReviewFee = activeTab === "review";
+  const columnCount = showReviewFee ? 9 : 8;
+
   return (
     <table className="submission-table">
       <colgroup>
+        <col className="col-row-number" />
         <col className="col-id" />
         <col className="col-order" />
         <col className="col-buyer" />
         <col className="col-recipient" />
+        {showReviewFee && <col className="col-review-fee" />}
         <col className="col-amount" />
         <col className="col-photo" />
         <col className="col-check" />
       </colgroup>
       <thead>
         <tr>
+          <th>순번</th>
           <th>ID</th>
           <th>주문번호</th>
           <th>구매자</th>
           <th>수령인</th>
           <th>구매계정</th>
+          {showReviewFee && <th>리뷰비</th>}
           <th>사진</th>
           <th>완료</th>
         </tr>
@@ -31,7 +38,7 @@ export default function SubmissionTable({
       <tbody>
         {rows.length === 0 ? (
           <tr>
-            <td colSpan={7}>{emptyText}</td>
+            <td colSpan={columnCount}>{emptyText}</td>
           </tr>
         ) : (
           rows.map((row) => {
@@ -40,11 +47,13 @@ export default function SubmissionTable({
 
             return (
               <tr key={row.id}>
+                <td>{row.row_number ?? "-"}</td>
                 <td>{row.id}</td>
                 <td>{row.order_number ?? "-"}</td>
                 <td>{row.buyer_name ?? "-"}</td>
                 <td>{row.recipient_name ?? "-"}</td>
                 <td>{row.purchase_account ?? "-"}</td>
+                {showReviewFee && <td>{row.review_fee ?? "-"}</td>}
                 <td>
                   <div className="photo-link-list">
                     {rowPhotos.length === 0 ? (

@@ -11,10 +11,22 @@ import {
   findSubmissionByOrderNumber,
   setProductStepEnabled,
   updateApplicationConfirmed,
+  updateSubmissionReviewFee,
   updateSubmissionVerified
 } from "../services/productDetail";
 import { sortApplicationsByConfirmedAndCreatedAt } from "../utils/applicationRows";
 import { parseSubmissionText } from "../utils/submissionParser";
+
+function parseReviewFee(value) {
+  const trimmedValue = String(value ?? "").trim();
+
+  if (!trimmedValue) {
+    return Number.NaN;
+  }
+
+  const parsedValue = Number(trimmedValue);
+  return Number.isInteger(parsedValue) && parsedValue >= 0 ? parsedValue : Number.NaN;
+}
 
 export function useAdminProductDetail({ adminId, productId }) {
   const [activeTab, setActiveTab] = useState("applications");
@@ -308,12 +320,81 @@ export function useAdminProductDetail({ adminId, productId }) {
     }));
   };
 
+  const handleReviewFeeBatchApply = async ({ startRowNumber, endRowNumber, reviewFee }) => {
+    if (activeTab !== "review") {
+      throw new Error("리뷰비 일괄 입력은 리뷰 탭에서만 사용할 수 있습니다.");
+    }
+
+    const parsedReviewFee = parseReviewFee(reviewFee);
+    if (Number.isNaN(parsedReviewFee)) {
+      throw new Error("리뷰비는 0 이상의 숫자로 입력해주세요.");
+    }
+
+    const start = Number(startRowNumber);
+    const end = Number(endRowNumber);
+    const maxRowNumber = rows.length;
+
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < 1) {
+      throw new Error("순번은 1 이상의 정수로 입력해주세요.");
+    }
+
+    if (start > end) {
+      throw new Error("시작 순번은 끝 순번보다 클 수 없습니다.");
+    }
+
+    if (maxRowNumber === 0) {
+      throw new Error("리뷰비를 입력할 제출 항목이 없습니다.");
+    }
+
+    if (end > maxRowNumber) {
+      throw new Error(`순번 범위는 1부터 ${maxRowNumber}까지 입력해주세요.`);
+    }
+
+    const targetRows = rows.slice(start - 1, end);
+    const savedRows = [];
+
+    for (let index = 0; index < targetRows.length; index += 1) {
+      const targetRow = targetRows[index];
+      const result = await updateSubmissionReviewFee(targetRow.id, parsedReviewFee);
+
+      if (result.error) {
+        if (savedRows.length > 0) {
+          setRows((prev) =>
+            prev.map((row) => savedRows.find((savedRow) => savedRow.id === row.id) ?? row)
+          );
+        }
+
+        throw new Error(
+          `${start + index}번 저장 중 오류가 발생했습니다. ${savedRows.length}건만 반영되었습니다.`
+        );
+      }
+
+      savedRows.push({
+        ...targetRow,
+        ...result.data,
+        review_fee: result.data?.review_fee ?? parsedReviewFee
+      });
+    }
+
+    setRows((prev) => prev.map((row) => savedRows.find((savedRow) => savedRow.id === row.id) ?? row));
+
+    return {
+      updatedCount: savedRows.length,
+      startRowNumber: start,
+      endRowNumber: end
+    };
+  };
+
   const isPurchaseOrReviewTab = activeTab === "purchase" || activeTab === "review";
+  const rowsWithNumbers = rows.map((row, index) => ({
+    ...row,
+    row_number: index + 1
+  }));
   const verifiedRows = isPurchaseOrReviewTab
-    ? rows.filter((row) => (activeTab === "purchase" ? row.is_purchase_verified : row.is_review_verified))
+    ? rowsWithNumbers.filter((row) => (activeTab === "purchase" ? row.is_purchase_verified : row.is_review_verified))
     : [];
   const unverifiedRows = isPurchaseOrReviewTab
-    ? rows.filter((row) => !(activeTab === "purchase" ? row.is_purchase_verified : row.is_review_verified))
+    ? rowsWithNumbers.filter((row) => !(activeTab === "purchase" ? row.is_purchase_verified : row.is_review_verified))
     : [];
 
   return {
@@ -337,6 +418,7 @@ export function useAdminProductDetail({ adminId, productId }) {
     handleAddSubmission,
     handleApplicationConfirmChange,
     handleDeleteSubmission,
+    handleReviewFeeBatchApply,
     handleStepEnabledChange,
     handleSubmissionVerifyChange,
     openPhotoViewer,

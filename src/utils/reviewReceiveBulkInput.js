@@ -198,7 +198,8 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
   };
 }
 
-export function parsePurchaseBulkInput(rawText) {
+export function parsePurchaseBulkInput(rawText, options = {}) {
+  const { allowAssignName = false } = options;
   const lines = normalizeLines(rawText);
 
   if (lines.length === 0) {
@@ -209,7 +210,7 @@ export function parsePurchaseBulkInput(rawText) {
     const entry = parsePurchaseLineParts(
       line.split("/").map((part) => part.trim()),
       index + 1,
-      { allowAssignName: false, allowPartial: false }
+      { allowAssignName, allowPartial: false }
     );
 
     return {
@@ -266,23 +267,22 @@ export function buildPurchaseBulkPreview(assignName, rawText, rows, options = {}
   const { allowCreateNewRows = true } = options;
   const trimmedAssignName = String(assignName ?? "").trim();
 
-  if (!trimmedAssignName) {
-    return {
-      status: "idle",
-      message: "배정명을 입력하면 입력 가능한 빈 행을 찾습니다.",
-      parsedEntries: [],
-      targetRows: [],
-      create_new_rows: false
-    };
-  }
-
-  const matchedRows = rows.filter(
-    (row) => !row.isNew && String(row.assign_name ?? "").trim() === trimmedAssignName
-  );
-
-  const availableRows = matchedRows.filter(isPurchaseBulkTargetRow);
-
   if (!String(rawText ?? "").trim()) {
+    if (!trimmedAssignName) {
+      return {
+        status: "idle",
+        message: "배정명을 입력하거나 각 줄 첫 칸에 배정명을 포함하면 입력 가능한 빈 행을 찾습니다.",
+        parsedEntries: [],
+        targetRows: [],
+        create_new_rows: false
+      };
+    }
+
+    const matchedRows = rows.filter(
+      (row) => !row.isNew && String(row.assign_name ?? "").trim() === trimmedAssignName
+    );
+    const availableRows = matchedRows.filter(isPurchaseBulkTargetRow);
+
     if (matchedRows.length === 0) {
       return {
         status: "idle",
@@ -307,7 +307,7 @@ export function buildPurchaseBulkPreview(assignName, rawText, rows, options = {}
   let parsedEntries;
 
   try {
-    parsedEntries = parsePurchaseBulkInput(rawText);
+    parsedEntries = parsePurchaseBulkInput(rawText, { allowAssignName: true });
   } catch (error) {
     return {
       status: "error",
@@ -318,33 +318,85 @@ export function buildPurchaseBulkPreview(assignName, rawText, rows, options = {}
     };
   }
 
-  if (matchedRows.length === 0) {
-    return {
-      status: allowCreateNewRows ? "ready" : "error",
-      message: allowCreateNewRows
-        ? `"${trimmedAssignName}" 배정자가 없어 새 행 ${parsedEntries.length}건이 추가됩니다.`
-        : `현재 화면에서 "${trimmedAssignName}" 배정자를 찾지 못했습니다.`,
-      parsedEntries,
-      targetRows: [],
-      create_new_rows: allowCreateNewRows
-    };
-  }
+  const normalizedEntries = parsedEntries.map((entry) => ({
+    ...entry,
+    assign_name: String(entry.assign_name ?? "").trim() || trimmedAssignName
+  }));
+  const entriesWithoutAssign = normalizedEntries.filter((entry) => !entry.assign_name);
 
-  if (availableRows.length < parsedEntries.length) {
+  if (entriesWithoutAssign.length > 0) {
     return {
       status: "error",
-      message: `${trimmedAssignName} 배정자(빈 행): ${availableRows.length}명, 입력된 갯수: ${parsedEntries.length}개`,
-      parsedEntries,
-      targetRows: availableRows,
+      message: "배정명을 입력하거나 각 줄 첫 칸에 배정명을 포함해주세요.",
+      parsedEntries: normalizedEntries,
+      targetRows: [],
       create_new_rows: false
     };
   }
 
+  const availableRowsByAssignName = rows.reduce((acc, row) => {
+    if (row.isNew || !isPurchaseBulkTargetRow(row)) {
+      return acc;
+    }
+
+    const key = String(row.assign_name ?? "").trim();
+    if (!key) {
+      return acc;
+    }
+
+    if (!acc[key]) {
+      acc[key] = [];
+    }
+
+    acc[key].push(row);
+    return acc;
+  }, {});
+
+  const targetRows = normalizedEntries.map((entry) => {
+    const key = entry.assign_name;
+    const candidates = availableRowsByAssignName[key] ?? [];
+    return candidates.shift() ?? null;
+  });
+
+  const missingEntries = normalizedEntries.filter((_, index) => !targetRows[index]);
+  const createNewCount = missingEntries.length;
+
+  if (createNewCount > 0 && !allowCreateNewRows) {
+    const missingAssignNames = Array.from(new Set(missingEntries.map((entry) => entry.assign_name))).join(", ");
+    return {
+      status: "error",
+      message: `입력 가능한 빈 행이 없는 배정자: ${missingAssignNames}`,
+      parsedEntries: normalizedEntries,
+      targetRows,
+      create_new_rows: false
+    };
+  }
+
+  if (createNewCount > 0) {
+    const matchedCount = normalizedEntries.length - createNewCount;
+    const message =
+      matchedCount > 0
+        ? `기존 빈 행 ${matchedCount}건에 입력되고 새 행 ${createNewCount}건이 추가됩니다.`
+        : `새 행 ${createNewCount}건이 추가됩니다.`;
+
+    return {
+      status: "ready",
+      message,
+      parsedEntries: normalizedEntries,
+      targetRows,
+      create_new_rows: true
+    };
+  }
+
+  const uniqueAssignNames = Array.from(new Set(normalizedEntries.map((entry) => entry.assign_name)));
+  const summaryLabel =
+    uniqueAssignNames.length === 1 ? `${uniqueAssignNames[0]} 배정자` : `배정자 ${uniqueAssignNames.length}명`;
+
   return {
     status: "ready",
-    message: `${trimmedAssignName} 배정자 중 빈 행 ${parsedEntries.length}건에 입력됩니다.`,
-    parsedEntries,
-    targetRows: availableRows.slice(0, parsedEntries.length),
+    message: `${summaryLabel}의 빈 행 ${normalizedEntries.length}건에 입력됩니다.`,
+    parsedEntries: normalizedEntries,
+    targetRows,
     create_new_rows: false
   };
 }
@@ -376,7 +428,7 @@ export function buildSelectedPurchaseBulkPreview(rawText, rows) {
   let parsedEntries;
 
   try {
-    parsedEntries = parsePurchaseBulkInput(rawText);
+    parsedEntries = parsePurchaseBulkInput(rawText, { allowAssignName: true });
   } catch (error) {
     return {
       status: "error",

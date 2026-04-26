@@ -937,7 +937,7 @@ export default function AdminReviewReceiveDetailPage() {
 
       const payload = {
         product_id: Number(productId),
-        assign_name: (row?.assign_name ?? purchaseBulkAssignName)?.trim() || null,
+        assign_name: (entry.assign_name ?? row?.assign_name ?? purchaseBulkAssignName)?.trim() || null,
         order_number: entry.order_number,
         buyer_name: entry.buyer_name,
         recipient_name: entry.recipient_name,
@@ -1759,7 +1759,7 @@ export default function AdminReviewReceiveDetailPage() {
             <div className="review-receive-modal-header">
               <div>
                 <h2>구매정보 입력하기</h2>
-                <p>배정명이 같은 빈 행에만 순서대로 입력됩니다. 값이 있는 행은 자동으로 건너뜁니다.</p>
+                <p>배정명을 따로 입력하거나 각 줄 첫 칸에 배정명을 넣을 수 있습니다. 값이 있는 행은 자동으로 건너뜁니다.</p>
               </div>
               <button
                 type="button"
@@ -1780,7 +1780,7 @@ export default function AdminReviewReceiveDetailPage() {
                     setPurchaseBulkAssignName(event.target.value);
                     setPurchaseBulkMessage("");
                   }}
-                  placeholder="배정명"
+                  placeholder="배정명 (선택)"
                   aria-label="구매완료 배정명"
                   disabled={isApplyingPurchaseBulk}
                 />
@@ -1792,7 +1792,7 @@ export default function AdminReviewReceiveDetailPage() {
                     setPurchaseBulkMessage("");
                   }}
                   placeholder={
-                    "주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액"
+                    "배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
                   }
                   aria-label="구매완료 일괄입력 텍스트"
                   disabled={isApplyingPurchaseBulk}
@@ -1816,9 +1816,9 @@ export default function AdminReviewReceiveDetailPage() {
                           <div className="review-receive-preview-item-title">
                             <strong>{index + 1}번째 입력</strong>
                             <span>
-                              {purchaseBulkPreview.create_new_rows
-                                ? `새 행 추가 / 배정 ${purchaseBulkAssignName || "-"}`
-                                : `순번 ${rowIndex} / 배정 ${targetRow?.assign_name ?? "-"}`}
+                              {targetRow
+                                ? `순번 ${rowIndex} / 배정 ${targetRow.assign_name ?? entry.assign_name ?? "-"}`
+                                : `새 행 추가 / 배정 ${entry.assign_name || purchaseBulkAssignName || "-"}`}
                             </span>
                           </div>
                           <p>{`${entry.order_number} / ${entry.buyer_name} / ${entry.recipient_name}`}</p>
