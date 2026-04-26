@@ -352,13 +352,13 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             <table>
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>담당자</th>
+                  <th>상품 제목</th>
                   <th>업체명</th>
                   <th>품명</th>
                   <th>옵션</th>
                   <th>리뷰형태</th>
                   <th>설명</th>
-                  <th>담당자</th>
                   <th>생성일</th>
                   <th className="review-receive-actions-column">관리</th>
                 </tr>
@@ -366,7 +366,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
               <tbody>
                 {filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={10}>
                       {products.length === 0
                         ? "등록된 리뷰받기 상품이 없습니다."
                         : "선택한 보기 조건에 맞는 리뷰받기 상품이 없습니다."}
@@ -379,13 +379,13 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       className="clickable-row"
                       onClick={() => navigate(`/admin/review-receive/specific/${product.id}`)}
                     >
-                      <td>{product.id}</td>
+                      <td>{product.manager_id ?? "-"}</td>
+                      <td>{product.title ?? "-"}</td>
                       <td>{product.company_name ?? "-"}</td>
                       <td>{product.product_name ?? "-"}</td>
                       <td>{product.option_name ?? "-"}</td>
                       <td>{product.review_type ?? "-"}</td>
                       <td>{product.description ?? "-"}</td>
-                      <td>{product.manager_id ?? "-"}</td>
                       <td>{product.created_at ? new Date(product.created_at).toLocaleDateString("ko-KR") : "-"}</td>
                       <td className="review-receive-actions-cell">
                         <div className="review-receive-row-actions">
