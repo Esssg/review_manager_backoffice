@@ -236,6 +236,12 @@ export default function AdminReviewReceiveDetailPage() {
   const [reviewBatchMessage, setReviewBatchMessage] = useState("");
   const [reviewBatchMessageType, setReviewBatchMessageType] = useState("info");
   const [isApplyingReviewBatch, setIsApplyingReviewBatch] = useState(false);
+  const [isReviewFeeBatchDialogOpen, setIsReviewFeeBatchDialogOpen] = useState(false);
+  const [reviewFeeBatchStartRow, setReviewFeeBatchStartRow] = useState("");
+  const [reviewFeeBatchEndRow, setReviewFeeBatchEndRow] = useState("");
+  const [reviewFeeBatchValue, setReviewFeeBatchValue] = useState("");
+  const [reviewFeeBatchMessage, setReviewFeeBatchMessage] = useState("");
+  const [isApplyingReviewFeeBatch, setIsApplyingReviewFeeBatch] = useState(false);
   const [reviewBatchConfirmDialog, setReviewBatchConfirmDialog] = useState({
     isOpen: false,
     missingLabels: []
@@ -550,6 +556,23 @@ export default function AdminReviewReceiveDetailPage() {
   const setReviewBatchFeedback = (message, type = "info") => {
     setReviewBatchMessage(message);
     setReviewBatchMessageType(type);
+  };
+
+  const openReviewFeeBatchDialog = () => {
+    setReviewFeeBatchStartRow("");
+    setReviewFeeBatchEndRow("");
+    setReviewFeeBatchValue("");
+    setReviewFeeBatchMessage("");
+    setIsReviewFeeBatchDialogOpen(true);
+  };
+
+  const closeReviewFeeBatchDialog = () => {
+    if (isApplyingReviewFeeBatch) {
+      return;
+    }
+
+    setIsReviewFeeBatchDialogOpen(false);
+    setReviewFeeBatchMessage("");
   };
 
   const openRowEditor = (rowId) => {
@@ -1271,6 +1294,78 @@ export default function AdminReviewReceiveDetailPage() {
     onConfirm: handlePurchaseAssignApply
   });
 
+  const handleReviewFeeBatchApply = async () => {
+    const start = Number(reviewFeeBatchStartRow);
+    const end = Number(reviewFeeBatchEndRow);
+    const parsedReviewFee = parseReviewFee(reviewFeeBatchValue);
+
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < 1) {
+      setReviewFeeBatchMessage("순번은 1 이상의 정수로 입력해주세요.");
+      return;
+    }
+
+    if (start > end) {
+      setReviewFeeBatchMessage("시작 순번은 끝 순번보다 클 수 없습니다.");
+      return;
+    }
+
+    if (parsedReviewFee == null || Number.isNaN(parsedReviewFee)) {
+      setReviewFeeBatchMessage("리뷰비는 0 이상의 숫자로 입력해주세요.");
+      return;
+    }
+
+    const targetRows = filteredPurchaseCompletedRows.filter((row) => {
+      const rowNumber = rowNumberMap[row.id];
+      return !row.isNew && Number.isInteger(rowNumber) && rowNumber >= start && rowNumber <= end;
+    });
+
+    if (targetRows.length === 0) {
+      setReviewFeeBatchMessage("지정한 순번 범위에 저장된 구매완료 행이 없습니다.");
+      return;
+    }
+
+    setIsApplyingReviewFeeBatch(true);
+    setReviewFeeBatchMessage("");
+
+    const updatedRows = [];
+
+    for (let index = 0; index < targetRows.length; index += 1) {
+      const row = targetRows[index];
+      const result = await updateReviewReceiveSubmission(row.id, {
+        review_fee: parsedReviewFee
+      });
+
+      if (result.error) {
+        if (updatedRows.length > 0) {
+          const updatedMap = new Map(updatedRows.map((item) => [item.id, item]));
+          setRows((prev) => prev.map((item) => updatedMap.get(item.id) ?? item));
+        }
+
+        setReviewFeeBatchMessage(
+          `${rowNumberMap[row.id] ?? start + index}번 저장 중 오류가 발생했습니다. ${updatedRows.length}건만 반영되었습니다.`
+        );
+        setIsApplyingReviewFeeBatch(false);
+        return;
+      }
+
+      updatedRows.push({
+        ...row,
+        ...result.data,
+        review_fee: result.data?.review_fee ?? parsedReviewFee,
+        reviewFeeInput: String(result.data?.review_fee ?? parsedReviewFee)
+      });
+    }
+
+    if (updatedRows.length > 0) {
+      const updatedMap = new Map(updatedRows.map((item) => [item.id, item]));
+      setRows((prev) => prev.map((item) => updatedMap.get(item.id) ?? item));
+    }
+
+    setIsApplyingReviewFeeBatch(false);
+    setIsReviewFeeBatchDialogOpen(false);
+    showToast(`리뷰비 ${updatedRows.length}건을 일괄 입력했습니다.`, "success");
+  };
+
   const renderTableColumns = (sectionKey) => (
     <colgroup>
       <col className="review-col-index" />
@@ -1325,6 +1420,14 @@ export default function AdminReviewReceiveDetailPage() {
                 </button>
                 <button type="button" className="admin-secondary-button" onClick={openPurchaseAssignModal}>
                   구매자 일괄 입력
+                </button>
+                <button
+                  type="button"
+                  className="admin-secondary-button"
+                  onClick={openReviewFeeBatchDialog}
+                  disabled={filteredPurchaseCompletedRows.length === 0}
+                >
+                  리뷰비 일괄 입력하기
                 </button>
                 <button type="button" className="admin-primary-button" onClick={openPurchaseBulkModal}>
                   구매정보 입력하기
@@ -2182,6 +2285,60 @@ export default function AdminReviewReceiveDetailPage() {
       <AppAlertDialog
         {...purchaseAssignEnterConfirm.confirmDialogProps}
       />
+
+      <AppAlertDialog
+        isOpen={isReviewFeeBatchDialogOpen}
+        badgeLabel="리뷰비 일괄 입력"
+        title="구매완료 순번 범위에 리뷰비를 입력할까요?"
+        description="현재 구매완료 표에 보이는 순번 기준으로 시작/끝 범위를 지정합니다."
+        cancelLabel="취소"
+        confirmLabel="입력하기"
+        busyConfirmLabel="입력 중..."
+        isBusy={isApplyingReviewFeeBatch}
+        onCancel={closeReviewFeeBatchDialog}
+        onConfirm={handleReviewFeeBatchApply}
+        ariaLabel="리뷰비 일괄 입력"
+      >
+        <div className="review-fee-batch-form">
+          <label className="review-fee-batch-field">
+            <span>시작 순번</span>
+            <input
+              type="number"
+              min="1"
+              value={reviewFeeBatchStartRow}
+              onChange={(event) => setReviewFeeBatchStartRow(event.target.value)}
+              placeholder="예: 3"
+              disabled={isApplyingReviewFeeBatch}
+            />
+          </label>
+          <label className="review-fee-batch-field">
+            <span>끝 순번</span>
+            <input
+              type="number"
+              min="1"
+              value={reviewFeeBatchEndRow}
+              onChange={(event) => setReviewFeeBatchEndRow(event.target.value)}
+              placeholder="예: 7"
+              disabled={isApplyingReviewFeeBatch}
+            />
+          </label>
+          <label className="review-fee-batch-field">
+            <span>리뷰비</span>
+            <input
+              type="number"
+              min="0"
+              value={reviewFeeBatchValue}
+              onChange={(event) => setReviewFeeBatchValue(event.target.value)}
+              placeholder="예: 1000"
+              disabled={isApplyingReviewFeeBatch}
+            />
+          </label>
+        </div>
+        <p className="review-fee-batch-hint">
+          예: `3`부터 `7`까지 지정하면 구매완료 표에서 순번 3~7인 저장된 행의 리뷰비를 같은 값으로 바꿉니다.
+        </p>
+        {reviewFeeBatchMessage && <p className="review-fee-batch-message">{reviewFeeBatchMessage}</p>}
+      </AppAlertDialog>
 
       <AppAlertDialog
         isOpen={Boolean(deleteTargetRow)}

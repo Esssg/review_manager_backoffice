@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabase";
 
 const PRODUCT_META_SELECT = "id,title,product_name,description,manager_id";
 const SUBMISSION_LIST_SELECT =
-  "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,review_fee,is_purchase_verified,is_review_verified,created_at";
+  "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,is_purchase_verified,is_review_verified,created_at";
 
 export async function fetchProductMeta(productId, adminId) {
   const [productResult, stepsResult] = await Promise.all([
@@ -96,15 +96,6 @@ export async function updateSubmissionVerified(submissionId, targetColumn, check
     .from("submissions")
     .update({ [targetColumn]: checked })
     .eq("id", submissionId);
-}
-
-export async function updateSubmissionReviewFee(submissionId, reviewFee) {
-  return supabase
-    .from("submissions")
-    .update({ review_fee: reviewFee })
-    .eq("id", submissionId)
-    .select(SUBMISSION_LIST_SELECT)
-    .single();
 }
 
 export async function deleteEvidenceRowsIfExists(tableName, submissionId) {
