@@ -16,7 +16,7 @@ import {
   splitReviewReceiveRows
 } from "../../utils/reviewReceiveRows";
 
-const DEFAULT_LOOKUP_TYPE = "assign_name";
+const DEFAULT_LOOKUP_TYPE = "account_holder";
 const PUBLIC_LOOKUP_OPTIONS = [
   { value: "assign_name", label: "배정명" },
   { value: "account_holder", label: "계좌주명" }
@@ -72,14 +72,17 @@ function buildRowNumberMap(rows) {
 }
 
 function hasPhotoDraftChanges(draft) {
-  return Boolean((draft?.removedExistingUrls?.length ?? 0) > 0 || (draft?.newPhotos?.length ?? 0) > 0);
+  return Boolean((draft?.newPhotos?.length ?? 0) > 0);
 }
 
 function buildRowPhotos(serverPhotos, draft) {
-  const removedSet = new Set(draft?.removedExistingUrls ?? []);
-  const keptExisting = serverPhotos.filter((url) => !removedSet.has(url));
   const newPreviewUrls = (draft?.newPhotos ?? []).map((photo) => photo.previewUrl);
-  return [...keptExisting, ...newPreviewUrls];
+
+  if (newPreviewUrls.length > 0) {
+    return newPreviewUrls;
+  }
+
+  return serverPhotos;
 }
 
 function buildRenderableRow(item, serverPhotos, draft) {
@@ -118,8 +121,6 @@ function cleanupUnsavedEditorPhotos(editorState, savedDraft) {
 }
 
 function buildPhotoEditorState(row, rowNumber, draft) {
-  const removedSet = new Set(draft?.removedExistingUrls ?? []);
-
   return {
     isOpen: true,
     row,
@@ -128,8 +129,7 @@ function buildPhotoEditorState(row, rowNumber, draft) {
     isSaving: false,
     existingPhotos: (row.serverPhotos ?? []).map((url, index) => ({
       id: `${index}-${url}`,
-      url,
-      isRemoved: removedSet.has(url)
+      url
     })),
     newPhotos: draft?.newPhotos ?? [],
     feedbackMessage: ""
@@ -138,7 +138,6 @@ function buildPhotoEditorState(row, rowNumber, draft) {
 
 function buildSavedPhotoDraft(editorState) {
   return {
-    removedExistingUrls: editorState.existingPhotos.filter((photo) => photo.isRemoved).map((photo) => photo.url),
     newPhotos: editorState.newPhotos
   };
 }
@@ -469,16 +468,6 @@ export default function PublicReviewReceiveDetailPage() {
     }));
   };
 
-  const handleToggleExistingPhoto = (photoId) => {
-    setPhotoEditor((prev) => ({
-      ...prev,
-      existingPhotos: prev.existingPhotos.map((photo) =>
-        photo.id === photoId ? { ...photo, isRemoved: !photo.isRemoved } : photo
-      ),
-      feedbackMessage: ""
-    }));
-  };
-
   const handleRemoveNewPhoto = (photoId) => {
     setPhotoEditor((prev) => {
       const target = prev.newPhotos.find((photo) => photo.id === photoId);
@@ -510,8 +499,7 @@ export default function PublicReviewReceiveDetailPage() {
         ...prev,
         existingPhotos: (prev.row.serverPhotos ?? []).map((url, index) => ({
           id: `${index}-${url}`,
-          url,
-          isRemoved: false
+          url
         })),
         newPhotos: [],
         feedbackMessage: "현재 편집 중인 사진 변경 초안을 초기화했습니다."
@@ -525,6 +513,14 @@ export default function PublicReviewReceiveDetailPage() {
     }
 
     const nextDraft = buildSavedPhotoDraft(photoEditor);
+    if (nextDraft.newPhotos.length === 0) {
+      setPhotoEditor((prev) => ({
+        ...prev,
+        feedbackMessage: "재제출할 새 사진을 먼저 추가해주세요."
+      }));
+      return;
+    }
+
     const rowIdKey = String(photoEditor.row.id);
     const hasChanges = hasPhotoDraftChanges(nextDraft);
 
@@ -584,7 +580,7 @@ export default function PublicReviewReceiveDetailPage() {
           productId: Number(productId),
           submissionId: Number(photoEditor.row.id),
           assignName: photoEditor.row.assign_name,
-          removedImageUrls: nextDraft.removedExistingUrls,
+          removedImageUrls: photoEditor.row.serverPhotos ?? [],
           uploadedFiles
         });
 
@@ -795,7 +791,6 @@ export default function PublicReviewReceiveDetailPage() {
           editorState={photoEditor}
           onClose={closePhotoManager}
           onFilesSelected={handlePhotoFilesSelected}
-          onToggleExistingPhoto={handleToggleExistingPhoto}
           onRemoveNewPhoto={handleRemoveNewPhoto}
           onResetDraft={handleResetPhotoDraft}
           onSaveDraft={handleSavePhotoDraft}

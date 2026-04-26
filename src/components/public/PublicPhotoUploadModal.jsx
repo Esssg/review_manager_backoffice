@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import AppAlertDialog from "../common/AppAlertDialog";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 
@@ -17,18 +18,93 @@ export default function PublicPhotoUploadModal({
   editorState,
   onClose,
   onFilesSelected,
-  onToggleExistingPhoto,
   onRemoveNewPhoto,
   onResetDraft,
   onSaveDraft
 }) {
   const saveDraftEnterConfirm = useModalEnterConfirm({
     isOpen: Boolean(editorState?.isOpen),
-    isDisabled: Boolean(editorState?.isLocked) || Boolean(editorState?.isSaving),
-    actionLabel: "저장",
-    confirmButtonLabel: "저장하기",
+    isDisabled:
+      Boolean(editorState?.isLocked) || Boolean(editorState?.isSaving) || (editorState?.newPhotos?.length ?? 0) === 0,
+    actionLabel: "사진 재제출",
+    confirmButtonLabel: "재제출하기",
     onConfirm: onSaveDraft
   });
+  const dragDepthRef = useRef(0);
+  const [isDesktopDragEnabled, setIsDesktopDragEnabled] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia("(min-width: 769px) and (pointer: fine)");
+    const syncDesktopDragAvailability = (event) => {
+      setIsDesktopDragEnabled(event.matches);
+    };
+
+    syncDesktopDragAvailability(mediaQuery);
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncDesktopDragAvailability);
+      return () => {
+        mediaQuery.removeEventListener("change", syncDesktopDragAvailability);
+      };
+    }
+
+    mediaQuery.addListener(syncDesktopDragAvailability);
+    return () => {
+      mediaQuery.removeListener(syncDesktopDragAvailability);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (editorState?.isOpen) {
+      return undefined;
+    }
+
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+    return undefined;
+  }, [editorState?.isOpen]);
+
+  useEffect(() => {
+    if (!editorState?.isOpen || editorState?.isLocked || editorState?.isSaving) {
+      return undefined;
+    }
+
+    const handleDocumentPaste = (event) => {
+      const clipboardItems = Array.from(event.clipboardData?.items ?? []);
+      const pastedFiles = clipboardItems
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item, index) => {
+          const file = item.getAsFile();
+
+          if (!file) {
+            return null;
+          }
+
+          const fileExtension = file.type.split("/")[1] || "png";
+          return new File([file], file.name || `pasted-image-${Date.now()}-${index}.${fileExtension}`, {
+            type: file.type
+          });
+        })
+        .filter(Boolean);
+
+      if (pastedFiles.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      onFilesSelected(pastedFiles);
+    };
+
+    document.addEventListener("paste", handleDocumentPaste);
+    return () => {
+      document.removeEventListener("paste", handleDocumentPaste);
+    };
+  }, [editorState?.isLocked, editorState?.isOpen, editorState?.isSaving, onFilesSelected]);
 
   if (!editorState?.isOpen) {
     return null;
@@ -44,8 +120,52 @@ export default function PublicPhotoUploadModal({
     isSaving
   } = editorState;
 
-  const keptExistingCount = existingPhotos.filter((photo) => !photo.isRemoved).length;
-  const totalAfterSave = keptExistingCount + newPhotos.length;
+  const totalAfterSave = newPhotos.length;
+  const isDropDisabled = !isDesktopDragEnabled || isLocked || isSaving;
+  const canSubmitReplacement = newPhotos.length > 0;
+
+  const handleDragEnter = (event) => {
+    if (isDropDisabled) {
+      return;
+    }
+
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragOver = (event) => {
+    if (isDropDisabled) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDragLeave = (event) => {
+    if (isDropDisabled) {
+      return;
+    }
+
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+
+    if (dragDepthRef.current === 0) {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDrop = (event) => {
+    if (isDropDisabled) {
+      return;
+    }
+
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+    onFilesSelected(event.dataTransfer?.files);
+  };
 
   return (
     <div className="review-receive-modal-backdrop" role="presentation" onClick={onClose}>
@@ -69,11 +189,11 @@ export default function PublicPhotoUploadModal({
 
         <div className="review-receive-modal-body public-photo-modal-body">
           <div className={`public-photo-modal-note${isLocked ? " is-locked" : ""}`}>
-            <strong>{isLocked ? "사진 수정이 잠겼습니다." : "사진 추가/삭제 후 저장하면 바로 반영됩니다."}</strong>
+            <strong>{isLocked ? "사진 수정이 잠겼습니다." : "새 사진으로 재제출하면 기존 사진은 모두 교체됩니다."}</strong>
             <p>
               {isLocked
                 ? "관리자가 리뷰완료 처리한 행은 더 이상 수정할 수 없습니다."
-                : "저장하기를 누르면 S3 업로드와 DB 저장이 함께 진행됩니다."}
+                : "파일 선택, 드래그앤드롭, Ctrl+V 붙여넣기로 새 사진을 넣은 뒤 재제출할 수 있습니다."}
             </p>
           </div>
 
@@ -89,17 +209,33 @@ export default function PublicPhotoUploadModal({
                   event.target.value = "";
                 }}
               />
-              사진 추가하기
+              새 사진 선택하기
             </label>
-            <span className="public-photo-upload-summary">{`저장 후 표시 예정 ${totalAfterSave}장`}</span>
+            <span className="public-photo-upload-summary">
+              {canSubmitReplacement ? `재제출 예정 ${totalAfterSave}장` : "새 사진을 추가하면 기존 사진이 교체됩니다."}
+            </span>
           </div>
+
+          {isDesktopDragEnabled && (
+            <div
+              className={`public-photo-dropzone${isDragActive ? " is-active" : ""}${isDropDisabled ? " is-disabled" : ""}`}
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              aria-hidden={isDropDisabled}
+            >
+              <strong>사진을 여기로 끌어다 놓거나 Ctrl+V로 붙여넣을 수 있습니다.</strong>
+              <p>{isDropDisabled ? "현재는 드래그 업로드를 사용할 수 없습니다." : "데스크톱에서 여러 이미지를 한 번에 넣어 재제출할 수 있습니다."}</p>
+            </div>
+          )}
 
           {feedbackMessage && <p className="login-message">{feedbackMessage}</p>}
 
           <div className="public-photo-modal-section">
             <div className="public-photo-modal-section-header">
-              <h3>기존 사진</h3>
-              <p>기존 DB 사진은 삭제 예정 상태로 표시할 수 있습니다.</p>
+              <h3>현재 제출된 사진</h3>
+              <p>재제출을 완료하면 아래 사진은 모두 새 사진으로 교체됩니다.</p>
             </div>
             <div className="public-photo-grid">
               {existingPhotos.length === 0 ? (
@@ -108,23 +244,12 @@ export default function PublicPhotoUploadModal({
                 </div>
               ) : (
                 existingPhotos.map((photo, index) => (
-                  <div
-                    key={photo.id}
-                    className={`public-photo-card${photo.isRemoved ? " is-removed" : ""}`}
-                  >
+                  <div key={photo.id} className="public-photo-card">
                     <img src={photo.url} alt={`기존 사진 ${index + 1}`} className="public-photo-card-image" />
                     <div className="public-photo-card-body">
                       <strong>{`기존 사진 ${index + 1}`}</strong>
-                      <p>{photo.isRemoved ? "삭제 예정" : "유지 예정"}</p>
+                      <p>재제출 전 현재 저장된 사진</p>
                     </div>
-                    <button
-                      type="button"
-                      className={photo.isRemoved ? "admin-secondary-button" : "admin-danger-button"}
-                      onClick={() => onToggleExistingPhoto(photo.id)}
-                      disabled={isLocked || isSaving}
-                    >
-                      {photo.isRemoved ? "복원" : "삭제 예정"}
-                    </button>
                   </div>
                 ))
               )}
@@ -133,13 +258,13 @@ export default function PublicPhotoUploadModal({
 
           <div className="public-photo-modal-section">
             <div className="public-photo-modal-section-header">
-              <h3>새로 추가한 사진</h3>
-              <p>브라우저에서 선택한 파일 미리보기입니다.</p>
+              <h3>재제출할 새 사진</h3>
+              <p>여기에 있는 사진들로 기존 사진 전체가 교체됩니다.</p>
             </div>
             <div className="public-photo-grid">
               {newPhotos.length === 0 ? (
                 <div className="public-photo-empty-card">
-                  <p>아직 새로 선택한 사진이 없습니다.</p>
+                  <p>아직 재제출할 새 사진이 없습니다.</p>
                 </div>
               ) : (
                 newPhotos.map((photo, index) => (
@@ -171,8 +296,13 @@ export default function PublicPhotoUploadModal({
           <button type="button" className="admin-secondary-button" onClick={onClose} disabled={isSaving}>
             취소
           </button>
-          <button type="button" className="admin-primary-button" onClick={onSaveDraft} disabled={isLocked || isSaving}>
-            {isSaving ? "업로드 중..." : "저장하기"}
+          <button
+            type="button"
+            className="admin-primary-button"
+            onClick={onSaveDraft}
+            disabled={isLocked || isSaving || !canSubmitReplacement}
+          >
+            {isSaving ? "업로드 중..." : "재제출하기"}
           </button>
         </div>
 
