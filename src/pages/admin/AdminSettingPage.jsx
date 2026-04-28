@@ -4,6 +4,106 @@ import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { supabase } from "../../lib/supabase";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 
+const EMPTY_PASSWORD_FORM = {
+  newPassword: "",
+  confirmPassword: ""
+};
+
+function EyeIcon({ isActive }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M2.75 12s3.25-6.25 9.25-6.25S21.25 12 21.25 12 18 18.25 12 18.25 2.75 12 2.75 12Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r={isActive ? "3.2" : "2.4"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function PasswordInput({
+  id,
+  label,
+  name,
+  value,
+  onChange,
+  isVisible,
+  onRevealStart,
+  onRevealEnd,
+  disabled,
+  autoComplete
+}) {
+  const handleRevealKeyDown = (event) => {
+    if (event.key !== " " && event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    onRevealStart(name);
+  };
+
+  const handleRevealKeyUp = (event) => {
+    if (event.key !== " " && event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    onRevealEnd();
+  };
+
+  return (
+    <div className="form-group">
+      <label htmlFor={id}>{label}</label>
+      <div className="password-input-row">
+        <input
+          id={id}
+          type={isVisible ? "text" : "password"}
+          name={name}
+          value={value}
+          onChange={onChange}
+          placeholder="********"
+          className="form-input password-form-input"
+          aria-label={label}
+          autoComplete={autoComplete}
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          className={`password-visibility-button${isVisible ? " is-active" : ""}`}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onRevealStart(name);
+          }}
+          onMouseUp={onRevealEnd}
+          onMouseLeave={onRevealEnd}
+          onTouchStart={() => onRevealStart(name)}
+          onTouchEnd={onRevealEnd}
+          onTouchCancel={onRevealEnd}
+          onKeyDown={handleRevealKeyDown}
+          onKeyUp={handleRevealKeyUp}
+          onBlur={onRevealEnd}
+          aria-label={`${label} 보기`}
+          title="누르고 있는 동안 비밀번호 보기"
+          disabled={disabled || !value}
+        >
+          <EyeIcon isActive={isVisible} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminSettingPage() {
   const navigate = useNavigate();
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
@@ -14,6 +114,8 @@ export default function AdminSettingPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isPasswordChangeOpen, setIsPasswordChangeOpen] = useState(false);
+  const [visiblePasswordField, setVisiblePasswordField] = useState(null);
 
   const [formData, setFormData] = useState({
     username: "",
@@ -21,6 +123,8 @@ export default function AdminSettingPage() {
     email: "",
     company: ""
   });
+
+  const [passwordForm, setPasswordForm] = useState(EMPTY_PASSWORD_FORM);
 
   const [alertDialog, setAlertDialog] = useState({
     isOpen: false,
@@ -75,19 +179,69 @@ export default function AdminSettingPage() {
     }));
   };
 
+  const handlePasswordInputChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    setSaveError("");
+    setSaveSuccess(false);
+  };
+
+  const validatePasswordChange = () => {
+    if (!isPasswordChangeOpen) {
+      return "";
+    }
+
+    const hasNewPassword = passwordForm.newPassword.length > 0;
+    const hasConfirmPassword = passwordForm.confirmPassword.length > 0;
+
+    if (!hasNewPassword && !hasConfirmPassword) {
+      return "";
+    }
+
+    if (!hasNewPassword) {
+      return "변경할 비밀번호를 입력해주세요.";
+    }
+
+    if (!hasConfirmPassword) {
+      return "비밀번호 확인을 입력해주세요.";
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      return "비밀번호와 비밀번호 확인이 일치하지 않습니다.";
+    }
+
+    return "";
+  };
+
   const handleSave = async () => {
     setSaveError("");
     setSaveSuccess(false);
+
+    const passwordValidationError = validatePasswordChange();
+    if (passwordValidationError) {
+      setSaveError(passwordValidationError);
+      return;
+    }
+
     setIsSaving(true);
+
+    const updatePayload = {
+      username: formData.username,
+      phone_number: formData.phone_number,
+      email: formData.email,
+      company: formData.company
+    };
+
+    if (isPasswordChangeOpen && passwordForm.newPassword) {
+      updatePayload.password = passwordForm.newPassword;
+    }
 
     const { error } = await supabase
       .from("admins")
-      .update({
-        username: formData.username,
-        phone_number: formData.phone_number,
-        email: formData.email,
-        company: formData.company
-      })
+      .update(updatePayload)
       .eq("login_id", adminId);
 
     setIsSaving(false);
@@ -97,15 +251,29 @@ export default function AdminSettingPage() {
       return;
     }
 
+    setPasswordForm(EMPTY_PASSWORD_FORM);
+    setIsPasswordChangeOpen(false);
+    setVisiblePasswordField(null);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
   const openConfirmDialog = () => {
+    const passwordValidationError = validatePasswordChange();
+    if (passwordValidationError) {
+      setSaveError(passwordValidationError);
+      setSaveSuccess(false);
+      return;
+    }
+
+    const hasPasswordChange = isPasswordChangeOpen && passwordForm.newPassword.length > 0;
+
     setAlertDialog({
       isOpen: true,
       title: "정보 저장 확인",
-      message: "변경된 정보를 저장하시겠습니까?",
+      message: hasPasswordChange
+        ? "변경된 정보와 비밀번호를 저장하시겠습니까?"
+        : "변경된 정보를 저장하시겠습니까?",
       confirmLabel: "저장",
       cancelLabel: "취소",
       isLoading: false,
@@ -119,6 +287,19 @@ export default function AdminSettingPage() {
       ...prev,
       isOpen: false
     }));
+  };
+
+  const openPasswordChange = () => {
+    setIsPasswordChangeOpen(true);
+    setSaveError("");
+    setSaveSuccess(false);
+  };
+
+  const cancelPasswordChange = () => {
+    setPasswordForm(EMPTY_PASSWORD_FORM);
+    setIsPasswordChangeOpen(false);
+    setVisiblePasswordField(null);
+    setSaveError("");
   };
 
   if (isLoading) {
@@ -220,6 +401,63 @@ export default function AdminSettingPage() {
               aria-label="회사 (읽기 전용)"
             />
           </div>
+        </div>
+
+        <div className="admin-setting-section">
+          <div className="admin-setting-section-header">
+            <h2>비밀번호</h2>
+            {!isPasswordChangeOpen && (
+              <button
+                type="button"
+                className="admin-secondary-button admin-password-change-button"
+                onClick={openPasswordChange}
+                disabled={isSaving}
+              >
+                비밀번호 변경하기
+              </button>
+            )}
+          </div>
+
+          {isPasswordChangeOpen ? (
+            <div className="admin-password-change-panel">
+              <PasswordInput
+                id="new-password"
+                label="변경할 비밀번호"
+                name="newPassword"
+                value={passwordForm.newPassword}
+                onChange={handlePasswordInputChange}
+                isVisible={visiblePasswordField === "newPassword"}
+                onRevealStart={setVisiblePasswordField}
+                onRevealEnd={() => setVisiblePasswordField(null)}
+                disabled={isSaving}
+                autoComplete="new-password"
+              />
+
+              <PasswordInput
+                id="confirm-password"
+                label="비밀번호 확인"
+                name="confirmPassword"
+                value={passwordForm.confirmPassword}
+                onChange={handlePasswordInputChange}
+                isVisible={visiblePasswordField === "confirmPassword"}
+                onRevealStart={setVisiblePasswordField}
+                onRevealEnd={() => setVisiblePasswordField(null)}
+                disabled={isSaving}
+                autoComplete="new-password"
+              />
+
+              <button
+                type="button"
+                className="admin-link-button admin-password-cancel-button"
+                onClick={cancelPasswordChange}
+                disabled={isSaving}
+              >
+                비밀번호 변경 취소
+              </button>
+            </div>
+          ) : (
+            <p className="admin-setting-muted">비밀번호는 보안을 위해 표시하지 않습니다.</p>
+          )}
         </div>
 
         {saveError && (

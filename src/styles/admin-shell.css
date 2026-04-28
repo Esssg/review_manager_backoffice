@@ -1510,6 +1510,18 @@
   font-weight: 700;
 }
 
+.admin-setting-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-setting-section-header h2 {
+  margin: 0;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -1543,6 +1555,72 @@
   background: #f1f5f9;
   color: #94a3b8;
   cursor: not-allowed;
+}
+
+.admin-password-change-button {
+  height: 36px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.admin-password-change-panel {
+  padding: 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fcff;
+}
+
+.password-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+  align-items: center;
+}
+
+.password-form-input {
+  width: 100%;
+}
+
+.password-visibility-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  color: #0369a1;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.password-visibility-button:hover:not(:disabled),
+.password-visibility-button.is-active {
+  border-color: #38bdf8;
+  background: #e0f4ff;
+}
+
+.password-visibility-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+.password-visibility-button:disabled {
+  color: #94a3b8;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+
+.admin-setting-muted {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.admin-password-cancel-button {
+  padding: 0;
 }
 
 .admin-setting-error {
@@ -1640,6 +1718,15 @@
 
   .form-group {
     margin-bottom: 16px;
+  }
+
+  .admin-setting-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-password-change-button {
+    width: 100%;
   }
 
   .admin-setting-buttons {
