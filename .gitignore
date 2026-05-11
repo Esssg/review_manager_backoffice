@@ -44,3 +44,6 @@ temp.xlsx
 # Local Supabase runtime artifacts
 .branches/
 .temp/
+
+supabase/migrations/*
+supabase/migrations

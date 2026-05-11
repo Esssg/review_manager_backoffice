@@ -413,6 +413,16 @@ export function parsePurchaseAssignLines(rawText) {
     throw new Error("구매자 일괄 입력 텍스트를 입력해주세요.");
   }
 
+  const normalizeExplicitAssignName = (value) => {
+    const tokens = value.trim().split(/\s+/);
+
+    if (tokens.length >= 2 && /^\d+$/.test(tokens[tokens.length - 1])) {
+      return tokens.slice(0, -1).join(" ");
+    }
+
+    return value.trim();
+  };
+
   return lines.map((line, index) => {
     const matched = line.match(/^(\d+)\s+(.+)$/);
 
@@ -430,7 +440,7 @@ export function parsePurchaseAssignLines(rawText) {
       };
     }
 
-    const assignName = matched[2].trim();
+    const assignName = normalizeExplicitAssignName(matched[2]);
 
     if (!assignName) {
       throw new Error(`${index + 1}번째 입력: 배정명이 비어 있습니다.`);

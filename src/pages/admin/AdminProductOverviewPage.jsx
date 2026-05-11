@@ -32,11 +32,32 @@ import {
   sortProductOverviewRows,
   splitProductOverviewRows
 } from "../../utils/productOverviewRows";
+import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
   formatMissingFieldLabels,
   getMissingRequiredFieldLabels
 } from "../../utils/reviewVerifyValidation";
+
+const PRODUCT_OVERVIEW_EXPORT_COLUMNS = PRODUCT_OVERVIEW_COLUMNS.reduce((columns, column) => {
+  if (column.key === "bank_name") {
+    return [
+      ...columns,
+      {
+        key: "bank_info",
+        label: "은행정보",
+        type: "bank_info"
+      }
+    ];
+  }
+
+  if (["bank_account", "account_holder"].includes(column.key)) {
+    return columns;
+  }
+
+  return [...columns, column];
+}, []);
+const PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS = PRODUCT_OVERVIEW_EXPORT_COLUMNS.map((column) => column.key);
 
 function formatCellValue(value, type) {
   if (value == null || value === "") {
@@ -52,6 +73,50 @@ function formatCellValue(value, type) {
   }
 
   return String(value);
+}
+
+function formatExcelCellValue(row, column) {
+  if (column.key === "bank_info") {
+    return [row.bank_name, row.bank_account, row.account_holder]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  const value = row[column.key];
+
+  if (column.type === "boolean") {
+    return value ? "예" : "아니오";
+  }
+
+  if (column.type === "photo") {
+    return Array.isArray(value) && value.length > 0 ? value.join("\n") : "";
+  }
+
+  return value ?? "";
+}
+
+function buildProductOverviewExcelRows(rows, columnKeys) {
+  const selectedColumnKeySet = new Set(columnKeys);
+  const selectedColumns = PRODUCT_OVERVIEW_EXPORT_COLUMNS.filter((column) => selectedColumnKeySet.has(column.key));
+
+  return rows.map((row) =>
+    selectedColumns.reduce((acc, column) => {
+      acc[column.label] = formatExcelCellValue(row, column);
+      return acc;
+    }, {})
+  );
+}
+
+function getProductOverviewExportScopeLabel(scopeKey) {
+  const scopeLabels = {
+    all: "전체보기",
+    purchase: "구매완료",
+    review: "리뷰완료",
+    complete: "전체완료"
+  };
+
+  return scopeLabels[scopeKey] ?? "전체보기";
 }
 
 function formatProductLabel(product) {
@@ -461,6 +526,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   });
   const [selectedDeleteTargetRows, setSelectedDeleteTargetRows] = useState([]);
   const [isDeletingSelectedRows, setIsDeletingSelectedRows] = useState(false);
+  const [exportModal, setExportModal] = useState({
+    isOpen: false,
+    scopeKey: "all"
+  });
+  const [exportColumnKeys, setExportColumnKeys] = useState(() => PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS);
   const purchaseAssignConflictResolverRef = useRef(null);
   const { toast, showToast } = useAppToast();
 
@@ -535,6 +605,9 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const reviewBatchTargetRows = reviewBatchBaseRows.filter(
     (row) => row.is_review_verified && !row.is_deposit_verified
   );
+  const exportModalRows = scopeRowsByKey[exportModal.scopeKey] ?? [];
+  const exportSelectedColumnKeySet = new Set(exportColumnKeys);
+  const isAllExportColumnsSelected = exportColumnKeys.length === PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS.length;
   const purchaseAssignVisibleProducts = getVisibleProducts(purchaseAssignVisibleRows, productMap);
   const resolvedPurchaseAssignProductId =
     purchaseAssignVisibleProducts.length === 1
@@ -748,6 +821,56 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     }
 
     setSelectedDeleteTargetRows([]);
+  };
+
+  const openExportModal = (scopeKey) => {
+    setExportModal({
+      isOpen: true,
+      scopeKey
+    });
+    setExportColumnKeys(PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS);
+  };
+
+  const closeExportModal = () => {
+    setExportModal({
+      isOpen: false,
+      scopeKey: "all"
+    });
+  };
+
+  const handleToggleExportColumn = (columnKey, nextChecked) => {
+    setExportColumnKeys((prev) => {
+      if (!nextChecked) {
+        return prev.filter((key) => key !== columnKey);
+      }
+
+      return PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS.filter((key) => key === columnKey || prev.includes(key));
+    });
+  };
+
+  const handleToggleAllExportColumns = (nextChecked) => {
+    setExportColumnKeys(nextChecked ? PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS : []);
+  };
+
+  const handleDownloadProductOverviewExcel = () => {
+    if (exportModalRows.length === 0) {
+      showToast("내보낼 행이 없습니다.", "error");
+      return;
+    }
+
+    if (exportColumnKeys.length === 0) {
+      showToast("내보낼 컬럼을 1개 이상 선택해주세요.", "error");
+      return;
+    }
+
+    const scopeLabel = getProductOverviewExportScopeLabel(exportModal.scopeKey);
+
+    downloadExcel(buildExportFilename(`상품전체보기_${scopeLabel}`), {
+      name: scopeLabel,
+      rows: buildProductOverviewExcelRows(exportModalRows, exportColumnKeys)
+    });
+    showToast(`${exportModalRows.length}건을 엑셀로 내보냈습니다.`, "success");
+    closeExportModal();
   };
 
   const handleDeleteSelectedRows = async () => {
@@ -1208,26 +1331,35 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
   const renderFilterResetAction = (scopeKey) => {
     const selectedRows = selectedRowsByScope[scopeKey] ?? [];
+    const exportRows = scopeRowsByKey[scopeKey] ?? [];
 
     return (
-    <div className="review-receive-toolbar-actions product-overview-reset-actions">
-      <button
-        type="button"
-        className="admin-secondary-button"
-        onClick={handleResetFilters}
-        disabled={!hasActiveFilters}
-      >
-        필터 초기화
-      </button>
-      <button
-        type="button"
-        className="admin-danger-button product-overview-delete-selected-button"
-        onClick={() => openSelectedDeleteDialog(scopeKey)}
-        disabled={selectedRows.length === 0 || isDeletingSelectedRows}
-      >
-        선택 행 삭제하기
-      </button>
-    </div>
+      <div className="review-receive-toolbar-actions product-overview-reset-actions">
+        <button
+          type="button"
+          className="admin-secondary-button product-overview-export-button"
+          onClick={() => openExportModal(scopeKey)}
+          disabled={exportRows.length === 0}
+        >
+          엑셀로 내보내기
+        </button>
+        <button
+          type="button"
+          className="admin-secondary-button"
+          onClick={handleResetFilters}
+          disabled={!hasActiveFilters}
+        >
+          필터 초기화
+        </button>
+        <button
+          type="button"
+          className="admin-danger-button product-overview-delete-selected-button"
+          onClick={() => openSelectedDeleteDialog(scopeKey)}
+          disabled={selectedRows.length === 0 || isDeletingSelectedRows}
+        >
+          선택 행 삭제하기
+        </button>
+      </div>
     );
   };
 
@@ -1479,6 +1611,70 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                 disabled={isApplyingPurchaseBulk || purchaseBulkPreview.status !== "ready" || purchaseBulkPreview.create_new_rows}
               >
                 {isApplyingPurchaseBulk ? "입력 중..." : "완료하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportModal.isOpen && (
+        <div className="review-receive-modal-backdrop" role="presentation" onClick={closeExportModal}>
+          <div
+            className="review-receive-modal product-overview-export-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="상품전체보기 엑셀로 내보내기"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="review-receive-modal-header">
+              <div>
+                <h2>엑셀로 내보내기</h2>
+                <p>{`${getProductOverviewExportScopeLabel(exportModal.scopeKey)} ${exportModalRows.length}건`}</p>
+              </div>
+              <button type="button" className="review-receive-modal-close" onClick={closeExportModal}>
+                닫기
+              </button>
+            </div>
+
+            <div className="review-receive-modal-body review-receive-modal-body-single">
+              <div className="product-overview-export-column-panel">
+                <label className="pretty-checkbox product-overview-export-select-all">
+                  <input
+                    type="checkbox"
+                    checked={isAllExportColumnsSelected}
+                    onChange={(event) => handleToggleAllExportColumns(event.target.checked)}
+                  />
+                  <span className="checkmark" aria-hidden="true" />
+                  <span>전체 선택하기</span>
+                </label>
+
+                <div className="product-overview-export-column-grid">
+                  {PRODUCT_OVERVIEW_EXPORT_COLUMNS.map((column) => (
+                    <label key={column.key} className="pretty-checkbox product-overview-export-column-option">
+                      <input
+                        type="checkbox"
+                        checked={exportSelectedColumnKeySet.has(column.key)}
+                        onChange={(event) => handleToggleExportColumn(column.key, event.target.checked)}
+                      />
+                      <span className="checkmark" aria-hidden="true" />
+                      <span>{column.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="review-receive-modal-actions">
+              <button type="button" className="admin-secondary-button" onClick={closeExportModal}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="admin-primary-button"
+                onClick={handleDownloadProductOverviewExcel}
+                disabled={exportColumnKeys.length === 0 || exportModalRows.length === 0}
+              >
+                엑셀 다운로드
               </button>
             </div>
           </div>

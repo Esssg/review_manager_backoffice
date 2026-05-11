@@ -151,6 +151,25 @@ export const REVIEW_RECEIVE_STATUS_TABS = [
   { key: "completed", label: "완료보기" }
 ];
 
+export const PRODUCT_DEPOSIT_GB = {
+  SELF: 1,
+  COMPANY: 2
+};
+
+export const PRODUCT_DEPOSIT_GB_OPTIONS = [
+  { value: PRODUCT_DEPOSIT_GB.SELF, label: "자체입금" },
+  { value: PRODUCT_DEPOSIT_GB.COMPANY, label: "업체입금" }
+];
+
+export function normalizeProductDepositGb(value) {
+  return Number(value) === PRODUCT_DEPOSIT_GB.COMPANY ? PRODUCT_DEPOSIT_GB.COMPANY : PRODUCT_DEPOSIT_GB.SELF;
+}
+
+export function getProductDepositGbLabel(value) {
+  const normalizedValue = normalizeProductDepositGb(value);
+  return PRODUCT_DEPOSIT_GB_OPTIONS.find((option) => option.value === normalizedValue)?.label ?? "자체입금";
+}
+
 export const STEP_NUMBER_BY_TAB = {
   applications: 1,
   purchase: 2,
