@@ -2,6 +2,9 @@ import { useCallback, useState } from "react";
 import { EXPORT_COLUMN_PRESET, EXPORT_COLUMN_PRESETS, getPresetColumnKeys } from "../utils/exportColumns";
 
 const DEFAULT_PRESET_KEYS = EXPORT_COLUMN_PRESETS.map((preset) => preset.key);
+const PRODUCT_DATE_COLUMN_KEY = "products.product_date";
+const PRODUCT_MANAGER_COLUMN_KEY = "products.manager_id";
+const PRODUCT_TITLE_COLUMN_KEY = "products.title";
 
 function areColumnKeysEqual(leftColumnKeys, rightColumnKeys) {
   if (leftColumnKeys.length !== rightColumnKeys.length) {
@@ -11,13 +14,44 @@ function areColumnKeysEqual(leftColumnKeys, rightColumnKeys) {
   return leftColumnKeys.every((columnKey, index) => columnKey === rightColumnKeys[index]);
 }
 
+function normalizeProductDateColumnPosition(columnKeys, { includeByDefault = true } = {}) {
+  if (!Array.isArray(columnKeys) || !columnKeys.includes(PRODUCT_TITLE_COLUMN_KEY)) {
+    return columnKeys;
+  }
+
+  const hasProductDateColumn = columnKeys.includes(PRODUCT_DATE_COLUMN_KEY);
+  const hasManagerColumn = columnKeys.includes(PRODUCT_MANAGER_COLUMN_KEY);
+
+  if (!hasProductDateColumn && !includeByDefault) {
+    return columnKeys;
+  }
+
+  if (hasProductDateColumn && !hasManagerColumn) {
+    return columnKeys;
+  }
+
+  const nextColumnKeys = columnKeys.filter((columnKey) => columnKey !== PRODUCT_DATE_COLUMN_KEY);
+  const managerIndex = nextColumnKeys.indexOf(PRODUCT_MANAGER_COLUMN_KEY);
+  const titleIndex = nextColumnKeys.indexOf(PRODUCT_TITLE_COLUMN_KEY);
+  const insertIndex = managerIndex >= 0 ? managerIndex + 1 : titleIndex;
+
+  nextColumnKeys.splice(insertIndex, 0, PRODUCT_DATE_COLUMN_KEY);
+  return nextColumnKeys;
+}
+
 function resolveActivePreset(columnKeys, presetKeys, resolvePresetColumnKeys) {
-  return presetKeys.find((presetKey) => areColumnKeysEqual(columnKeys, resolvePresetColumnKeys(presetKey))) ?? "";
+  const normalizedColumnKeys = normalizeProductDateColumnPosition(columnKeys);
+
+  return (
+    presetKeys.find((presetKey) =>
+      areColumnKeysEqual(normalizedColumnKeys, normalizeProductDateColumnPosition(resolvePresetColumnKeys(presetKey)))
+    ) ?? ""
+  );
 }
 
 function resolveLegacyPresetColumnKeys(columnKeys, presetKeys, resolvePresetColumnKeys) {
   return presetKeys.find((presetKey) => {
-    const presetColumnKeys = resolvePresetColumnKeys(presetKey);
+    const presetColumnKeys = normalizeProductDateColumnPosition(resolvePresetColumnKeys(presetKey));
     const columnKeySet = new Set(columnKeys);
     const presetKeysAlreadySelected = presetColumnKeys.filter((columnKey) => columnKeySet.has(columnKey));
     const missingPresetKeyCount = presetColumnKeys.length - columnKeys.length;
@@ -32,7 +66,7 @@ function resolveLegacyPresetColumnKeys(columnKeys, presetKeys, resolvePresetColu
 }
 
 function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetColumnKeys, presetKeys) {
-  const fallbackColumnKeys = resolvePresetColumnKeys(fallbackPreset);
+  const fallbackColumnKeys = normalizeProductDateColumnPosition(resolvePresetColumnKeys(fallbackPreset));
 
   if (!storageKey) {
     return {
@@ -49,16 +83,22 @@ function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetCol
       const activePreset = resolveActivePreset(parsedValue, presetKeys, resolvePresetColumnKeys);
 
       if (activePreset) {
+        const nextColumnKeys = normalizeProductDateColumnPosition(parsedValue);
+
+        if (!areColumnKeysEqual(parsedValue, nextColumnKeys)) {
+          localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
+        }
+
         return {
           activePreset,
-          selectedColumnKeys: parsedValue
+          selectedColumnKeys: nextColumnKeys
         };
       }
 
       const legacyPreset = resolveLegacyPresetColumnKeys(parsedValue, presetKeys, resolvePresetColumnKeys);
 
       if (legacyPreset) {
-        const nextColumnKeys = resolvePresetColumnKeys(legacyPreset);
+        const nextColumnKeys = normalizeProductDateColumnPosition(resolvePresetColumnKeys(legacyPreset));
 
         localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
 
@@ -68,9 +108,15 @@ function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetCol
         };
       }
 
+      const nextColumnKeys = normalizeProductDateColumnPosition(parsedValue);
+
+      if (!areColumnKeysEqual(parsedValue, nextColumnKeys)) {
+        localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
+      }
+
       return {
         activePreset: "",
-        selectedColumnKeys: parsedValue
+        selectedColumnKeys: nextColumnKeys
       };
     }
   } catch {
@@ -106,7 +152,7 @@ export default function useExportColumnSelection({
 
   const applyPreset = useCallback(
     (presetKey) => {
-      const nextColumnKeys = getPresetColumnKeysFn(presetKey);
+      const nextColumnKeys = normalizeProductDateColumnPosition(getPresetColumnKeysFn(presetKey));
 
       setActivePreset(presetKey);
       setSelectedColumnKeys(nextColumnKeys);
@@ -121,7 +167,7 @@ export default function useExportColumnSelection({
       setSelectedColumnKeys((prevColumnKeys) => {
         const nextColumnKeys = prevColumnKeys.includes(columnKey)
           ? prevColumnKeys.filter((key) => key !== columnKey)
-          : [...prevColumnKeys, columnKey];
+          : normalizeProductDateColumnPosition([...prevColumnKeys, columnKey], { includeByDefault: false });
 
         persistColumnKeys(nextColumnKeys);
         return nextColumnKeys;
