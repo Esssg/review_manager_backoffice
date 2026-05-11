@@ -8,6 +8,7 @@ import AdminExportByDepositDatePage from "./pages/admin/AdminExportByDepositDate
 import AdminExportByProductPage from "./pages/admin/AdminExportByProductPage";
 import AdminExportByStatusPage from "./pages/admin/AdminExportByStatusPage";
 import AdminExportMyProductsPage from "./pages/admin/AdminExportMyProductsPage";
+import AdminFileUploadPage from "./pages/admin/AdminFileUploadPage";
 import AdminProductDetailPage from "./pages/admin/AdminProductDetailPage";
 import AdminProductOverviewPage from "./pages/admin/AdminProductOverviewPage";
 import AdminProductsPage from "./pages/admin/AdminProductsPage";
@@ -47,7 +48,8 @@ export default function App() {
           <Route path="by-status" element={<AdminExportByStatusPage />} />
           <Route path="applications" element={<AdminExportApplicationsPage />} />
         </Route>
-      <Route path="setting" element={<AdminSettingPage />} />
+        <Route path="file-upload" element={<AdminFileUploadPage />} />
+        <Route path="setting" element={<AdminSettingPage />} />
       </Route>
       <Route path="/review-receive/specific/:productId" element={<PublicReviewReceiveDetailPage />} />
       <Route path="/" element={<Navigate to="/admin/login" replace />} />

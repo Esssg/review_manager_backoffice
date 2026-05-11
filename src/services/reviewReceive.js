@@ -3,8 +3,14 @@ import { resolveAdminManagerScope } from "./adminScope";
 
 const REVIEW_RECEIVE_PRODUCT_SELECT =
   "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id";
+const REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB = `${REVIEW_RECEIVE_PRODUCT_SELECT},"deposit_GB"`;
 const REVIEW_RECEIVE_SUBMISSIONS_SELECT =
   "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
+
+function isMissingDepositGbColumn(error) {
+  const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
+  return message.includes("deposit_GB");
+}
 
 export async function fetchReviewReceiveDetail(productId, adminId) {
   const scope = await resolveAdminManagerScope(adminId, { includeCompanyData: true });
@@ -23,19 +29,29 @@ export async function fetchReviewReceiveDetail(productId, adminId) {
     };
   }
 
-  const [productResult, submissionsResult] = await Promise.all([
-    supabase
+  const submissionsPromise = supabase
+    .from("submissions")
+    .select(REVIEW_RECEIVE_SUBMISSIONS_SELECT)
+    .eq("product_id", productId)
+    .order("created_at", { ascending: true });
+
+  let productResult = await supabase
+    .from("products")
+    .select(REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB)
+    .eq("id", productId)
+    .in("manager_id", scope.managerIds)
+    .maybeSingle();
+
+  if (isMissingDepositGbColumn(productResult.error)) {
+    productResult = await supabase
       .from("products")
       .select(REVIEW_RECEIVE_PRODUCT_SELECT)
       .eq("id", productId)
       .in("manager_id", scope.managerIds)
-      .maybeSingle(),
-    supabase
-      .from("submissions")
-      .select(REVIEW_RECEIVE_SUBMISSIONS_SELECT)
-      .eq("product_id", productId)
-      .order("created_at", { ascending: true })
-  ]);
+      .maybeSingle();
+  }
+
+  const submissionsResult = await submissionsPromise;
 
   return {
     scope,

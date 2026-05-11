@@ -5,7 +5,7 @@ import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
-import { ADMIN_STORAGE_KEY } from "../../constants/admin";
+import { ADMIN_STORAGE_KEY, getProductDepositGbLabel } from "../../constants/admin";
 import {
   createReviewReceiveSubmission,
   deleteReviewReceiveSubmission,
@@ -1020,16 +1020,16 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleCopyPurchaseBuyers = async () => {
-    if (filteredPurchaseCompletedRows.length === 0) {
-      showToast("현재 화면에 복사할 구매완료 데이터가 없습니다.", "error");
+    if (sortedRows.length === 0) {
+      showToast("복사할 제출 데이터가 없습니다.", "error");
       return;
     }
 
-    const text = formatPurchaseBuyerClipboardText(filteredPurchaseCompletedRows, rowNumberMap);
+    const text = formatPurchaseBuyerClipboardText(sortedRows, rowNumberMap);
 
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`${filteredPurchaseCompletedRows.length}건을 클립보드에 복사했습니다.`, "success");
+      showToast(`${sortedRows.length}건을 클립보드에 복사했습니다.`, "success");
     } catch (error) {
       showToast("클립보드 복사에 실패했습니다.", "error");
     }
@@ -1267,7 +1267,7 @@ export default function AdminReviewReceiveDetailPage() {
     </td>
   );
 
-  const { rowNumberMap, rowByNumberMap, maxRowNumber } = buildReviewReceiveRowPositionMaps(rows);
+  const { sortedRows, rowNumberMap, rowByNumberMap, maxRowNumber } = buildReviewReceiveRowPositionMaps(rows);
   const purchaseAssignPreview = buildPurchaseAssignPreview(purchaseAssignText, rowByNumberMap, maxRowNumber);
   const purchaseBulkEnterConfirm = useModalEnterConfirm({
     isOpen: isPurchaseBulkModalOpen,
@@ -1810,6 +1810,10 @@ export default function AdminReviewReceiveDetailPage() {
             <div className="detail-summary-item">
               <span className="detail-summary-label">리뷰형태</span>
               <strong>{product.review_type ?? "-"}</strong>
+            </div>
+            <div className="detail-summary-item">
+              <span className="detail-summary-label">입금구분</span>
+              <strong>{getProductDepositGbLabel(product.deposit_GB)}</strong>
             </div>
             <div className="detail-summary-item">
               <span className="detail-summary-label">설명</span>

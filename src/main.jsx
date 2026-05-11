@@ -5,6 +5,7 @@ import App from "./App";
 import "./styles/base.css";
 import "./styles/admin-dashboard.css";
 import "./styles/admin-export.css";
+import "./styles/admin-file-upload.css";
 import "./styles/admin-product-detail.css";
 import "./styles/admin-shell.css";
 import "./styles/login.css";

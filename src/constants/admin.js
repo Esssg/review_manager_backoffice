@@ -6,7 +6,8 @@ export const ADMIN_MENU_NUMBER = {
   PRODUCT: 2,
   REVIEW_RECEIVE: 3,
   PRODUCT_OVERVIEW: 4,
-  EXPORT: 5
+  EXPORT: 5,
+  FILE_UPLOAD: 6
 };
 
 export const ADMIN_MENU_ITEMS = [
@@ -88,6 +89,11 @@ export const ADMIN_MENU_ITEMS = [
         path: "/admin/export/applications"
       }
     ]
+  },
+  {
+    menuNumber: ADMIN_MENU_NUMBER.FILE_UPLOAD,
+    label: "파일 업로드",
+    path: "/admin/file-upload"
   }
 ];
 
@@ -116,6 +122,10 @@ export function getAdminMenuItemByPathname(pathname) {
     return getAdminMenuItemByNumber(ADMIN_MENU_NUMBER.EXPORT);
   }
 
+  if (pathname === "/admin/file-upload") {
+    return getAdminMenuItemByNumber(ADMIN_MENU_NUMBER.FILE_UPLOAD);
+  }
+
   if (pathname === "/admin/setting") {
     return null;
   }
@@ -140,6 +150,25 @@ export const REVIEW_RECEIVE_STATUS_TABS = [
   { key: "in_progress", label: "진행중보기" },
   { key: "completed", label: "완료보기" }
 ];
+
+export const PRODUCT_DEPOSIT_GB = {
+  SELF: 1,
+  COMPANY: 2
+};
+
+export const PRODUCT_DEPOSIT_GB_OPTIONS = [
+  { value: PRODUCT_DEPOSIT_GB.SELF, label: "자체입금" },
+  { value: PRODUCT_DEPOSIT_GB.COMPANY, label: "업체입금" }
+];
+
+export function normalizeProductDepositGb(value) {
+  return Number(value) === PRODUCT_DEPOSIT_GB.COMPANY ? PRODUCT_DEPOSIT_GB.COMPANY : PRODUCT_DEPOSIT_GB.SELF;
+}
+
+export function getProductDepositGbLabel(value) {
+  const normalizedValue = normalizeProductDepositGb(value);
+  return PRODUCT_DEPOSIT_GB_OPTIONS.find((option) => option.value === normalizedValue)?.label ?? "자체입금";
+}
 
 export const STEP_NUMBER_BY_TAB = {
   applications: 1,

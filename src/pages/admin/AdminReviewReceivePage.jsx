@@ -8,6 +8,10 @@ import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import {
   ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
   ADMIN_STORAGE_KEY,
+  PRODUCT_DEPOSIT_GB,
+  PRODUCT_DEPOSIT_GB_OPTIONS,
+  getProductDepositGbLabel,
+  normalizeProductDepositGb,
   REVIEW_RECEIVE_STATUS_TABS
 } from "../../constants/admin";
 import {
@@ -16,30 +20,66 @@ import {
   fetchAdminReviewReceiveProducts,
   updateAdminReviewReceiveProduct
 } from "../../services/adminProducts";
-
-const INITIAL_PRODUCT_FORM = {
-  title: "",
-  productName: "",
-  companyName: "",
-  optionName: "",
-  reviewType: "",
-  plannedDepositorName: "",
-  description: ""
-};
+import { splitReviewReceiveRows } from "../../utils/reviewReceiveRows";
 
 function normalizeOptionalValue(value) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
 }
 
+function formatDateInputValue(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function formatDisplayDate(value) {
+  const inputValue = formatDateInputValue(value);
+
+  if (!inputValue) {
+    return "-";
+  }
+
+  return new Date(`${inputValue}T00:00:00`).toLocaleDateString("ko-KR");
+}
+
+function createInitialProductForm() {
+  return {
+    title: "",
+    productDate: formatDateInputValue(new Date()),
+    productName: "",
+    companyName: "",
+    optionName: "",
+    reviewType: "",
+    plannedDepositorName: "",
+    depositGb: String(PRODUCT_DEPOSIT_GB.SELF),
+    description: ""
+  };
+}
+
 function getProductFormFromProduct(product) {
   return {
     title: product.title ?? "",
+    productDate: formatDateInputValue(product.product_date ?? product.created_at),
     productName: product.product_name ?? "",
     companyName: product.company_name ?? "",
     optionName: product.option_name ?? "",
     reviewType: product.review_type ?? "",
     plannedDepositorName: product.planned_depositor_name ?? "",
+    depositGb: String(normalizeProductDepositGb(product.deposit_GB)),
     description: product.description ?? ""
   };
 }
@@ -47,6 +87,7 @@ function getProductFormFromProduct(product) {
 function getProductPayload(productForm, adminId) {
   const title = productForm.title.trim();
   const productName = productForm.productName.trim();
+  const productDate = productForm.productDate.trim();
 
   if (!title || !productName) {
     return {
@@ -54,16 +95,24 @@ function getProductPayload(productForm, adminId) {
     };
   }
 
+  if (!productDate) {
+    return {
+      errorMessage: "등록날짜는 필수입니다."
+    };
+  }
+
   return {
     payload: {
       manager_id: adminId,
       title,
+      product_date: productDate,
       product_name: productName,
       description: normalizeOptionalValue(productForm.description),
       company_name: normalizeOptionalValue(productForm.companyName),
       option_name: normalizeOptionalValue(productForm.optionName),
       review_type: normalizeOptionalValue(productForm.reviewType),
-      planned_depositor_name: normalizeOptionalValue(productForm.plannedDepositorName)
+      planned_depositor_name: normalizeOptionalValue(productForm.plannedDepositorName),
+      deposit_GB: normalizeProductDepositGb(productForm.depositGb)
     }
   };
 }
@@ -76,6 +125,13 @@ function getReviewReceiveProductStatus(product) {
   }
 
   return "in_progress";
+}
+
+function getReviewReceiveSubmissionSummary(product) {
+  const submissions = Array.isArray(product?.submissions) ? product.submissions : [];
+  const { purchaseRows, reviewRows, completeRows } = splitReviewReceiveRows(submissions);
+
+  return `${purchaseRows.length}/${reviewRows.length}/${completeRows.length}/(총 ${submissions.length}개)`;
 }
 
 function getReviewReceiveStatusPath(statusKey) {
@@ -120,7 +176,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [actionProductId, setActionProductId] = useState(null);
   const [productModalErrorMessage, setProductModalErrorMessage] = useState("");
-  const [productForm, setProductForm] = useState(INITIAL_PRODUCT_FORM);
+  const [productForm, setProductForm] = useState(() => createInitialProductForm());
   const productFormRef = useRef(null);
   const { toast, showToast } = useAppToast();
   const productModalEnterConfirm = useModalEnterConfirm({
@@ -180,7 +236,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const openCreateModal = () => {
     setProductModalErrorMessage("");
     setEditingProduct(null);
-    setProductForm(INITIAL_PRODUCT_FORM);
+    setProductForm(createInitialProductForm());
     setIsProductModalOpen(true);
   };
 
@@ -210,7 +266,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     setProductModalErrorMessage("");
     setEditingProduct(null);
-    setProductForm(INITIAL_PRODUCT_FORM);
+    setProductForm(createInitialProductForm());
     setIsProductModalOpen(false);
   };
 
@@ -268,7 +324,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     });
     showToast(editingProduct ? "리뷰받기 상품을 수정했습니다." : "리뷰받기 상품을 추가했습니다.", "success");
     setEditingProduct(null);
-    setProductForm(INITIAL_PRODUCT_FORM);
+    setProductForm(createInitialProductForm());
     setIsProductModalOpen(false);
     setIsSavingProduct(false);
   };
@@ -359,14 +415,16 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                   <th>옵션</th>
                   <th>리뷰형태</th>
                   <th>설명</th>
-                  <th>생성일</th>
+                  <th>입금구분</th>
+                  <th>등록일</th>
+                  <th className="review-receive-summary-column">완료현황</th>
                   <th className="review-receive-actions-column">관리</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={10}>
+                    <td colSpan={11}>
                       {products.length === 0
                         ? "등록된 리뷰받기 상품이 없습니다."
                         : "선택한 보기 조건에 맞는 리뷰받기 상품이 없습니다."}
@@ -386,7 +444,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       <td>{product.option_name ?? "-"}</td>
                       <td>{product.review_type ?? "-"}</td>
                       <td>{product.description ?? "-"}</td>
-                      <td>{product.created_at ? new Date(product.created_at).toLocaleDateString("ko-KR") : "-"}</td>
+                      <td>{getProductDepositGbLabel(product.deposit_GB)}</td>
+                      <td>{formatDisplayDate(product.product_date ?? product.created_at)}</td>
+                      <td className="review-receive-summary-cell">{getReviewReceiveSubmissionSummary(product)}</td>
                       <td className="review-receive-actions-cell">
                         <div className="review-receive-row-actions">
                           <button
@@ -479,6 +539,34 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         required
                       />
                     </div>
+                    <div className="detail-summary-item review-receive-create-product-field">
+                      <label className="detail-summary-label" htmlFor="review-receive-product-date">
+                        등록날짜 <span className="required-indicator" aria-hidden="true">*</span>
+                      </label>
+                      <input
+                        id="review-receive-product-date"
+                        name="productDate"
+                        type="date"
+                        className="table-cell-input"
+                        value={productForm.productDate}
+                        onChange={handleProductFormChange}
+                        required
+                      />
+                    </div>
+                    <div className="detail-summary-item review-receive-create-product-field">
+                      <label className="detail-summary-label" htmlFor="review-receive-product-name">
+                        품명 <span className="required-indicator" aria-hidden="true">*</span>
+                      </label>
+                      <input
+                        id="review-receive-product-name"
+                        name="productName"
+                        className="table-cell-input"
+                        value={productForm.productName}
+                        onChange={handleProductFormChange}
+                        placeholder="예: 슈퍼 워터프루프 선크림"
+                        required
+                      />
+                    </div>
                     <div className="detail-summary-item review-receive-create-product-field is-full-width">
                       <label className="detail-summary-label" htmlFor="review-receive-description">
                         설명
@@ -504,20 +592,6 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         value={productForm.companyName}
                         onChange={handleProductFormChange}
                         placeholder="예: 나우프레시"
-                      />
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
-                      <label className="detail-summary-label" htmlFor="review-receive-product-name">
-                        품명 <span className="required-indicator" aria-hidden="true">*</span>
-                      </label>
-                      <input
-                        id="review-receive-product-name"
-                        name="productName"
-                        className="table-cell-input"
-                        value={productForm.productName}
-                        onChange={handleProductFormChange}
-                        placeholder="예: 슈퍼 워터프루프 선크림"
-                        required
                       />
                     </div>
                     <div className="detail-summary-item review-receive-create-product-field">
@@ -558,6 +632,24 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         onChange={handleProductFormChange}
                         placeholder="예: 0425브랜드명"
                       />
+                    </div>
+                    <div className="detail-summary-item review-receive-create-product-field">
+                      <label className="detail-summary-label" htmlFor="review-receive-deposit-gb">
+                        입금구분
+                      </label>
+                      <select
+                        id="review-receive-deposit-gb"
+                        name="depositGb"
+                        className="table-cell-input"
+                        value={productForm.depositGb}
+                        onChange={handleProductFormChange}
+                      >
+                        {PRODUCT_DEPOSIT_GB_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                   <div className="review-receive-preview-panel">

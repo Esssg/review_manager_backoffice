@@ -38,7 +38,12 @@ tmp/
 temp/
 *.tmp
 *.temp
+plan_20260430.md
+temp.xlsx
 
 # Local Supabase runtime artifacts
 .branches/
 .temp/
+
+supabase/migrations/*
+supabase/migrations

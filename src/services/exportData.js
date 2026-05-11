@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
 
 const EXPORT_PRODUCTS_SELECT =
-  "id,manager_id,title,description,product_name,deposit_date,company_name,option_name,review_type,planned_depositor_name,created_at";
+  "id,manager_id,product_date,title,description,product_name,deposit_date,company_name,option_name,review_type,planned_depositor_name,created_at";
 const EXPORT_SUBMISSIONS_SELECT =
   "id,product_id,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,assign_name,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
 const EXPORT_EVIDENCE_PHOTOS_SELECT = "id,submission_id,photo_type,created_at";

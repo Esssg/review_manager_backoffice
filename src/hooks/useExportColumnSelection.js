@@ -15,6 +15,22 @@ function resolveActivePreset(columnKeys, presetKeys, resolvePresetColumnKeys) {
   return presetKeys.find((presetKey) => areColumnKeysEqual(columnKeys, resolvePresetColumnKeys(presetKey))) ?? "";
 }
 
+function resolveLegacyPresetColumnKeys(columnKeys, presetKeys, resolvePresetColumnKeys) {
+  return presetKeys.find((presetKey) => {
+    const presetColumnKeys = resolvePresetColumnKeys(presetKey);
+    const columnKeySet = new Set(columnKeys);
+    const presetKeysAlreadySelected = presetColumnKeys.filter((columnKey) => columnKeySet.has(columnKey));
+    const missingPresetKeyCount = presetColumnKeys.length - columnKeys.length;
+
+    return (
+      columnKeys.length > 0 &&
+      missingPresetKeyCount > 0 &&
+      missingPresetKeyCount <= 2 &&
+      areColumnKeysEqual(columnKeys, presetKeysAlreadySelected)
+    );
+  });
+}
+
 function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetColumnKeys, presetKeys) {
   const fallbackColumnKeys = resolvePresetColumnKeys(fallbackPreset);
 
@@ -30,8 +46,30 @@ function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetCol
     const parsedValue = storedValue ? JSON.parse(storedValue) : null;
 
     if (Array.isArray(parsedValue)) {
+      const activePreset = resolveActivePreset(parsedValue, presetKeys, resolvePresetColumnKeys);
+
+      if (activePreset) {
+        return {
+          activePreset,
+          selectedColumnKeys: parsedValue
+        };
+      }
+
+      const legacyPreset = resolveLegacyPresetColumnKeys(parsedValue, presetKeys, resolvePresetColumnKeys);
+
+      if (legacyPreset) {
+        const nextColumnKeys = resolvePresetColumnKeys(legacyPreset);
+
+        localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
+
+        return {
+          activePreset: legacyPreset,
+          selectedColumnKeys: nextColumnKeys
+        };
+      }
+
       return {
-        activePreset: resolveActivePreset(parsedValue, presetKeys, resolvePresetColumnKeys),
+        activePreset: "",
         selectedColumnKeys: parsedValue
       };
     }

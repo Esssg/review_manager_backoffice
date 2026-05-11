@@ -76,6 +76,7 @@ export const SUBMISSION_EXPORT_COLUMNS = [
 export const PRODUCT_EXPORT_COLUMNS = [
   { key: "products.id", label: "상품 ID", source: "products", field: "id", type: "number" },
   { key: "products.manager_id", label: "관리자", source: "products", field: "manager_id", type: "text" },
+  { key: "products.product_date", label: "상품날짜", source: "products", field: "product_date", type: "date" },
   { key: "products.title", label: "상품 제목", source: "products", field: "title", type: "text" },
   { key: "products.description", label: "설명", source: "products", field: "description", type: "text" },
   { key: "products.product_name", label: "품명", source: "products", field: "product_name", type: "text" },
@@ -124,6 +125,7 @@ export const APPLICATION_EXPORT_COLUMNS = [
   },
   { key: "applications.created_at", label: "신청일", source: "applications", field: "created_at", type: "date" },
   { key: "products.manager_id", label: "관리자", source: "products", field: "manager_id", type: "text" },
+  { key: "products.product_date", label: "상품날짜", source: "products", field: "product_date", type: "date" },
   { key: "products.title", label: "상품 제목", source: "products", field: "title", type: "text" },
   { key: "products.product_name", label: "품명", source: "products", field: "product_name", type: "text" },
   { key: "products.company_name", label: "업체명", source: "products", field: "company_name", type: "text" },
@@ -138,6 +140,7 @@ export const APPLICATION_EXPORT_COLUMNS = [
 
 export const EXPORT_COLUMNS = [
   { key: "products.manager_id", label: "관리자", source: "products", field: "manager_id", type: "text" },
+  { key: "products.product_date", label: "상품날짜", source: "products", field: "product_date", type: "date" },
   { key: "products.title", label: "상품 제목", source: "products", field: "title", type: "text" },
   { key: "products.description", label: "설명", source: "products", field: "description", type: "text" },
   { key: "products.company_name", label: "업체명", source: "products", field: "company_name", type: "text" },
@@ -218,6 +221,7 @@ export const EXPORT_COLUMNS = [
 const PRESET_COLUMN_KEYS = {
   [EXPORT_COLUMN_PRESET.BASIC]: [
     "products.manager_id",
+    "products.product_date",
     "products.title",
     "products.description",
     "products.company_name",
@@ -275,6 +279,7 @@ const PRESET_COLUMN_KEYS = {
 const APPLICATION_PRESET_COLUMN_KEYS = {
   [APPLICATION_EXPORT_COLUMN_PRESET.BASIC]: [
     "products.title",
+    "products.product_date",
     "products.product_name",
     "applications.applicant_name",
     "derived.application_status",
@@ -282,6 +287,7 @@ const APPLICATION_PRESET_COLUMN_KEYS = {
   ],
   [APPLICATION_EXPORT_COLUMN_PRESET.CONFIRMED]: [
     "products.title",
+    "products.product_date",
     "products.product_name",
     "applications.applicant_name",
     "applications.is_confirmed",
