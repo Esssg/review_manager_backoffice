@@ -6,7 +6,8 @@ export const ADMIN_MENU_NUMBER = {
   PRODUCT: 2,
   REVIEW_RECEIVE: 3,
   PRODUCT_OVERVIEW: 4,
-  EXPORT: 5
+  EXPORT: 5,
+  FILE_UPLOAD: 6
 };
 
 export const ADMIN_MENU_ITEMS = [
@@ -88,6 +89,11 @@ export const ADMIN_MENU_ITEMS = [
         path: "/admin/export/applications"
       }
     ]
+  },
+  {
+    menuNumber: ADMIN_MENU_NUMBER.FILE_UPLOAD,
+    label: "파일 업로드",
+    path: "/admin/file-upload"
   }
 ];
 
@@ -114,6 +120,10 @@ export function getAdminMenuItemByPathname(pathname) {
 
   if (pathname === "/admin/export" || pathname.startsWith("/admin/export/")) {
     return getAdminMenuItemByNumber(ADMIN_MENU_NUMBER.EXPORT);
+  }
+
+  if (pathname === "/admin/file-upload") {
+    return getAdminMenuItemByNumber(ADMIN_MENU_NUMBER.FILE_UPLOAD);
   }
 
   if (pathname === "/admin/setting") {
