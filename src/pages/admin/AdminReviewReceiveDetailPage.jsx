@@ -948,7 +948,7 @@ export default function AdminReviewReceiveDetailPage() {
     for (let index = 0; index < parsedEntries.length; index += 1) {
       const row = shouldCreateNewRows ? null : targetRows[index];
       const entry = parsedEntries[index];
-      const reviewFee = row ? parseReviewFee(row.reviewFeeInput) : defaultReviewFee;
+      const reviewFee = entry.review_fee ?? (row ? parseReviewFee(row.reviewFeeInput) : null);
 
       if (Number.isNaN(reviewFee)) {
         if (savedRows.length > 0 || createdRows.length > 0) {
@@ -1904,7 +1904,7 @@ export default function AdminReviewReceiveDetailPage() {
                     setPurchaseBulkMessage("");
                   }}
                   placeholder={
-                    "탭 또는 / 로 구분해서 입력\n배정명\t주문번호\t구매자\t수취인\t구매계정\t연락처\t주소\t은행 계좌번호 입금주\t금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
+                    "탭 또는 / 로 구분해서 입력\n배정명\t주문번호\t구매자\t수취인\t구매계정\t연락처\t주소\t은행 계좌번호 입금주\t금액\t리뷰비(선택)\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
                   }
                   aria-label="구매완료 일괄입력 텍스트"
                   disabled={isApplyingPurchaseBulk}

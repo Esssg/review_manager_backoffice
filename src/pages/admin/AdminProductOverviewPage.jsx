@@ -965,6 +965,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         contact: entry.contact,
         address: entry.address,
         amount: entry.amount,
+        review_fee: entry.review_fee ?? targetRow.review_fee ?? null,
         bank_name: entry.bank_name,
         bank_account: entry.bank_account,
         account_holder: entry.account_holder,
@@ -1550,7 +1551,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                     setPurchaseBulkMessage("");
                   }}
                   placeholder={
-                    "탭 또는 / 로 구분해서 입력\n배정명\t주문번호\t구매자\t수취인\t구매계정\t연락처\t주소\t은행 계좌번호 입금주\t금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
+                    "탭 또는 / 로 구분해서 입력\n배정명\t주문번호\t구매자\t수취인\t구매계정\t연락처\t주소\t은행 계좌번호 입금주\t금액\t리뷰비(선택)\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
                   }
                   aria-label="구매정보 입력 텍스트"
                   disabled={isApplyingPurchaseBulk}

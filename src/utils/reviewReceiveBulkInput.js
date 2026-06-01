@@ -71,6 +71,7 @@ function parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPa
   const hasPurchaseAccount = !isLikelyContactField(valueParts[3]);
   const accountStartIndex = hasPurchaseAccount ? 6 : 5;
   const minimumFieldCount = hasPurchaseAccount ? 11 : 10;
+  const hasReviewFee = parseAmount(valueParts[fieldCount - 1]) != null && parseAmount(valueParts[fieldCount - 2]) != null;
 
   if (fieldCount < minimumFieldCount) {
     return null;
@@ -82,12 +83,14 @@ function parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPa
   const purchaseAccount = hasPurchaseAccount ? valueParts[3] : "";
   const contactText = hasPurchaseAccount ? valueParts[4] : valueParts[3];
   const address = hasPurchaseAccount ? valueParts[5] : valueParts[4];
-  const accountParts = valueParts.slice(accountStartIndex, -1);
-  const amountText = valueParts[valueParts.length - 1];
+  const accountParts = valueParts.slice(accountStartIndex, hasReviewFee ? -2 : -1);
+  const amountText = valueParts[valueParts.length - (hasReviewFee ? 2 : 1)];
+  const reviewFeeText = hasReviewFee ? valueParts[valueParts.length - 1] : "";
   const trimmedContact = String(contactText ?? "").trim();
   const contact = trimmedContact ? trimmedContact.replace(/\D/g, "") : "";
   const trimmedAmountText = String(amountText ?? "").trim();
   const amount = trimmedAmountText ? parseAmount(trimmedAmountText) : null;
+  const reviewFee = hasReviewFee ? parseAmount(reviewFeeText) : null;
 
   if (accountParts.length < 3) {
     return null;
@@ -109,6 +112,7 @@ function parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPa
     trimmedContact,
     trimmedAmountText,
     amount,
+    reviewFee,
     parsedAccount
   };
 }
@@ -180,6 +184,7 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
       trimmedContact,
       trimmedAmountText,
       amount,
+      reviewFee,
       parsedAccount
     } = flexibleSeparatedParts;
 
@@ -226,14 +231,24 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
       contact,
       address: address || "",
       amount,
+      review_fee: reviewFee,
       ...parsedAccount
     };
   }
 
-  const usesSeparatedAccountFields = fieldCount === 9 || fieldCount === 10;
-  const hasPurchaseAccount = fieldCount === 8 || fieldCount === 10;
+  const hasFixedTrailingReviewFee =
+    parseAmount(valueParts[fieldCount - 1]) != null &&
+    parseAmount(valueParts[fieldCount - 2]) != null &&
+    ((fieldCount === 8 && isLikelyContactField(valueParts[3])) ||
+      (fieldCount === 9 && !isLikelyContactField(valueParts[3])) ||
+      (fieldCount === 10 && isLikelyContactField(valueParts[3])));
+  const normalizedValueParts = hasFixedTrailingReviewFee ? valueParts.slice(0, -1) : valueParts;
+  const normalizedFieldCount = normalizedValueParts.length;
+  const reviewFee = hasFixedTrailingReviewFee ? parseAmount(valueParts[fieldCount - 1]) : null;
+  const usesSeparatedAccountFields = normalizedFieldCount === 9 || normalizedFieldCount === 10;
+  const hasPurchaseAccount = normalizedFieldCount === 8 || normalizedFieldCount === 10;
 
-  if (![7, 8, 9, 10].includes(fieldCount)) {
+  if (![7, 8, 9, 10].includes(normalizedFieldCount)) {
     throw new Error(`${formatLinePrefix(lineNumber)}${buildPurchaseFormatMessage(hasAssignName)}`);
   }
 
@@ -248,7 +263,7 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
     maybeAccountHolderOrAmountText,
     maybeAmountText,
     maybeTrailingAmountText
-  ] = valueParts;
+  ] = normalizedValueParts;
 
   const purchaseAccount = hasPurchaseAccount ? purchaseAccountOrContact : "";
   const contactText = hasPurchaseAccount ? contactOrAddress : purchaseAccountOrContact;
@@ -319,6 +334,7 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
     contact,
     address: address || "",
     amount,
+    review_fee: reviewFee,
     ...parsedAccount
   };
 }
