@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 
 export default function AppAlertDialog({
   isOpen,
@@ -19,6 +20,7 @@ export default function AppAlertDialog({
   ariaLabel
 }) {
   const dialogRef = useRef(null);
+  const backdropDismissProps = useBackdropDismiss(onCancel);
 
   useEffect(() => {
     if (!isOpen) {
@@ -59,7 +61,7 @@ export default function AppAlertDialog({
   };
 
   return (
-    <div className="app-alert-backdrop" role="presentation" onClick={onCancel}>
+    <div className="app-alert-backdrop" role="presentation" {...backdropDismissProps}>
       <div
         ref={dialogRef}
         className={`app-alert-dialog${variantClassName}`}

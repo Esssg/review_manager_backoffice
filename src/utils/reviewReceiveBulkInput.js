@@ -8,9 +8,11 @@ function formatLinePrefix(lineNumber) {
 }
 
 function buildPurchaseFormatMessage(includeAssignName) {
-  return includeAssignName
+  const formatMessage = includeAssignName
     ? "'배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액', '배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액' 형식으로 입력해주세요."
     : "'주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액', '주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액', '주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액' 형식으로 입력해주세요.";
+
+  return `${formatMessage} 각 칸은 '/' 또는 탭으로 구분할 수 있습니다.`;
 }
 
 function buildAccountFieldError(lineNumber) {
@@ -45,11 +47,70 @@ function hasMeaningfulValue(value) {
   return String(value ?? "").trim().length > 0;
 }
 
+function isLikelyContactField(value) {
+  return String(value ?? "").replace(/\D/g, "").length >= 8;
+}
+
 function normalizeLines(rawText) {
   return String(rawText ?? "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function splitPurchaseLine(line) {
+  if (line.includes("\t")) {
+    return line.split("\t").map((part) => part.trim());
+  }
+
+  return line.split("/").map((part) => part.trim());
+}
+
+function parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPartial) {
+  const fieldCount = valueParts.length;
+  const hasPurchaseAccount = !isLikelyContactField(valueParts[3]);
+  const accountStartIndex = hasPurchaseAccount ? 6 : 5;
+  const minimumFieldCount = hasPurchaseAccount ? 11 : 10;
+
+  if (fieldCount < minimumFieldCount) {
+    return null;
+  }
+
+  const orderNumber = valueParts[0];
+  const buyerName = valueParts[1];
+  const recipientName = valueParts[2];
+  const purchaseAccount = hasPurchaseAccount ? valueParts[3] : "";
+  const contactText = hasPurchaseAccount ? valueParts[4] : valueParts[3];
+  const address = hasPurchaseAccount ? valueParts[5] : valueParts[4];
+  const accountParts = valueParts.slice(accountStartIndex, -1);
+  const amountText = valueParts[valueParts.length - 1];
+  const trimmedContact = String(contactText ?? "").trim();
+  const contact = trimmedContact ? trimmedContact.replace(/\D/g, "") : "";
+  const trimmedAmountText = String(amountText ?? "").trim();
+  const amount = trimmedAmountText ? parseAmount(trimmedAmountText) : null;
+
+  if (accountParts.length < 3) {
+    return null;
+  }
+
+  const parsedAccount = allowPartial
+    ? parseOptionalSeparatedAccountFields(accountParts[0], accountParts[1], accountParts.slice(2).join(" "), lineNumber)
+    : parseSeparatedAccountFields(accountParts[0], accountParts[1], accountParts.slice(2).join(" "), lineNumber);
+
+  return {
+    orderNumber,
+    buyerName,
+    recipientName,
+    purchaseAccount,
+    contactText,
+    contact,
+    address,
+    amountText,
+    trimmedContact,
+    trimmedAmountText,
+    amount,
+    parsedAccount
+  };
 }
 
 function parseAccountChunk(accountChunk, lineNumber) {
@@ -105,6 +166,70 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
   const assignName = hasAssignName ? parts[0] : "";
   const valueParts = hasAssignName ? parts.slice(1) : parts;
   const fieldCount = valueParts.length;
+  const flexibleSeparatedParts =
+    fieldCount > 10 ? parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPartial) : null;
+
+  if (flexibleSeparatedParts) {
+    const {
+      orderNumber,
+      buyerName,
+      recipientName,
+      purchaseAccount,
+      contact,
+      address,
+      trimmedContact,
+      trimmedAmountText,
+      amount,
+      parsedAccount
+    } = flexibleSeparatedParts;
+
+    if (!allowPartial) {
+      if (!orderNumber) {
+        throw new Error(`${formatLinePrefix(lineNumber)}주문번호가 비어 있습니다.`);
+      }
+
+      if (!buyerName) {
+        throw new Error(`${formatLinePrefix(lineNumber)}구매자가 비어 있습니다.`);
+      }
+
+      if (!recipientName) {
+        throw new Error(`${formatLinePrefix(lineNumber)}수취인이 비어 있습니다.`);
+      }
+
+      if (contact.length < 8) {
+        throw new Error(`${formatLinePrefix(lineNumber)}연락처 형식이 올바르지 않습니다.`);
+      }
+
+      if (!address) {
+        throw new Error(`${formatLinePrefix(lineNumber)}주소가 비어 있습니다.`);
+      }
+
+      if (amount == null) {
+        throw new Error(`${formatLinePrefix(lineNumber)}금액 형식이 올바르지 않습니다.`);
+      }
+    } else {
+      if (trimmedContact && contact.length < 8) {
+        throw new Error(`${formatLinePrefix(lineNumber)}연락처 형식이 올바르지 않습니다.`);
+      }
+
+      if (trimmedAmountText && amount == null) {
+        throw new Error(`${formatLinePrefix(lineNumber)}금액 형식이 올바르지 않습니다.`);
+      }
+    }
+
+    return {
+      assign_name: assignName || "",
+      order_number: orderNumber || "",
+      buyer_name: buyerName || "",
+      recipient_name: recipientName || "",
+      purchase_account: purchaseAccount || "",
+      contact,
+      address: address || "",
+      amount,
+      ...parsedAccount
+    };
+  }
+
   const usesSeparatedAccountFields = fieldCount === 9 || fieldCount === 10;
   const hasPurchaseAccount = fieldCount === 8 || fieldCount === 10;
 
@@ -208,7 +333,7 @@ export function parsePurchaseBulkInput(rawText, options = {}) {
 
   return lines.map((line, index) => {
     const entry = parsePurchaseLineParts(
-      line.split("/").map((part) => part.trim()),
+      splitPurchaseLine(line),
       index + 1,
       { allowAssignName, allowPartial: false }
     );
@@ -232,7 +357,7 @@ export function parseInlinePurchaseInput(rawText) {
   }
 
   return parsePurchaseLineParts(
-    lines[0].split("/").map((part) => part.trim()),
+    splitPurchaseLine(lines[0]),
     null,
     { allowAssignName: true, allowPartial: true }
   );

@@ -4,6 +4,7 @@ import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerM
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
+import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import { ADMIN_STORAGE_KEY, getProductDepositGbLabel } from "../../constants/admin";
 import {
@@ -574,6 +575,10 @@ export default function AdminReviewReceiveDetailPage() {
     setIsReviewFeeBatchDialogOpen(false);
     setReviewFeeBatchMessage("");
   };
+  const purchaseBulkBackdropDismissProps = useBackdropDismiss(closePurchaseBulkModal);
+  const reviewBatchBackdropDismissProps = useBackdropDismiss(closeReviewBatchModal);
+  const purchaseAssignBackdropDismissProps = useBackdropDismiss(closePurchaseAssignModal);
+  const purchaseAssignConflictBackdropDismissProps = useBackdropDismiss(() => closePurchaseAssignConflictDialog(null));
 
   const openRowEditor = (rowId) => {
     setEditingRowId(rowId);
@@ -1854,9 +1859,9 @@ export default function AdminReviewReceiveDetailPage() {
       )}
 
       {isPurchaseBulkModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closePurchaseBulkModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...purchaseBulkBackdropDismissProps}>
           <div
-            className="review-receive-modal"
+            className="review-receive-modal review-receive-purchase-bulk-modal"
             role="dialog"
             aria-modal="true"
             aria-label="구매완료 일괄입력"
@@ -1899,7 +1904,7 @@ export default function AdminReviewReceiveDetailPage() {
                     setPurchaseBulkMessage("");
                   }}
                   placeholder={
-                    "배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
+                    "탭 또는 / 로 구분해서 입력\n배정명\t주문번호\t구매자\t수취인\t구매계정\t연락처\t주소\t은행 계좌번호 입금주\t금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
                   }
                   aria-label="구매완료 일괄입력 텍스트"
                   disabled={isApplyingPurchaseBulk}
@@ -1973,7 +1978,7 @@ export default function AdminReviewReceiveDetailPage() {
       )}
 
       {isReviewBatchModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closeReviewBatchModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...reviewBatchBackdropDismissProps}>
           <div
             className="review-receive-modal"
             role="dialog"
@@ -2087,7 +2092,7 @@ export default function AdminReviewReceiveDetailPage() {
       )}
 
       {isPurchaseAssignModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closePurchaseAssignModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...purchaseAssignBackdropDismissProps}>
           <div
             className="review-receive-modal"
             role="dialog"
@@ -2202,7 +2207,7 @@ export default function AdminReviewReceiveDetailPage() {
         <div
           className="review-receive-modal-backdrop review-receive-dialog-backdrop"
           role="presentation"
-          onClick={() => closePurchaseAssignConflictDialog(null)}
+          {...purchaseAssignConflictBackdropDismissProps}
         >
           <div
             className="review-receive-modal review-receive-dialog"

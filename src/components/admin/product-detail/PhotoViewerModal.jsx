@@ -1,10 +1,14 @@
+import { useBackdropDismiss } from "../../../hooks/useBackdropDismiss";
+
 export default function PhotoViewerModal({ photoViewer, onClose, onNext, onPrev }) {
+  const backdropDismissProps = useBackdropDismiss(onClose);
+
   if (!photoViewer.isOpen || photoViewer.photos.length === 0) {
     return null;
   }
 
   return (
-    <div className="photo-modal-backdrop" onClick={onClose} role="presentation">
+    <div className="photo-modal-backdrop" role="presentation" {...backdropDismissProps}>
       <div className="photo-modal-content" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <button type="button" className="photo-modal-close" onClick={onClose}>
           닫기

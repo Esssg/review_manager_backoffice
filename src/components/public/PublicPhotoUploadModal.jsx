@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import AppAlertDialog from "../common/AppAlertDialog";
+import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 
 function formatFileSize(bytes) {
@@ -34,6 +35,7 @@ export default function PublicPhotoUploadModal({
     confirmButtonLabel: submitButtonLabel,
     onConfirm: onSaveDraft
   });
+  const backdropDismissProps = useBackdropDismiss(onClose);
   const dragDepthRef = useRef(0);
   const [isDesktopDragEnabled, setIsDesktopDragEnabled] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -171,7 +173,7 @@ export default function PublicPhotoUploadModal({
   };
 
   return (
-    <div className="review-receive-modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="review-receive-modal-backdrop" role="presentation" {...backdropDismissProps}>
       <div
         className="review-receive-modal public-photo-modal"
         role="dialog"

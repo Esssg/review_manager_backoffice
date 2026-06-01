@@ -4,6 +4,7 @@ import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
+import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import {
   ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
@@ -913,6 +914,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       purchaseAssignConflictResolverRef.current = null;
     }
   };
+  const purchaseBulkBackdropDismissProps = useBackdropDismiss(closePurchaseBulkModal);
+  const exportBackdropDismissProps = useBackdropDismiss(closeExportModal);
+  const purchaseAssignBackdropDismissProps = useBackdropDismiss(closePurchaseAssignModal);
+  const reviewBatchBackdropDismissProps = useBackdropDismiss(closeReviewBatchModal);
+  const purchaseAssignConflictBackdropDismissProps = useBackdropDismiss(() => closePurchaseAssignConflictDialog(null));
 
   const openPurchaseAssignConflictDialog = (duplicatedNumbers) =>
     new Promise((resolve) => {
@@ -1493,9 +1499,9 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       )}
 
       {isPurchaseBulkModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closePurchaseBulkModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...purchaseBulkBackdropDismissProps}>
           <div
-            className="review-receive-modal"
+            className="review-receive-modal review-receive-purchase-bulk-modal"
             role="dialog"
             aria-modal="true"
             aria-label="구매정보 입력하기"
@@ -1544,7 +1550,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                     setPurchaseBulkMessage("");
                   }}
                   placeholder={
-                    "배정명 / 주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
+                    "탭 또는 / 로 구분해서 입력\n배정명\t주문번호\t구매자\t수취인\t구매계정\t연락처\t주소\t은행 계좌번호 입금주\t금액\n또는\n배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 / 계좌번호 / 입금주 / 금액"
                   }
                   aria-label="구매정보 입력 텍스트"
                   disabled={isApplyingPurchaseBulk}
@@ -1618,7 +1624,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       )}
 
       {exportModal.isOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closeExportModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...exportBackdropDismissProps}>
           <div
             className="review-receive-modal product-overview-export-modal"
             role="dialog"
@@ -1682,7 +1688,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       )}
 
       {isPurchaseAssignModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closePurchaseAssignModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...purchaseAssignBackdropDismissProps}>
           <div
             className="review-receive-modal"
             role="dialog"
@@ -1830,7 +1836,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       )}
 
       {isReviewBatchModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closeReviewBatchModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...reviewBatchBackdropDismissProps}>
           <div
             className="review-receive-modal"
             role="dialog"
@@ -1955,7 +1961,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         <div
           className="review-receive-modal-backdrop review-receive-dialog-backdrop"
           role="presentation"
-          onClick={() => closePurchaseAssignConflictDialog(null)}
+          {...purchaseAssignConflictBackdropDismissProps}
         >
           <div
             className="review-receive-modal review-receive-dialog"

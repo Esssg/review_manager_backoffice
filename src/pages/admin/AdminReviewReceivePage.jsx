@@ -4,6 +4,7 @@ import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
+import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import {
   ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
@@ -269,6 +270,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setProductForm(createInitialProductForm());
     setIsProductModalOpen(false);
   };
+  const productModalBackdropDismissProps = useBackdropDismiss(closeProductModal);
 
   const handleProductFormChange = (event) => {
     const { name, value } = event.target;
@@ -492,7 +494,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       </section>
 
       {isProductModalOpen && (
-        <div className="review-receive-modal-backdrop" role="presentation" onClick={closeProductModal}>
+        <div className="review-receive-modal-backdrop" role="presentation" {...productModalBackdropDismissProps}>
           <div
             className="review-receive-modal review-receive-create-product-modal"
             role="dialog"
