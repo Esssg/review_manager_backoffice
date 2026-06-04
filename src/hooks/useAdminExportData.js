@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, ADMIN_STORAGE_KEY } from "../constants/admin";
+import { ADMIN_STORAGE_KEY } from "../constants/admin";
+import { useAdminIncludeCompanyData } from "./useAdminCapabilities";
 import { fetchAdminExportData } from "../services/exportData";
 import { buildSubmissionExportRows } from "../utils/exportColumns";
-
-function getStoredIncludeCompanyData() {
-  return localStorage.getItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY) === "true";
-}
 
 export default function useAdminExportData(options = {}) {
   const {
@@ -17,7 +14,13 @@ export default function useAdminExportData(options = {}) {
     selectedColumnKeys = []
   } = options;
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
-  const [includeCompanyData, setIncludeCompanyData] = useState(getStoredIncludeCompanyData);
+  const {
+    includeCompanyData,
+    handleIncludeCompanyDataChange,
+    isLoadingCapabilities,
+    isIncludeCompanyDataReady,
+    capabilitiesErrorMessage
+  } = useAdminIncludeCompanyData(adminId);
   const [exportData, setExportData] = useState({
     products: [],
     submissions: [],
@@ -40,9 +43,27 @@ export default function useAdminExportData(options = {}) {
       setIsLoading(true);
       setErrorMessage("");
 
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+        return;
+      }
+
       if (!adminId) {
         if (isMounted) {
           setErrorMessage("로그인 정보가 없습니다. 다시 로그인해주세요.");
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (capabilitiesErrorMessage) {
+        if (isMounted) {
+          setExportData({
+            products: [],
+            submissions: [],
+            evidencePhotos: [],
+            applications: []
+          });
+          setErrorMessage(capabilitiesErrorMessage);
           setIsLoading(false);
         }
         return;
@@ -93,14 +114,19 @@ export default function useAdminExportData(options = {}) {
     return () => {
       isMounted = false;
     };
-  }, [adminId, dateFilter, depositOnly, forcePersonalScope, includeApplications, includeCompanyData, productId, refreshKey]);
-
-  const handleIncludeCompanyDataChange = useCallback((event) => {
-    const nextChecked = event.target.checked;
-
-    setIncludeCompanyData(nextChecked);
-    localStorage.setItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, String(nextChecked));
-  }, []);
+  }, [
+    adminId,
+    capabilitiesErrorMessage,
+    dateFilter,
+    depositOnly,
+    forcePersonalScope,
+    includeApplications,
+    includeCompanyData,
+    isIncludeCompanyDataReady,
+    isLoadingCapabilities,
+    productId,
+    refreshKey
+  ]);
 
   const refreshExportData = useCallback(() => {
     setRefreshKey((prev) => prev + 1);

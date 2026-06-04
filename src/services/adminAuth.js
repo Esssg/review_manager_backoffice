@@ -1,6 +1,12 @@
 import { supabase } from "../lib/supabase";
+import {
+  getFallbackAdminCapabilities,
+  isAdminCapabilitiesColumnError,
+  normalizeAdminCapabilities
+} from "../utils/adminCapabilities";
 
 const ADMIN_MENU_PERMISSIONS_SELECT = "admin_id,menu_number,menu_label";
+const ADMIN_CAPABILITIES_SELECT = "login_id,include_company_data_include,can_verify_deposit";
 
 export async function validateAdminCredentials(loginId, password) {
   return supabase
@@ -17,6 +23,40 @@ export async function fetchAdminMenuPermissions(adminId) {
     .select(ADMIN_MENU_PERMISSIONS_SELECT)
     .eq("admin_id", adminId)
     .order("menu_number", { ascending: true });
+}
+
+export async function fetchAdminCapabilities(adminId) {
+  if (!adminId) {
+    return {
+      capabilities: getFallbackAdminCapabilities(adminId),
+      error: new Error("로그인 정보가 없습니다. 다시 로그인해주세요.")
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("admins")
+    .select(ADMIN_CAPABILITIES_SELECT)
+    .eq("login_id", adminId)
+    .maybeSingle();
+
+  if (error && isAdminCapabilitiesColumnError(error)) {
+    return {
+      capabilities: getFallbackAdminCapabilities(adminId),
+      error: null
+    };
+  }
+
+  if (error) {
+    return {
+      capabilities: getFallbackAdminCapabilities(adminId),
+      error
+    };
+  }
+
+  return {
+    capabilities: normalizeAdminCapabilities(adminId, data),
+    error: null
+  };
 }
 
 export function logoutAdmin() {

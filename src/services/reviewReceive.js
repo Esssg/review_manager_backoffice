@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
 
 const REVIEW_RECEIVE_PRODUCT_SELECT =
-  "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id";
+  "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id,product_date,created_at,bundle_id";
 const REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB = `${REVIEW_RECEIVE_PRODUCT_SELECT},"deposit_GB"`;
 const REVIEW_RECEIVE_SUBMISSIONS_SELECT =
   "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
@@ -10,6 +10,38 @@ const REVIEW_RECEIVE_SUBMISSIONS_SELECT =
 function isMissingDepositGbColumn(error) {
   const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
   return message.includes("deposit_GB");
+}
+
+function isMissingBundleIdColumn(error) {
+  const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
+  return message.includes("bundle_id");
+}
+
+async function fetchProductById(productId, managerIds, selectColumns) {
+  return supabase
+    .from("products")
+    .select(selectColumns)
+    .eq("id", productId)
+    .in("manager_id", managerIds)
+    .maybeSingle();
+}
+
+async function fetchBundleProducts(product, managerIds) {
+  const bundleId = product?.bundle_id ?? product?.id;
+
+  if (!bundleId) {
+    return {
+      data: product ? [product] : [],
+      error: null
+    };
+  }
+
+  return supabase
+    .from("products")
+    .select(REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB)
+    .eq("bundle_id", bundleId)
+    .in("manager_id", managerIds)
+    .order("id", { ascending: true });
 }
 
 export async function fetchReviewReceiveDetail(productId, adminId) {
@@ -22,6 +54,10 @@ export async function fetchReviewReceiveDetail(productId, adminId) {
         data: null,
         error: scope.error
       },
+      productsResult: {
+        data: [],
+        error: null
+      },
       submissionsResult: {
         data: [],
         error: null
@@ -29,33 +65,65 @@ export async function fetchReviewReceiveDetail(productId, adminId) {
     };
   }
 
-  const submissionsPromise = supabase
-    .from("submissions")
-    .select(REVIEW_RECEIVE_SUBMISSIONS_SELECT)
-    .eq("product_id", productId)
-    .order("created_at", { ascending: true });
-
-  let productResult = await supabase
-    .from("products")
-    .select(REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB)
-    .eq("id", productId)
-    .in("manager_id", scope.managerIds)
-    .maybeSingle();
+  let productResult = await fetchProductById(productId, scope.managerIds, REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB);
 
   if (isMissingDepositGbColumn(productResult.error)) {
-    productResult = await supabase
-      .from("products")
-      .select(REVIEW_RECEIVE_PRODUCT_SELECT)
-      .eq("id", productId)
-      .in("manager_id", scope.managerIds)
-      .maybeSingle();
+    productResult = await fetchProductById(productId, scope.managerIds, REVIEW_RECEIVE_PRODUCT_SELECT);
   }
 
-  const submissionsResult = await submissionsPromise;
+  if (isMissingBundleIdColumn(productResult.error)) {
+    return {
+      scope,
+      productResult: {
+        data: null,
+        error: new Error("products.bundle_id 컬럼이 아직 없습니다. bundle_id 추가 마이그레이션을 먼저 적용해주세요.")
+      },
+      productsResult: {
+        data: [],
+        error: null
+      },
+      submissionsResult: {
+        data: [],
+        error: null
+      }
+    };
+  }
+
+  if (productResult.error || !productResult.data) {
+    return {
+      scope,
+      productResult,
+      productsResult: {
+        data: productResult.data ? [productResult.data] : [],
+        error: null
+      },
+      submissionsResult: {
+        data: [],
+        error: null
+      }
+    };
+  }
+
+  let productsResult = await fetchBundleProducts(productResult.data, scope.managerIds);
+
+  if (isMissingDepositGbColumn(productsResult.error)) {
+    productsResult = {
+      data: [productResult.data],
+      error: null
+    };
+  }
+
+  const productIds = (productsResult.data?.length ? productsResult.data : [productResult.data]).map((product) => product.id);
+  const submissionsResult = await supabase
+    .from("submissions")
+    .select(REVIEW_RECEIVE_SUBMISSIONS_SELECT)
+    .in("product_id", productIds)
+    .order("created_at", { ascending: true });
 
   return {
     scope,
     productResult,
+    productsResult,
     submissionsResult
   };
 }

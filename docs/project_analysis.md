@@ -1,7 +1,7 @@
 # Review Manager Backoffice 프로젝트 분석
 
 작성일: 2026-04-23  
-최종 갱신일: 2026-04-30
+최종 갱신일: 2026-06-04
 
 ## 1. 프로젝트 개요
 
@@ -26,6 +26,7 @@
 - 증빙 사진 썸네일 및 모달 뷰어
 - 내보내기 메뉴 8종(전체상품, 내상품, 일자별, 상품별, 입금일 기준, 상태별, 신청자 명단, 사진내려받기)
 - 파일 업로드 메뉴 진입점 및 Excel 파싱/미리보기/DB 반영
+- 리뷰받기 `products.bundle_id` 기반 여러 품목 묶음 표시 및 품목별 submissions 관리
 
 현재 프로젝트의 성격은 "빠르게 운영 가능한 내부용 백오피스 MVP"에 가깝습니다. 기능은 이미 운영 흐름을 충분히 담고 있지만, 보안과 유지보수성 관점에서는 구조 개선 여지가 큽니다.
 
@@ -234,9 +235,11 @@ Node 스크립트용 대체 키도 지원합니다.
 - 공개 페이지나 구매자 페이지에는 `/admin/*` 네임스페이스를 사용하지 않습니다.
 
 현재는 관리자 백오피스와, 이름 입력 후 본인 배정 submission만 조회하고 구매완료 섹션에서 사진을 실제 업로드할 수 있는 구매자용 공개 리뷰받기 페이지가 함께 구현되어 있습니다.
-관리자 대시보드는 `review_manager_include_company_data` 체크박스를 공유해 본인 데이터와 같은 회사 소속 관리자 데이터를 전환하며, 오늘 KPI, 누적 운영 상태, 조건 기반 알림, 14일/30일 추이, 상위 상품, 최근 활동, 회사 멤버 비교를 실제 운영 데이터 기준으로 보여줍니다.
+관리자 대시보드는 `admins.include_company_data_include` 기준으로 페이지 진입/이동 때마다 회사 데이터 포함 여부를 초기화하고, 현재 페이지 안에서는 체크박스로 본인 데이터와 같은 회사 소속 관리자 데이터를 전환할 수 있습니다.
+`admins.include_company_data_include`는 회사 데이터 포함 적용 기준값에 사용하고, `admins.can_verify_deposit`는 상품전체보기/리뷰받기 상세의 입금완료 처리 권한에 사용합니다. 새 컬럼이 아직 없는 DB에서는 프런트 fallback 정책으로 `hyejin2054`만 회사 데이터 포함 기준값을 켜고, `aram2525`, `kimhanbi77`만 입금완료 처리를 막습니다.
 관리자 백오피스에는 `admin_menu_permissions.menu_number = 4` 권한으로 제어되는 `상품전체보기` 메뉴가 추가되어, 왼쪽 메뉴의 하위 선택 메뉴에서 `전체보기`와 `상태별보기` 경로로 나뉘어 `products` + `submissions`를 필터 기준으로 일괄 처리할 수 있습니다.
 `admin_menu_permissions.menu_number = 3`인 `리뷰받기` 메뉴도 하위 선택 메뉴를 가지며, `전체보기`, `진행중보기`, `완료보기` 경로에서 상품별 submission의 `is_deposit_verified` 집계 상태를 기준으로 같은 목록을 필터링해 보여줍니다.
+리뷰받기 상세는 `products.bundle_id`가 같은 여러 `products` row를 같은 묶음으로 읽고, 날짜/업체명 공통 정보 아래 품목별 접기/펼치기 섹션에서 각 품목의 submissions를 개별 관리합니다.
 `admin_menu_permissions.menu_number = 5`인 `내보내기` 메뉴는 하위 경로가 `/admin/export/*`이며, 현재 `전체상품`, `내상품`, `일자별`, `상품별`, `입금일 기준`, `상태별`, `신청자 명단` 화면에서 Excel 내보내기(컬럼 선택·미리보기·기간 필터·상태/상품 필터)를 제공합니다. `사진내려받기` 화면은 상품내역 필터 후 필터링된 상품의 submission 증빙 사진을 브라우저에서 ZIP으로 묶어 내려받습니다.
 `admin_menu_permissions.menu_number = 6`인 `파일 업로드` 메뉴는 `/admin/file-upload` 경로를 사용합니다. Excel 파일 선택/드래그앤드롭/붙여넣기, 파싱 결과 미리보기, 오류/경고/스킵 행 표시, 오류 행 제외 후 저장 예정 데이터 확인, 샘플 양식 다운로드, Supabase `products` 생성 및 `submissions` 주문번호 기준 insert/update 흐름을 제공합니다.
 
@@ -259,7 +262,7 @@ Node 스크립트용 대체 키도 지원합니다.
 
 ### 대시보드
 
-1. `localStorage`에서 관리자 ID와 `review_manager_include_company_data` 체크 상태를 읽습니다.
+1. `localStorage`에서 관리자 ID를 읽고, 페이지 진입/이동 때마다 `admins.include_company_data_include` 기준으로 회사 데이터 포함 상태를 초기화합니다.
 2. `resolveAdminManagerScope`로 본인 또는 회사 단위 `managerIds` 범위를 결정합니다.
 3. `src/services/dashboardMetrics.js`가 `products`, `submissions`, `applications`, `evidence_photos`를 필요한 컬럼만 조회합니다.
 4. 회사 데이터 포함이 켜져 있고 회사명이 있으면 같은 회사의 `admins` 목록도 조회합니다.

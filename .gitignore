@@ -47,3 +47,5 @@ temp.xlsx
 
 supabase/migrations/*
 supabase/migrations
+!supabase/migrations/
+!supabase/migrations/20260604123000_add_bundle_id_to_products.sql

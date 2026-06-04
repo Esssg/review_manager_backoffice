@@ -17,6 +17,7 @@ export default function AppAlertDialog({
   onCancel,
   onConfirm,
   confirmButtonClassName,
+  actionsChildren,
   ariaLabel
 }) {
   const dialogRef = useRef(null);
@@ -77,19 +78,23 @@ export default function AppAlertDialog({
           {title && <h2>{title}</h2>}
           {effectiveDescription && <p>{effectiveDescription}</p>}
           {children}
-          <div className="app-alert-actions">
-            <button type="button" className="admin-secondary-button" onClick={onCancel} disabled={isActionBusy}>
-              {cancelLabel}
-            </button>
-            <button
-              type="button"
-              className={confirmButtonClassName ?? "admin-primary-button"}
-              onClick={onConfirm}
-              disabled={isActionBusy}
-            >
-              {effectiveConfirmLabel}
-            </button>
-          </div>
+          {actionsChildren ? (
+            <div className="app-alert-actions">{actionsChildren}</div>
+          ) : (
+            <div className="app-alert-actions">
+              <button type="button" className="admin-secondary-button" onClick={onCancel} disabled={isActionBusy}>
+                {cancelLabel}
+              </button>
+              <button
+                type="button"
+                className={confirmButtonClassName ?? "admin-primary-button"}
+                onClick={onConfirm}
+                disabled={isActionBusy}
+              >
+                {effectiveConfirmLabel}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

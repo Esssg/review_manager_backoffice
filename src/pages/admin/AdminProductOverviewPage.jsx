@@ -6,8 +6,8 @@ import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
+import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import {
-  ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
   ADMIN_STORAGE_KEY,
   PRODUCT_OVERVIEW_STATUS_TABS
 } from "../../constants/admin";
@@ -482,11 +482,16 @@ function ProductOverviewSection({
 
 export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const {
+    capabilities,
+    includeCompanyData,
+    handleIncludeCompanyDataChange,
+    isLoadingCapabilities,
+    isIncludeCompanyDataReady,
+    capabilitiesErrorMessage
+  } = useAdminIncludeCompanyData(adminId);
   const [products, setProducts] = useState([]);
   const [rows, setRows] = useState([]);
-  const [includeCompanyData, setIncludeCompanyData] = useState(
-    () => localStorage.getItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY) === "true"
-  );
   const [filters, setFilters] = useState(createEmptyProductOverviewFilters);
   const [activeStatusTab, setActiveStatusTab] = useState("purchase");
   const [selectedSubmissionIds, setSelectedSubmissionIds] = useState([]);
@@ -549,6 +554,19 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       setIsLoading(true);
       setErrorMessage("");
 
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+        return;
+      }
+
+      if (capabilitiesErrorMessage) {
+        setProducts([]);
+        setRows([]);
+        setSelectedSubmissionIds([]);
+        setErrorMessage(capabilitiesErrorMessage);
+        setIsLoading(false);
+        return;
+      }
+
       const {
         productsResult: { data: productData, error: productError },
         submissionsResult: { data: submissionData, error: submissionError },
@@ -577,7 +595,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     };
 
     loadOverview();
-  }, [adminId, includeCompanyData]);
+  }, [adminId, capabilitiesErrorMessage, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities]);
 
   useEffect(() => {
     setSelectedSubmissionIds([]);
@@ -615,6 +633,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const reviewBatchTargetRows = reviewBatchBaseRows.filter(
     (row) => row.is_review_verified && !row.is_deposit_verified
   );
+  const canVerifyDeposit =
+    !isLoadingCapabilities && !capabilitiesErrorMessage && capabilities.canVerifyDeposit;
   const exportModalRows = scopeRowsByKey[exportModal.scopeKey] ?? [];
   const exportSelectedColumnKeySet = new Set(exportColumnKeys);
   const isAllExportColumnsSelected = exportColumnKeys.length === PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS.length;
@@ -663,13 +683,6 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
   const handleResetFilters = () => {
     setFilters(createEmptyProductOverviewFilters());
-  };
-
-  const handleIncludeCompanyDataChange = (event) => {
-    const nextChecked = event.target.checked;
-
-    setIncludeCompanyData(nextChecked);
-    localStorage.setItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, String(nextChecked));
   };
 
   const clearSelectedRows = (submissionIds) => {
@@ -776,6 +789,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   };
 
   const openReviewBatchModal = (scopeKey) => {
+    if (!canVerifyDeposit) {
+      showToast("입금완료 처리 권한이 없습니다.", "error");
+      return;
+    }
+
     setReviewBatchScope(scopeKey);
     setReviewBatchDepositedAt("");
     setReviewBatchActualDepositorMode("planned");
@@ -1112,6 +1130,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   };
 
   const applyReviewBatch = async () => {
+    if (!canVerifyDeposit) {
+      setReviewBatchFeedback("입금완료 처리 권한이 없습니다.", "error");
+      return;
+    }
+
     setIsApplyingReviewBatch(true);
 
     const savedRows = [];
@@ -1159,6 +1182,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
   const handleReviewBatchApply = async () => {
     setReviewBatchFeedback("");
+
+    if (!canVerifyDeposit) {
+      setReviewBatchFeedback("입금완료 처리 권한이 없습니다.", "error");
+      return;
+    }
 
     if (reviewBatchSelectedRows.length > 0 && !areRowsDepositVerifyTargets(reviewBatchSelectedRows)) {
       setReviewBatchFeedback("리뷰완료 예이고 입금완료 전인 행만 선택해야 합니다.", "error");
@@ -1269,6 +1297,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
   const confirmReviewBatchApply = async () => {
     closeReviewBatchConfirmDialog();
+    if (!canVerifyDeposit) {
+      setReviewBatchFeedback("입금완료 처리 권한이 없습니다.", "error");
+      return;
+    }
+
     await applyReviewBatch();
   };
 
@@ -1294,7 +1327,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
   const reviewBatchEnterConfirm = useModalEnterConfirm({
     isOpen: isReviewBatchModalOpen,
-    isDisabled: isApplyingReviewBatch || reviewBatchTargetRows.length === 0,
+    isDisabled: !canVerifyDeposit || isApplyingReviewBatch || reviewBatchTargetRows.length === 0,
     actionLabel: "리뷰완료 일괄처리",
     confirmButtonLabel: "확인",
     onConfirm: handleReviewBatchApply
@@ -1323,6 +1356,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     const isDepositVerifyDisabled = hasSelectedRows
       ? !areRowsDepositVerifyTargets(selectedRows)
       : targetRows.length === 0;
+    const disabledReason = !canVerifyDeposit ? "입금완료 처리 권한이 없습니다." : "";
 
     return (
       <div className="review-receive-toolbar-actions">
@@ -1330,10 +1364,12 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
           type="button"
           className="admin-primary-button"
           onClick={() => openReviewBatchModal(scopeKey)}
-          disabled={isDepositVerifyDisabled}
+          disabled={!canVerifyDeposit || isDepositVerifyDisabled}
+          title={disabledReason}
         >
           {hasSelectedRows ? "선택한 행 입금완료 처리하기" : "입금완료 처리하기"}
         </button>
+        {!canVerifyDeposit && <p className="login-error">입금완료 처리 권한이 없습니다.</p>}
       </div>
     );
   };
@@ -1986,7 +2022,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                 type="button"
                 className="admin-primary-button"
                 onClick={handleReviewBatchApply}
-                disabled={isApplyingReviewBatch || reviewBatchTargetRows.length === 0}
+                disabled={!canVerifyDeposit || isApplyingReviewBatch || reviewBatchTargetRows.length === 0}
               >
                 {isApplyingReviewBatch ? "처리 중..." : "확인"}
               </button>

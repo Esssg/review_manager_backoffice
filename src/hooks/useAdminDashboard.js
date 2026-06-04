@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, ADMIN_STORAGE_KEY } from "../constants/admin";
+import { ADMIN_STORAGE_KEY } from "../constants/admin";
+import { useAdminIncludeCompanyData } from "./useAdminCapabilities";
 import { fetchAdminDashboardData } from "../services/dashboardMetrics";
 import { buildDashboardMetrics } from "../utils/dashboardMetrics";
 
-function getStoredIncludeCompanyData() {
-  return localStorage.getItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY) === "true";
-}
-
 export default function useAdminDashboard() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
-  const [includeCompanyData, setIncludeCompanyData] = useState(getStoredIncludeCompanyData);
+  const {
+    includeCompanyData,
+    handleIncludeCompanyDataChange,
+    isLoadingCapabilities,
+    isIncludeCompanyDataReady,
+    capabilitiesErrorMessage
+  } = useAdminIncludeCompanyData(adminId);
   const [dashboardData, setDashboardData] = useState({
     products: [],
     submissions: [],
@@ -33,6 +36,10 @@ export default function useAdminDashboard() {
       setIsLoading(true);
       setErrorMessage("");
 
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+        return;
+      }
+
       if (!adminId) {
         if (isMounted) {
           setDashboardData({
@@ -43,6 +50,21 @@ export default function useAdminDashboard() {
             metrics: null
           });
           setErrorMessage("로그인 정보가 없습니다. 다시 로그인해주세요.");
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (capabilitiesErrorMessage) {
+        if (isMounted) {
+          setDashboardData({
+            products: [],
+            submissions: [],
+            applications: [],
+            evidencePhotos: [],
+            metrics: null
+          });
+          setErrorMessage(capabilitiesErrorMessage);
           setIsLoading(false);
         }
         return;
@@ -96,14 +118,14 @@ export default function useAdminDashboard() {
     return () => {
       isMounted = false;
     };
-  }, [adminId, includeCompanyData, refreshKey]);
-
-  const handleIncludeCompanyDataChange = useCallback((event) => {
-    const nextChecked = event.target.checked;
-
-    setIncludeCompanyData(nextChecked);
-    localStorage.setItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, String(nextChecked));
-  }, []);
+  }, [
+    adminId,
+    capabilitiesErrorMessage,
+    includeCompanyData,
+    isIncludeCompanyDataReady,
+    isLoadingCapabilities,
+    refreshKey
+  ]);
 
   const refreshDashboard = useCallback(() => {
     setRefreshKey((prev) => prev + 1);

@@ -1,127 +1,134 @@
-# products bundle_id 기반 리뷰받기 구조 변경 계획
+# admins 계정별 동작 권한 구현 계획
 
 작성일: 2026-06-04
 
 ## 목표
 
-- `public.products`에 `bundle_id` int 컬럼을 추가한다.
-- 새 테이블을 만들지 않고, 같은 `bundle_id`를 가진 여러 `products` row를 하나의 묶음으로 취급한다.
-- 리뷰받기 화면에서 "날짜 + 업체명"을 번들의 공통 정보로 보여주고, 품명/옵션/리뷰형태/입금구분/설명/상품 제목 등은 품목별 상세 정보로 분리한다.
-- 여러 상품이 같은 `bundle_id`를 가지면 하나의 리뷰받기 상세 페이지에서 함께 확인할 수 있게 한다.
+- 관리자 계정별로 `내 회사 데이터 포함` 기본값과 `입금완료` 처리 권한을 제어한다.
+- `hyejin2054`는 회사 데이터 포함이 기본으로 켜져 있고, 사용자가 변경할 수 있으며, 입금완료 처리가 가능하다.
+- `aram2525`, `kimhanbi77`은 회사 데이터 포함이 기본으로 꺼져 있고, 사용자가 변경할 수 있으며, 입금완료 처리는 불가능하다.
+- 그 외 계정은 회사 데이터 포함이 기본으로 꺼져 있고, 사용자가 변경할 수 있으며, 입금완료 처리가 가능하다.
+- 그 외 계정은 입금완료 등 제한 대상 동작 권한을 가진다.
+- 메뉴 권한(`admin_menu_permissions`)과 동작 권한을 섞지 않고, 한 곳의 기준을 여러 화면에서 재사용한다.
 
 ## 현재 확인한 구조
 
-- 리뷰받기 목록/상품 추가 화면은 `src/pages/admin/AdminReviewReceivePage.jsx`가 중심이다.
-- 리뷰받기 상세 화면은 `src/pages/admin/AdminReviewReceiveDetailPage.jsx`가 중심이다.
-- 상품 목록 조회/생성/수정/삭제는 `src/services/adminProducts.js`에서 처리한다.
-- 리뷰받기 상세 조회/제출 데이터 CRUD는 `src/services/reviewReceive.js`에서 처리한다.
-- 현재 `products.title`과 `products.product_name`은 DB 문서상 `not null`이며, 현재 생성 로직도 둘 다 필수로 검증한다.
-- 새 확인/선택 UI는 브라우저 기본 `alert`, `confirm`, `prompt`가 아니라 `src/components/common/AppAlertDialog.jsx`를 재사용하거나 확장해야 한다.
+- 로그인 계정 ID는 `review_manager_admin_id` localStorage 값으로 읽는다.
+- `내 회사 데이터 포함` 값은 페이지 진입/이동 때마다 `admins.include_company_data_include` 기준으로 초기화된다.
+- 대시보드는 `src/hooks/useAdminDashboard.js`에서 회사 데이터 포함 여부를 관리한다.
+- 내보내기 화면들은 `src/hooks/useAdminExportData.js`에서 회사 데이터 포함 여부를 관리한다.
+- 실제 회사 범위 계산은 `src/services/adminScope.js`의 `resolveAdminManagerScope(adminId, { includeCompanyData })`가 담당한다.
+- 입금완료 쓰기는 주로 아래 화면에 있다.
+  - `src/pages/admin/AdminProductOverviewPage.jsx`
+  - `src/pages/admin/AdminReviewReceiveDetailPage.jsx`
+- 입금완료 데이터는 `submissions.is_deposit_verified`, `submissions.deposited_at`, `submissions.actual_depositor_name`을 수정한다.
+- 기존 공통 확인 UI는 `src/components/common/AppAlertDialog.jsx`를 사용한다.
 
-## 먼저 확인해야 하는 질문
+## 권한 계약
 
-아래 항목은 임의로 판단하지 않고 답변을 받은 뒤 구현한다.
+### 계정별 기대 동작
 
-1. `products.title`, `products.product_name`은 현재 `not null`이다. "여러 상품 등록"에서 날짜와 업체명만 받는 경우, 최초 placeholder row를 만들지 않고 바로 품목 입력 단계로 넘어가야 하는지, 아니면 임시값을 넣어 row를 먼저 만들어야 하는지 결정이 필요하다.
--> not null 제약을 삭제
--> 첫번째 묶음을 추가하면 이미 만들어진 행에 추가하고 그 뒤에 2개, 3개째는 새로운 행을 만들어서 넣으며 bundle_id를 동일하게 가져감
-2. `bundle_id` 값 생성 방식이 필요하다. 선택지는 예를 들어 `첫 번째 products.id를 bundle_id로 사용`, `DB sequence로 별도 번호 발급`, `현재 max(bundle_id)+1을 프런트에서 계산` 등이 있는데, 어떤 방식으로 할지 확정해야 한다.
--> products.id랑 동일한 값으로 넣되 두번째 상품부터는 Products.id를 따라가지 않고 기존에 있던 bundle_id로 가져감
-3. 기존 products row의 `bundle_id` 초기값이 필요하다. 기존 단일 상품은 `bundle_id = id`로 채울지, `null`로 두고 단일 상품은 `bundle_id ?? id`로 취급할지 결정이 필요하다.
--> products.id로 가져감
-4. 상세 페이지 URL 기준이 필요하다. 현재는 `/admin/review-receive/specific/:productId`인데, 여러 상품 번들은 `:productId`를 대표 상품 id로 유지할지, `:bundleId`로 의미를 바꿀지 결정이 필요하다.
--> products.id로 그대로 가져감
--> 왜냐면 추가되는 상품은 또 새로운 products.id를 가지기 떄문
-5. 공개 리뷰받기 URL(`/review-receive/specific/:productId`)도 같은 번들의 여러 상품을 보여줘야 하는지, 아니면 관리자 상세만 번들 구조로 바꾸는지 결정이 필요하다.
--> 여러 상품이 있는 경우 리뷰받기 페이지에서 URL 복사하기는 비활성화되며 상세페이지로 들어가서 각 상품에서 URL 복사하기 버튼이 있어야됨
-6. 여러 품목 각각의 `submissions`는 현재처럼 각 `products.id`에 직접 연결하는 것이 맞는지 확인이 필요하다. 즉, 상세 페이지에서 품목 A를 펼치면 A의 submissions만 보이고, 품목 B를 펼치면 B의 submissions만 보이는 구조인지 확인해야 한다.
--> 맞음
-7. "날짜, 업체명을 제외한 나머지 정보를 받는 버튼"의 위치와 의미가 필요하다. 목록의 번들 행에서 누르는 버튼인지, 상세 상단에서 누르는 버튼인지, 각 품목 안에서 누르는 버튼인지 확정해야 한다.
--> products에 같은 bundle_id를 가지는 추가 행을 생성하는 버튼임 최상단에 위치하면 됨 
--> 여러 상품이 있는 경우 행 추가 버튼이 각 품목 섹션 위치로 이동해야됨
-8. 단일 상품 등록도 최상단에는 날짜/업체명만 보여주고 나머지를 비워둔다고 했는데, 기존 단일 상품 양식으로 받은 제목/품명/옵션 등은 저장은 하되 상세 상단에만 숨기는 것인지, 최초 저장 시에도 날짜/업체명 외에는 저장하지 않는 것인지 확인해야 한다.
--> 날짜, 업체명만 보이는 섹션1개
--> 그 밑에 각 품목의 정보가 보이는 섹션 1개
--> 그 밑에 submission 섹션 1개
--> 2번과 3번 섹션은 또 큰 하나의 섹션으로 묶이며 펼치기가 가능해야됨
-9. 여러 상품 등록 시 처음에 몇 개의 품목을 만들 수 있어야 하는지 필요하다. 예: 빈 품목 1개로 시작 후 추가 버튼, 개수 입력 후 여러 품목 생성, 붙여넣기/일괄 입력 지원.
--> 처음에는 하나만 만듬
--> 상세페이지에서 추가하는 형태
-10. 목록 화면에서 같은 번들에 속한 여러 `products`를 한 행으로 합쳐 보여줘야 하는지, 아니면 목록에서는 row를 그대로 두고 상세 진입만 묶어서 보여주는지 결정이 필요하다.
--> 하나의 품목만 매핑된 Product의 경우 기존대로 보여주면 됨
--> 여러 품목이 매핑된 경우 리뷰받기에서는 여러행이 매핑된 거라고 보여주면됨
-11. 번들 삭제/수정 정책이 필요하다. 같은 `bundle_id` 전체를 삭제/수정할지, 품목 하나만 삭제/수정할 수 있어야 하는지 확인해야 한다.
--> 품목 하나만 삭제/수정 가능해야됨
-12. 파일 업로드, 상품전체보기, 내보내기, 사진내려받기 화면도 `bundle_id`를 표시하거나 번들 기준으로 묶어야 하는지 확인이 필요하다.
--> 리뷰받기에서만 모아서 볼 수 있는거고 내보내기 등은 개별 행으로 취급
+| 계정 | 회사 데이터 포함 기본값 | 회사 데이터 포함 토글 | 입금완료 처리 |
+| --- | --- | --- | --- |
+| `hyejin2054` | 켜짐 | 변경 가능 | 가능 |
+| `aram2525` | 꺼짐 | 변경 가능 | 불가능 |
+| `kimhanbi77` | 꺼짐 | 변경 가능 | 불가능 |
+| 그 외 계정 | 꺼짐 | 변경 가능 | 가능 |
+
+### 권장 구현 방식
+
+1. 장기 운영 기준은 DB 컬럼 또는 별도 권한 테이블로 관리한다.
+2. 프런트 코드에는 특정 계정 ID 분기문을 여러 화면에 흩뿌리지 않는다.
+3. DB 권한 조회가 준비되기 전 임시 구현이 필요하면 `src/constants/admin.js` 또는 `src/lib/adminCapabilities.js` 같은 단일 모듈에만 계정 예외를 둔다.
 
 ## DB 변경 계획
 
-질문 답변 후 아래 순서로 진행한다.
+권장안은 `admins`에 동작 권한 컬럼을 추가하는 것이다. 메뉴 권한처럼 행이 계속 늘어나는 구조가 아니라, 현재 요구사항은 계정 프로필 성격이 강하므로 `admins` 확장이 단순하다.
 
 1. Supabase 최종 스키마를 확인한다.
-2. `supabase/migrations/YYYYMMDDHHMMSS_add_bundle_id_to_products.sql`을 추가한다.
-3. `public.products`에 `bundle_id integer` 컬럼을 추가한다.
-4. 기존 row backfill 정책에 맞춰 `bundle_id`를 채운다.
-5. 필요한 경우 `bundle_id` 조회용 index를 추가한다.
-6. 실제 Supabase DB에 마이그레이션을 적용한다.
-7. 적용 후 Supabase에서 최종 스키마를 다시 확인한다.
-8. `docs/guide_db.md`에 `products.bundle_id`와 번들 계약을 반영한다.
+2. `admins`에 아래 컬럼 추가를 검토한다.
+   - `include_company_data_include` bool, default `false`
+   - `can_verify_deposit` bool, default `true`
+3. `include_company_data_include` 값 계약을 문서화한다.
+   - `true`: 페이지 진입/이동 시 회사 데이터 포함을 켠다.
+   - `false`: 페이지 진입/이동 시 회사 데이터 포함을 끈다.
+4. 기존 계정 데이터를 업데이트한다.
+   - `hyejin2054`: `include_company_data_include = true`, `can_verify_deposit = true`
+   - `aram2525`: `include_company_data_include = false`, `can_verify_deposit = false`
+   - `kimhanbi77`: `include_company_data_include = false`, `can_verify_deposit = false`
+   - 그 외: `include_company_data_include = false`, `can_verify_deposit = true`
+5. 스키마 변경 후 Supabase에서 최종 스키마를 다시 조회한다.
+6. `docs/guide_db.md`에 컬럼, 값 계약, 샘플 데이터를 반영한다.
 
 ## 코드 변경 계획
 
-### 1. 데이터 접근 레이어
+### 1. 권한 조회/정규화 레이어 추가
 
-1. `src/services/adminProducts.js`의 리뷰받기 products select에 `bundle_id`를 추가한다.
-2. `src/services/reviewReceive.js`의 상세 조회 select에 `bundle_id`, `product_date`, `company_name`을 포함한다.
-3. 상세 조회 함수는 현재 product 하나만 가져오는 구조에서, 기준 product의 `bundle_id`를 확인한 뒤 같은 `bundle_id`의 products와 각 product의 submissions를 함께 가져오는 구조로 바꾼다.
-4. `bundle_id` 컬럼이 아직 없는 환경에서의 fallback을 유지할지 여부를 결정하고, 필요하면 현재 `product_date`, `deposit_GB` fallback 패턴을 확장한다.
+1. `src/services/adminAuth.js` 또는 새 서비스 파일에 현재 관리자 권한 조회 함수를 추가한다.
+   - 필요한 컬럼만 select한다.
+   - 조회 실패 시 화면에 명확한 오류를 보여준다.
+2. `src/utils` 또는 `src/lib`에 권한 정규화 함수를 둔다.
+   - `getInitialIncludeCompanyData({ defaultValue, storedValue })`
+   - `canVerifyDeposit(capabilities)`
+3. 권한 값이 없거나 구버전 DB일 때의 fallback을 정한다.
+   - 기본 fallback은 "그 외 계정" 계약에 맞춰 `include_company_data_include = false`, `can_verify_deposit = true`로 둔다.
 
-### 2. 리뷰받기 목록 화면
+### 2. 회사 데이터 포함 정책 적용
 
-1. `상품 추가하기` 클릭 시 단일/여러 상품 선택 다이얼로그를 띄운다.
-2. 단일 상품 선택 시 현재 양식을 기본으로 사용하되, 저장 payload에 `bundle_id`를 포함한다.
-3. 여러 상품 선택 시 날짜/업체명만 받는 1단계 폼을 띄운다.
-4. 질문 답변에 따라 목록을 `bundle_id` 기준 한 행으로 묶거나 기존 products row 목록을 유지한다.
-5. 목록에서 상세 이동 시 번들 기준 상세로 이동하도록 라우팅 파라미터 해석을 맞춘다.
+1. `useAdminDashboard`의 localStorage 직접 읽기/쓰기 흐름을 제거하고 권한 기반으로 바꾼다.
+2. `useAdminExportData`도 같은 헬퍼를 사용하게 바꾼다.
+3. 페이지 진입/이동 시 `admins.include_company_data_include`를 초기값으로 사용한다.
+4. 모든 계정은 현재 페이지 안에서만 토글 변경을 임시 적용한다.
+5. 토글 변경값은 localStorage에 저장하지 않는다.
+6. 회사 데이터 포함이 있는 모든 관리자 화면에서 같은 상태 계산을 재사용한다.
 
-### 3. 리뷰받기 상세 화면
+### 3. 입금완료 처리 권한 적용
 
-1. 상단 공통 섹션은 날짜와 업체명만 표시한다.
-2. 품목별 영역을 추가하고, 각 품목은 접기/펼치기 가능한 패널로 만든다.
-3. 품목 패널 안에 품명, 옵션, 리뷰형태, 제품비 입금구분, 리뷰비 입금구분, 설명, 상품 제목 등 기존 상품 상세 정보를 표시한다.
-4. "나머지 정보 입력" 버튼을 추가해 품목 정보를 입력/수정할 수 있게 한다.
-5. 각 품목 패널 안에서 해당 `product_id`의 submissions 섹션을 보여준다.
-6. 기존 구매완료/리뷰완료/전체완료 테이블 로직은 품목 단위로 재사용하되, 상태/필터/일괄입력/엑셀 다운로드가 품목별로 독립적으로 동작하도록 분리한다.
+1. `AdminProductOverviewPage.jsx`의 입금완료 일괄 처리 버튼을 권한 기반으로 비활성화한다.
+2. `AdminProductOverviewPage.jsx`의 실제 저장 함수 진입부에도 `canVerifyDeposit` guard를 추가한다.
+3. `AdminReviewReceiveDetailPage.jsx`의 입금완료 체크박스, 입금완료 확인 다이얼로그, 입금완료 일괄 처리 버튼을 권한 기반으로 막는다.
+4. `AdminReviewReceiveDetailPage.jsx`의 실제 저장 함수 진입부에도 `canVerifyDeposit` guard를 추가한다.
+5. 권한 없는 계정이 직접 이벤트를 호출해도 `submissions.is_deposit_verified`가 수정되지 않도록 UI와 핸들러 양쪽에서 막는다.
+6. 권한 없는 상태에는 빈 화면 대신 "입금완료 처리 권한이 없습니다." 같은 사용자 피드백을 표시한다.
 
-### 4. 공개 리뷰받기 화면
+### 4. 권한 로딩 상태 처리
 
-공개 화면도 번들 상세를 보여줘야 한다면 별도 작업이 필요하다.
+1. 관리자 레이아웃 또는 각 페이지 훅에서 권한 조회 중 본문을 먼저 렌더링하지 않게 한다.
+2. 권한 조회 실패 시 쓰기 버튼을 기본적으로 막고 오류 메시지를 표시한다.
+3. 기존 메뉴 권한 로딩과 충돌하지 않도록 동작 권한 로딩 상태를 별도로 둔다.
 
-1. `src/services/reviewReceivePublic.js`에서 기준 product의 bundle을 조회한다.
-2. `src/pages/public/PublicReviewReceiveDetailPage.jsx`에서 날짜/업체명 공통 섹션과 품목별 접기/펼치기를 추가한다.
-3. 이름/계좌주 조회 결과를 전체 번들 submissions에서 찾을지, 품목별로 찾을지 정책에 맞게 구현한다.
+### 5. 문서 동기화
 
-공개 화면은 기존 product 하나 기준을 유지한다면 이 단계는 제외한다.
-
-### 5. 다른 화면 영향 반영
-
-필요하다고 확정된 경우에만 아래 화면에 반영한다.
-
-- `상품전체보기`: `bundle_id` 컬럼 표시 또는 번들 필터 추가
-- `내보내기`: products 컬럼 프리셋에 `bundle_id` 추가
-- `사진내려받기`: 번들 단위 필터/표시 지원
-- `파일 업로드`: 업로드되는 여러 products에 같은 `bundle_id` 부여 지원
-- `대시보드`: 상품 수 집계를 row 기준으로 유지할지 번들 기준으로 바꿀지 결정 후 반영
+1. DB 스키마를 바꾸면 `docs/guide_db.md`를 반드시 갱신한다.
+2. 구조나 권한 흐름 설명이 커지면 `docs/project_analysis.md`에도 "관리자 동작 권한" 섹션 추가를 검토한다.
+3. 계정별 운영 정책은 `plans.md`에만 남기지 말고 DB 문서 또는 별도 운영 문서에 남긴다.
 
 ## 검증 계획
 
-1. DB 적용 후 `npm run supabase:check`를 실행한다.
-2. 프런트 변경 후 `npm run build`를 실행한다.
-3. Playwright로 관리자 리뷰받기 목록, 상품 추가 선택 다이얼로그, 단일 상품 등록, 여러 상품 등록, 상세 접기/펼치기, submissions 표시를 확인한다.
-4. 공개 화면이 변경 범위에 포함되면 공개 URL에서도 조회/사진 업로드 흐름을 확인한다.
-5. DB 스키마 변경이 있으므로 `docs/guide_db.md` 갱신 여부를 최종 확인한다.
+1. `npm run build`를 실행한다.
+2. DB 컬럼을 추가했다면 `npm run supabase:check`를 실행한다.
+3. 각 계정으로 수동 시나리오를 확인한다.
+   - `hyejin2054`: 페이지 진입/이동 시 대시보드/내보내기에서 회사 데이터 포함이 켜지는지 확인
+   - `hyejin2054`: 회사 데이터 포함 토글을 끌 수 있고, 변경값이 유지되는지 확인
+   - `hyejin2054`: 상품전체보기/리뷰받기 상세에서 입금완료 처리가 가능한지 확인
+   - `aram2525`, `kimhanbi77`: 페이지 진입/이동 시 회사 데이터 포함이 꺼지는지 확인
+   - `aram2525`, `kimhanbi77`: 회사 데이터 포함 토글을 켤 수 있고, 변경값이 유지되는지 확인
+   - `aram2525`, `kimhanbi77`: 입금완료 버튼/체크/일괄처리가 막히는지 확인
+   - 그 외 계정: 페이지 진입/이동 시 회사 데이터 포함이 꺼지고, 토글과 입금완료 처리가 모두 가능한지 확인
+4. 권한 없는 계정이 URL 직접 접근 또는 버튼 비활성 우회 상황에서도 저장 함수 guard로 막히는지 확인한다.
 
-## 구현 보류 조건
+## 구현 순서
 
-위 "먼저 확인해야 하는 질문" 중 DB 저장 방식, URL 기준, 공개 화면 영향 범위, submissions 표시 단위가 확정되기 전에는 구현을 시작하지 않는다.
+1. 권한 저장 방식을 DB 컬럼 방식으로 확정한다.
+2. Supabase 마이그레이션을 작성하고 적용한다.
+3. `docs/guide_db.md`를 갱신한다.
+4. 관리자 권한 조회 서비스와 정규화 유틸을 추가한다.
+5. 대시보드/내보내기 회사 데이터 포함 훅을 공통 권한 기준으로 수정한다.
+6. 상품전체보기와 리뷰받기 상세의 입금완료 UI/핸들러에 권한 guard를 추가한다.
+7. 빌드와 계정별 수동 검증을 수행한다.
+
+## 구현 전 확인할 사항
+
+- DB 스키마를 변경해도 되는지 확인이 필요하다.
+- `내 회사 데이터 포함 버튼이 모든 페이지에서 적용`의 범위가 현재 토글이 있는 대시보드/내보내기만인지, 상품전체보기/리뷰받기 목록/상세 조회 범위까지 확장해야 하는지 확인이 필요하다.
+- 기존 `review_manager_include_company_data` localStorage 값은 더 이상 회사 데이터 포함 상태 계산에 사용하지 않는다.

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
-import { ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "../../constants/admin";
+import { ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "../../constants/admin";
+import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import { fetchAdminPhotoExportData } from "../../services/exportPhotos";
 import { buildZipBlob, downloadBlob, getExtensionFromUrl, sanitizeZipPathSegment } from "../../utils/zipFile";
 
@@ -18,10 +19,6 @@ const PHOTO_EXPORT_FILTER_COLUMNS = [
   { key: "submission_count", label: "제출 수" },
   { key: "photo_count", label: "사진 수" }
 ];
-
-function getStoredIncludeCompanyData() {
-  return localStorage.getItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY) === "true";
-}
 
 function normalizeFilterValue(value) {
   return String(value ?? "")
@@ -156,7 +153,13 @@ function buildPhotoZipPath(target, extension, index) {
 
 export default function AdminExportPhotosPage() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
-  const [includeCompanyData, setIncludeCompanyData] = useState(getStoredIncludeCompanyData);
+  const {
+    includeCompanyData,
+    handleIncludeCompanyDataChange,
+    isLoadingCapabilities,
+    isIncludeCompanyDataReady,
+    capabilitiesErrorMessage
+  } = useAdminIncludeCompanyData(adminId);
   const [exportData, setExportData] = useState({
     products: [],
     submissions: [],
@@ -186,9 +189,26 @@ export default function AdminExportPhotosPage() {
       setIsLoading(true);
       setErrorMessage("");
 
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+        return;
+      }
+
       if (!adminId) {
         if (isMounted) {
           setErrorMessage("로그인 정보가 없습니다. 다시 로그인해주세요.");
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (capabilitiesErrorMessage) {
+        if (isMounted) {
+          setExportData({
+            products: [],
+            submissions: [],
+            evidencePhotos: []
+          });
+          setErrorMessage(capabilitiesErrorMessage);
           setIsLoading(false);
         }
         return;
@@ -230,7 +250,14 @@ export default function AdminExportPhotosPage() {
     return () => {
       isMounted = false;
     };
-  }, [adminId, includeCompanyData, refreshKey]);
+  }, [
+    adminId,
+    capabilitiesErrorMessage,
+    includeCompanyData,
+    isIncludeCompanyDataReady,
+    isLoadingCapabilities,
+    refreshKey
+  ]);
 
   const productRows = useMemo(
     () => buildProductRows(exportData.products, exportData.submissions, exportData.evidencePhotos),
@@ -252,13 +279,6 @@ export default function AdminExportPhotosPage() {
       ? `현재 계정과 같은 회사(${scopeInfo.companyName}) 소속 관리자 상품까지 함께 보여줍니다.`
       : "현재 계정에 회사 정보가 없어 내 계정 상품만 보여줍니다."
     : "현재 로그인한 계정의 상품만 보여줍니다.";
-
-  const handleIncludeCompanyDataChange = (event) => {
-    const nextChecked = event.target.checked;
-
-    setIncludeCompanyData(nextChecked);
-    localStorage.setItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, String(nextChecked));
-  };
 
   const handleFilterChange = (columnKey, value) => {
     setFilters((prev) => ({

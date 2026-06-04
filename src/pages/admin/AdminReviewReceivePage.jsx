@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
@@ -6,8 +6,8 @@ import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
+import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import {
-  ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
   ADMIN_STORAGE_KEY,
   PRODUCT_DEPOSIT_PARTY_OPTIONS,
   buildProductDepositGb,
@@ -18,6 +18,7 @@ import {
 import {
   createAdminReviewReceiveProduct,
   deleteAdminReviewReceiveProduct,
+  deleteAdminReviewReceiveProductBundle,
   fetchAdminReviewReceiveProducts,
   updateAdminReviewReceiveProduct
 } from "../../services/adminProducts";
@@ -77,6 +78,81 @@ function createInitialProductForm() {
   };
 }
 
+function getBundleKey(product) {
+  return product?.bundle_id ?? product?.id;
+}
+
+function getBundleItems(product) {
+  return Array.isArray(product?.bundleItems) && product.bundleItems.length > 0 ? product.bundleItems : [product];
+}
+
+function isBundleShellProduct(product) {
+  return [
+    product?.title,
+    product?.product_name,
+    product?.option_name,
+    product?.review_type,
+    product?.description,
+    product?.planned_depositor_name
+  ].every((value) => !String(value ?? "").trim());
+}
+
+function getBundleVisibleItems(product) {
+  return getBundleItems(product).filter((item) => !isBundleShellProduct(item));
+}
+
+function isMultiProductBundleRow(product) {
+  return Boolean(product?.isMultiProductBundle);
+}
+
+function formatMultiProductCell(product, value) {
+  return isMultiProductBundleRow(product) ? "다중품목" : value;
+}
+
+function buildReviewReceiveBundleRows(products = []) {
+  const groups = new Map();
+
+  products.forEach((product) => {
+    const bundleKey = getBundleKey(product);
+
+    if (!groups.has(bundleKey)) {
+      groups.set(bundleKey, []);
+    }
+
+    groups.get(bundleKey).push(product);
+  });
+
+  return Array.from(groups.values()).map((items) => {
+    const sortedItems = [...items].sort((left, right) => Number(left.id) - Number(right.id));
+    const representative = sortedItems[0];
+    const visibleItems = sortedItems.filter((item) => !isBundleShellProduct(item));
+
+    if (sortedItems.length === 1 && !isBundleShellProduct(representative)) {
+      return {
+        ...representative,
+        bundleItems: sortedItems,
+        bundleVisibleItems: visibleItems,
+        bundleItemCount: 1,
+        isMultiProductBundle: false
+      };
+    }
+
+    return {
+      ...representative,
+      title: "다중품목",
+      product_name: "다중품목",
+      option_name: "다중품목",
+      review_type: "다중품목",
+      description: "다중품목",
+      submissions: visibleItems.flatMap((item) => item.submissions ?? []),
+      bundleItems: sortedItems,
+      bundleVisibleItems: visibleItems,
+      bundleItemCount: visibleItems.length,
+      isMultiProductBundle: true
+    };
+  });
+}
+
 function createInitialProductReviewerBulkState() {
   return {
     step: "input",
@@ -121,10 +197,36 @@ function getProductFormFromProduct(product) {
   };
 }
 
-function getProductPayload(productForm, adminId) {
+function getProductPayload(productForm, adminId, options = {}) {
+  const { bundleOnly = false, bundleId = null } = options;
   const title = productForm.title.trim();
   const productName = productForm.productName.trim();
   const productDate = productForm.productDate.trim();
+  const companyName = productForm.companyName.trim();
+
+  if (bundleOnly) {
+    if (!productDate || !companyName) {
+      return {
+        errorMessage: "등록날짜와 업체명은 필수입니다."
+      };
+    }
+
+    return {
+      payload: {
+        manager_id: adminId,
+        title: null,
+        product_date: productDate,
+        product_name: null,
+        description: null,
+        company_name: companyName,
+        option_name: null,
+        review_type: null,
+        planned_depositor_name: null,
+        deposit_GB: buildProductDepositGb(productForm.productFeeDepositGb, productForm.reviewFeeDepositGb),
+        ...(bundleId != null ? { bundle_id: bundleId } : {})
+      }
+    };
+  }
 
   if (!title || !productName) {
     return {
@@ -149,7 +251,8 @@ function getProductPayload(productForm, adminId) {
       option_name: normalizeOptionalValue(productForm.optionName),
       review_type: normalizeOptionalValue(productForm.reviewType),
       planned_depositor_name: normalizeOptionalValue(productForm.plannedDepositorName),
-      deposit_GB: buildProductDepositGb(productForm.productFeeDepositGb, productForm.reviewFeeDepositGb)
+      deposit_GB: buildProductDepositGb(productForm.productFeeDepositGb, productForm.reviewFeeDepositGb),
+      ...(bundleId != null ? { bundle_id: bundleId } : {})
     }
   };
 }
@@ -404,12 +507,16 @@ function ReviewReceiveProductFilterHeader({
 export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const navigate = useNavigate();
+  const {
+    includeCompanyData,
+    handleIncludeCompanyDataChange,
+    isLoadingCapabilities,
+    isIncludeCompanyDataReady,
+    capabilitiesErrorMessage
+  } = useAdminIncludeCompanyData(adminId);
   const [products, setProducts] = useState([]);
   const [productFilters, setProductFilters] = useState(createEmptyReviewReceiveProductFilters);
   const [openProductFilterKey, setOpenProductFilterKey] = useState("");
-  const [includeCompanyData, setIncludeCompanyData] = useState(
-    () => localStorage.getItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY) === "true"
-  );
   const [scopeInfo, setScopeInfo] = useState({
     companyName: null,
     isCompanyScopeAvailable: false
@@ -417,8 +524,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isCreateTypeDialogOpen, setIsCreateTypeDialogOpen] = useState(false);
+  const [productModalMode, setProductModalMode] = useState("single");
   const [editingProduct, setEditingProduct] = useState(null);
   const [deleteTargetProduct, setDeleteTargetProduct] = useState(null);
+  const [expandedBundleKey, setExpandedBundleKey] = useState(null);
   const [activeActionProductId, setActiveActionProductId] = useState(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [actionProductId, setActionProductId] = useState(null);
@@ -443,6 +553,17 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       setIsLoading(true);
       setErrorMessage("");
 
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+        return;
+      }
+
+      if (capabilitiesErrorMessage) {
+        setProducts([]);
+        setErrorMessage(capabilitiesErrorMessage);
+        setIsLoading(false);
+        return;
+      }
+
       const { data, error, scope } = await fetchAdminReviewReceiveProducts(adminId, { includeCompanyData });
 
       setScopeInfo({
@@ -461,7 +582,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     };
 
     loadProducts();
-  }, [adminId, includeCompanyData]);
+  }, [adminId, capabilitiesErrorMessage, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities]);
 
   useEffect(() => {
     if (!openProductFilterKey) {
@@ -502,7 +623,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     return getReviewReceiveProductStatus(product) === viewMode;
   });
-  const filteredProducts = filterReviewReceiveProducts(viewFilteredProducts, productFilters);
+  const bundledProducts = buildReviewReceiveBundleRows(viewFilteredProducts);
+  const filteredProducts = filterReviewReceiveProducts(bundledProducts, productFilters);
   const hasActiveProductFilters = hasActiveReviewReceiveProductFilters(productFilters);
 
   const statusSummaryText =
@@ -512,16 +634,23 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         ? "submission이 없거나, 입금완료체크가 하나라도 false인 상품을 표시합니다."
         : "전체 상품 리스트를 표시합니다.";
 
-  const openCreateModal = () => {
+  const openCreateTypeDialog = () => {
+    setIsCreateTypeDialogOpen(true);
+  };
+
+  const openCreateModal = (mode = "single") => {
     setProductModalErrorMessage("");
     setEditingProduct(null);
+    setProductModalMode(mode);
     setProductForm(createInitialProductForm());
+    setIsCreateTypeDialogOpen(false);
     setIsProductModalOpen(true);
   };
 
   const openEditModal = (product) => {
     setProductModalErrorMessage("");
     setActiveActionProductId(null);
+    setProductModalMode("single");
     setEditingProduct(product);
     setProductForm(getProductFormFromProduct(product));
     setIsProductModalOpen(true);
@@ -563,6 +692,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     setProductModalErrorMessage("");
     setEditingProduct(null);
+    setProductModalMode("single");
     setProductForm(createInitialProductForm());
     setIsProductModalOpen(false);
   };
@@ -753,7 +883,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       return;
     }
 
-    const { payload, errorMessage: validationErrorMessage } = getProductPayload(productForm, adminId);
+    const { payload, errorMessage: validationErrorMessage } = getProductPayload(productForm, adminId, {
+      bundleOnly: productModalMode === "bundle" && !editingProduct
+    });
 
     if (validationErrorMessage) {
       setProductModalErrorMessage(validationErrorMessage);
@@ -790,6 +922,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     });
     showToast(editingProduct ? "리뷰받기 상품을 수정했습니다." : "리뷰받기 상품을 추가했습니다.", "success");
     setEditingProduct(null);
+    setProductModalMode("single");
     setProductForm(createInitialProductForm());
     setIsProductModalOpen(false);
     setIsSavingProduct(false);
@@ -817,7 +950,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     setActionProductId(product.id);
 
-    const { error } = await deleteAdminReviewReceiveProduct(product.id, adminId, { includeCompanyData });
+    const isBundleDelete = isMultiProductBundleRow(product);
+    const result = isBundleDelete
+      ? await deleteAdminReviewReceiveProductBundle(getBundleKey(product), adminId, { includeCompanyData })
+      : await deleteAdminReviewReceiveProduct(product.id, adminId, { includeCompanyData });
+    const { error } = result;
 
     if (error) {
       showToast(error.message, "error");
@@ -825,17 +962,18 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       return;
     }
 
-    setProducts((prev) => prev.filter((item) => item.id !== product.id));
-    showToast("리뷰받기 상품을 삭제했습니다.", "success");
+    if (isBundleDelete) {
+      const deletedProductIds = new Set(result.deletedProductIds ?? getBundleItems(product).map((item) => item.id));
+      setProducts((prev) => prev.filter((item) => !deletedProductIds.has(item.id)));
+      setExpandedBundleKey((prev) => (prev === getBundleKey(product) ? null : prev));
+      showToast("다중품목 묶음을 삭제했습니다.", "success");
+    } else {
+      setProducts((prev) => prev.filter((item) => item.id !== product.id));
+      showToast("리뷰받기 상품을 삭제했습니다.", "success");
+    }
+
     setDeleteTargetProduct(null);
     setActionProductId(null);
-  };
-
-  const handleIncludeCompanyDataChange = (event) => {
-    const nextChecked = event.target.checked;
-
-    setIncludeCompanyData(nextChecked);
-    localStorage.setItem(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY, String(nextChecked));
   };
 
   const handleProductFilterChange = (columnKey, value) => {
@@ -871,7 +1009,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
           <button type="button" className="admin-secondary-button" onClick={openProductReviewerBulkModal}>
             상품/리뷰어 일괄 입력하기
           </button>
-          <button type="button" className="admin-primary-button" onClick={openCreateModal}>
+          <button type="button" className="admin-primary-button" onClick={openCreateTypeDialog}>
             상품 추가하기
           </button>
         </div>
@@ -921,29 +1059,35 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                     </td>
                   </tr>
                 ) : (
-                  filteredProducts.map((product) => (
+                  filteredProducts.map((product) => {
+                    const isMultiProductBundle = isMultiProductBundleRow(product);
+                    const bundleKey = getBundleKey(product);
+                    const visibleItems = getBundleVisibleItems(product);
+                    const isExpanded = expandedBundleKey === bundleKey;
+
+                    return (
+                    <Fragment key={bundleKey}>
                     <tr
-                      key={product.id}
                       className="clickable-row"
                       onClick={() => navigate(`/admin/review-receive/specific/${product.id}`)}
                     >
                       <td>{product.manager_id ?? "-"}</td>
-                      <td>{product.title ?? "-"}</td>
+                      <td>{formatMultiProductCell(product, product.title ?? "-")}</td>
                       <td>{product.company_name ?? "-"}</td>
-                      <td>{product.product_name ?? "-"}</td>
-                      <td>{product.option_name ?? "-"}</td>
-                      <td>{product.review_type ?? "-"}</td>
-                      <td>{product.description ?? "-"}</td>
-                      <td>{getProductDepositGbPartLabels(product.deposit_GB).productFee}</td>
-                      <td>{getProductDepositGbPartLabels(product.deposit_GB).reviewFee}</td>
+                      <td>{formatMultiProductCell(product, product.product_name ?? "-")}</td>
+                      <td>{formatMultiProductCell(product, product.option_name ?? "-")}</td>
+                      <td>{formatMultiProductCell(product, product.review_type ?? "-")}</td>
+                      <td>{formatMultiProductCell(product, product.description ?? "-")}</td>
+                      <td>{formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee)}</td>
+                      <td>{formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee)}</td>
                       <td>{formatDisplayDate(product.product_date ?? product.created_at)}</td>
-                      <td className="review-receive-summary-cell">{getReviewReceiveSubmissionSummary(product)}</td>
+                      <td className="review-receive-summary-cell">{formatMultiProductCell(product, getReviewReceiveSubmissionSummary(product))}</td>
                       <td className="review-receive-actions-cell">
                         <div className="review-receive-row-actions">
                           <button
                             type="button"
                             className="review-receive-kebab-button"
-                            aria-label={`${product.title ?? product.product_name} 관리 메뉴 열기`}
+                            aria-label={`${product.title ?? product.product_name ?? "리뷰받기 상품"} 관리 메뉴 열기`}
                             aria-expanded={activeActionProductId === product.id}
                             disabled={actionProductId === product.id}
                             onClick={(event) => {
@@ -955,15 +1099,29 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                           </button>
                           {activeActionProductId === product.id && (
                             <div className="review-receive-row-action-menu" onClick={(event) => event.stopPropagation()}>
-                              <button type="button" onClick={() => handleCopyPublicUrl(product)}>
-                                URL 생성하기
-                              </button>
-                              <button type="button" onClick={() => handleCopyReviewVerifiedRows(product)}>
-                                리뷰작성복사
-                              </button>
-                              <button type="button" onClick={() => openEditModal(product)}>
-                                수정하기
-                              </button>
+                              {isMultiProductBundle ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExpandedBundleKey((prev) => (prev === bundleKey ? null : bundleKey));
+                                    setActiveActionProductId(null);
+                                  }}
+                                >
+                                  {isExpanded ? "접기" : "펼치기"}
+                                </button>
+                              ) : (
+                                <>
+                                  <button type="button" onClick={() => handleCopyPublicUrl(product)}>
+                                    URL 생성하기
+                                  </button>
+                                  <button type="button" onClick={() => handleCopyReviewVerifiedRows(product)}>
+                                    리뷰작성복사
+                                  </button>
+                                  <button type="button" onClick={() => openEditModal(product)}>
+                                    수정하기
+                                  </button>
+                                </>
+                              )}
                               <button
                                 type="button"
                                 className="is-danger"
@@ -977,7 +1135,51 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    {isMultiProductBundle && isExpanded && (
+                      <tr className="review-receive-bundle-expanded-row">
+                        <td colSpan={REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 2}>
+                          {visibleItems.length === 0 ? (
+                            <div className="review-receive-bundle-empty">등록된 품목이 없습니다. 상세 화면에서 품목을 추가해주세요.</div>
+                          ) : (
+                            <div className="review-receive-bundle-expanded-panel">
+                              <table>
+                                <thead>
+                                  <tr>
+                                    <th>상품 제목</th>
+                                    <th>업체명</th>
+                                    <th>품명</th>
+                                    <th>옵션</th>
+                                    <th>리뷰형태</th>
+                                    <th>설명</th>
+                                    <th>제품비 입금구분</th>
+                                    <th>리뷰비 입금구분</th>
+                                    <th>완료현황</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {visibleItems.map((item) => (
+                                    <tr key={item.id}>
+                                      <td>{item.title ?? "-"}</td>
+                                      <td>{item.company_name ?? "-"}</td>
+                                      <td>{item.product_name ?? "-"}</td>
+                                      <td>{item.option_name ?? "-"}</td>
+                                      <td>{item.review_type ?? "-"}</td>
+                                      <td>{item.description ?? "-"}</td>
+                                      <td>{getProductDepositGbPartLabels(item.deposit_GB).productFee}</td>
+                                      <td>{getProductDepositGbPartLabels(item.deposit_GB).reviewFee}</td>
+                                      <td>{getReviewReceiveSubmissionSummary(item)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1325,22 +1527,45 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         </div>
       )}
 
+      <AppAlertDialog
+        isOpen={isCreateTypeDialogOpen}
+        badgeLabel="상품 추가"
+        title="등록 방식을 선택해주세요."
+        description="단일 상품은 기존 양식을 사용하고, 여러 상품은 날짜와 업체명만 먼저 저장한 뒤 상세에서 품목을 추가합니다."
+        ariaLabel="리뷰받기 상품 등록 방식 선택"
+        actionsChildren={
+          <>
+            <button type="button" className="admin-secondary-button" onClick={() => setIsCreateTypeDialogOpen(false)}>
+              취소
+            </button>
+          <button type="button" className="admin-secondary-button" onClick={() => openCreateModal("single")}>
+              단일상품
+            </button>
+            <button type="button" className="admin-primary-button" onClick={() => openCreateModal("bundle")}>
+              여러상품
+          </button>
+          </>
+        }
+      />
+
       {isProductModalOpen && (
         <div className="review-receive-modal-backdrop" role="presentation" {...productModalBackdropDismissProps}>
           <div
             className="review-receive-modal review-receive-create-product-modal"
             role="dialog"
             aria-modal="true"
-            aria-label={editingProduct ? "리뷰받기 상품 수정" : "리뷰받기 상품 추가"}
+            aria-label={editingProduct ? "리뷰받기 상품 수정" : productModalMode === "bundle" ? "리뷰받기 여러 상품 추가" : "리뷰받기 상품 추가"}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={productModalEnterConfirm.handleModalKeyDown}
           >
             <div className="review-receive-modal-header">
               <div>
-                <h2>{editingProduct ? "리뷰받기 상품 수정" : "리뷰받기 상품 추가"}</h2>
+                <h2>{editingProduct ? "리뷰받기 상품 수정" : productModalMode === "bundle" ? "여러 상품 추가" : "리뷰받기 상품 추가"}</h2>
                 <p>
                   {editingProduct
                     ? "상품 기본 정보를 수정합니다. 연결된 제출 데이터는 유지됩니다."
+                    : productModalMode === "bundle"
+                      ? "날짜와 업체명만 먼저 저장하고, 상세 화면에서 품목 정보를 추가합니다."
                     : "필수 정보만 입력해 상품을 먼저 만들고, 세부 운영 데이터는 상세 화면에서 이어서 관리할 수 있습니다."}
                 </p>
               </div>
@@ -1358,21 +1583,23 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
               <div className="review-receive-modal-body review-receive-modal-body-single">
                 <div className="review-receive-review-batch-fields">
                   <div className="review-receive-review-batch-grid review-receive-create-product-grid">
-                    <div className="detail-summary-item review-receive-create-product-field is-full-width">
-                      <label className="detail-summary-label" htmlFor="review-receive-product-title">
-                        상품 제목 <span className="required-indicator" aria-hidden="true">*</span>
-                      </label>
-                      <input
-                        id="review-receive-product-title"
-                        name="title"
-                        className="table-cell-input"
-                        value={productForm.title}
-                        onChange={handleProductFormChange}
-                        placeholder="예: 2026.04.25 / 브랜드명 상품명"
-                        autoFocus
-                        required
-                      />
-                    </div>
+                    {productModalMode !== "bundle" && (
+                      <div className="detail-summary-item review-receive-create-product-field is-full-width">
+                        <label className="detail-summary-label" htmlFor="review-receive-product-title">
+                          상품 제목 <span className="required-indicator" aria-hidden="true">*</span>
+                        </label>
+                        <input
+                          id="review-receive-product-title"
+                          name="title"
+                          className="table-cell-input"
+                          value={productForm.title}
+                          onChange={handleProductFormChange}
+                          placeholder="예: 2026.04.25 / 브랜드명 상품명"
+                          autoFocus
+                          required
+                        />
+                      </div>
+                    )}
                     <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-product-date">
                         등록날짜 <span className="required-indicator" aria-hidden="true">*</span>
@@ -1384,40 +1611,45 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         className="table-cell-input"
                         value={productForm.productDate}
                         onChange={handleProductFormChange}
+                        autoFocus={productModalMode === "bundle"}
                         required
                       />
                     </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
-                      <label className="detail-summary-label" htmlFor="review-receive-product-name">
-                        품명 <span className="required-indicator" aria-hidden="true">*</span>
-                      </label>
-                      <input
-                        id="review-receive-product-name"
-                        name="productName"
-                        className="table-cell-input"
-                        value={productForm.productName}
-                        onChange={handleProductFormChange}
-                        placeholder="예: 슈퍼 워터프루프 선크림"
-                        required
-                      />
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field is-full-width">
-                      <label className="detail-summary-label" htmlFor="review-receive-description">
-                        설명
-                      </label>
-                      <textarea
-                        id="review-receive-description"
-                        name="description"
-                        className="review-receive-bulk-textarea review-receive-create-product-textarea"
-                        value={productForm.description}
-                        onChange={handleProductFormChange}
-                        placeholder="운영 메모나 상품 설명이 있으면 입력하세요."
-                        rows={4}
-                      />
-                    </div>
+                    {productModalMode !== "bundle" && (
+                      <div className="detail-summary-item review-receive-create-product-field">
+                        <label className="detail-summary-label" htmlFor="review-receive-product-name">
+                          품명 <span className="required-indicator" aria-hidden="true">*</span>
+                        </label>
+                        <input
+                          id="review-receive-product-name"
+                          name="productName"
+                          className="table-cell-input"
+                          value={productForm.productName}
+                          onChange={handleProductFormChange}
+                          placeholder="예: 슈퍼 워터프루프 선크림"
+                          required
+                        />
+                      </div>
+                    )}
+                    {productModalMode !== "bundle" && (
+                      <div className="detail-summary-item review-receive-create-product-field is-full-width">
+                        <label className="detail-summary-label" htmlFor="review-receive-description">
+                          설명
+                        </label>
+                        <textarea
+                          id="review-receive-description"
+                          name="description"
+                          className="review-receive-bulk-textarea review-receive-create-product-textarea"
+                          value={productForm.description}
+                          onChange={handleProductFormChange}
+                          placeholder="운영 메모나 상품 설명이 있으면 입력하세요."
+                          rows={4}
+                        />
+                      </div>
+                    )}
                     <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-company-name">
-                        업체명
+                        업체명 {productModalMode === "bundle" && <span className="required-indicator" aria-hidden="true">*</span>}
                       </label>
                       <input
                         id="review-receive-company-name"
@@ -1426,9 +1658,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         value={productForm.companyName}
                         onChange={handleProductFormChange}
                         placeholder="예: 나우프레시"
+                        required={productModalMode === "bundle"}
                       />
                     </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
+                    {productModalMode !== "bundle" && <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-option-name">
                         옵션
                       </label>
@@ -1440,8 +1673,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         onChange={handleProductFormChange}
                         placeholder="예: 50ml x 1개"
                       />
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
+                    </div>}
+                    {productModalMode !== "bundle" && <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-review-type">
                         리뷰형태
                       </label>
@@ -1453,8 +1686,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         onChange={handleProductFormChange}
                         placeholder="예: 텍스트 / 사진 / 영상"
                       />
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
+                    </div>}
+                    {productModalMode !== "bundle" && <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-planned-depositor-name">
                         예정 입금자명
                       </label>
@@ -1466,8 +1699,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         onChange={handleProductFormChange}
                         placeholder="예: 0425브랜드명"
                       />
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
+                    </div>}
+                    {productModalMode !== "bundle" && <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-product-fee-deposit-gb">
                         제품비 입금구분
                       </label>
@@ -1484,8 +1717,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                           </option>
                         ))}
                       </select>
-                    </div>
-                    <div className="detail-summary-item review-receive-create-product-field">
+                    </div>}
+                    {productModalMode !== "bundle" && <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-review-fee-deposit-gb">
                         리뷰비 입금구분
                       </label>
@@ -1502,12 +1735,16 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                           </option>
                         ))}
                       </select>
-                    </div>
+                    </div>}
                   </div>
                   <div className="review-receive-preview-panel">
                     <div className="review-receive-preview-header">
                       <h3>입력 안내</h3>
-                      <p>상품 제목과 품명은 필수입니다. 나머지 값은 비워두고 상세 화면에서 나중에 보완해도 됩니다.</p>
+                      <p>
+                        {productModalMode === "bundle"
+                          ? "여러 상품 묶음은 날짜와 업체명만 먼저 저장합니다."
+                          : "상품 제목과 품명은 필수입니다. 나머지 값은 비워두고 상세 화면에서 나중에 보완해도 됩니다."}
+                      </p>
                     </div>
                     {productModalErrorMessage ? (
                       <p className="login-error review-receive-create-product-message">{productModalErrorMessage}</p>
@@ -1541,7 +1778,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         isOpen={Boolean(deleteTargetProduct)}
         variant="danger"
         badgeLabel="삭제 확인"
-        title="이 상품을 삭제할까요?"
+        title={isMultiProductBundleRow(deleteTargetProduct) ? "다중품목 묶음을 삭제할까요?" : "이 상품을 삭제할까요?"}
         cancelLabel="취소"
         confirmLabel="삭제하기"
         busyConfirmLabel="삭제 중..."
@@ -1551,10 +1788,17 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         confirmButtonClassName="admin-danger-button"
         ariaLabel="리뷰받기 상품 삭제 확인"
       >
-        <p>
-          <strong>{deleteTargetProduct?.title ?? deleteTargetProduct?.product_name}</strong> 상품과 연결된 제출, 사진,
-          단계 데이터가 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
-        </p>
+        {isMultiProductBundleRow(deleteTargetProduct) ? (
+          <p>
+            같은 bundle_id에 묶인 상세 품목 <strong>{getBundleItems(deleteTargetProduct).length}개</strong>와 연결된 제출,
+            사진, 단계 데이터가 모두 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+          </p>
+        ) : (
+          <p>
+            <strong>{deleteTargetProduct?.title ?? deleteTargetProduct?.product_name}</strong> 상품과 연결된 제출, 사진,
+            단계 데이터가 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
+          </p>
+        )}
       </AppAlertDialog>
 
       <AppToast toast={toast} />

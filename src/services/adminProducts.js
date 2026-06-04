@@ -3,7 +3,7 @@ import { resolveAdminManagerScope } from "./adminScope";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE =
-  "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id,created_at";
+  "id,title,product_name,description,company_name,option_name,review_type,planned_depositor_name,manager_id,created_at,bundle_id";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_WITH_DEPOSIT_GB =
   `${ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE},"deposit_GB"`;
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT =
@@ -21,7 +21,7 @@ const SUBMISSION_STATUS_PAGE_SIZE = 1000;
 
 function isMissingReviewReceiveProductColumn(error) {
   const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
-  return message.includes("product_date") || message.includes("deposit_GB");
+  return message.includes("product_date") || message.includes("deposit_GB") || message.includes("bundle_id");
 }
 
 function buildMissingProductColumnError(error) {
@@ -31,6 +31,10 @@ function buildMissingProductColumnError(error) {
 
   if (`${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`.includes("deposit_GB")) {
     return new Error("products.deposit_GB 컬럼이 아직 없습니다. deposit_GB 추가 마이그레이션을 먼저 적용해주세요.");
+  }
+
+  if (`${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`.includes("bundle_id")) {
+    return new Error("products.bundle_id 컬럼이 아직 없습니다. bundle_id 추가 마이그레이션을 먼저 적용해주세요.");
   }
 
   return new Error("products.product_date 컬럼이 아직 없습니다. product_date 추가 마이그레이션을 먼저 적용해주세요.");
@@ -166,9 +170,23 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
 export async function createAdminReviewReceiveProduct(payload) {
   const result = await supabase.from("products").insert(payload).select(ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT).single();
 
+  if (result.error || !result.data || result.data.bundle_id != null) {
+    return {
+      ...result,
+      error: buildMissingProductColumnError(result.error)
+    };
+  }
+
+  const bundleResult = await supabase
+    .from("products")
+    .update({ bundle_id: result.data.id })
+    .eq("id", result.data.id)
+    .select(ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT)
+    .single();
+
   return {
-    ...result,
-    error: buildMissingProductColumnError(result.error)
+    ...bundleResult,
+    error: buildMissingProductColumnError(bundleResult.error)
   };
 }
 
@@ -284,5 +302,95 @@ export async function deleteAdminReviewReceiveProduct(productId, adminId, option
   return {
     error: deleteError,
     scope
+  };
+}
+
+export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, options = {}) {
+  const scope = await resolveAdminManagerScope(adminId, options);
+
+  if (scope.error) {
+    return {
+      error: scope.error,
+      scope
+    };
+  }
+
+  if (scope.managerIds.length === 0) {
+    return {
+      error: new Error("삭제할 수 있는 관리자 범위가 없습니다."),
+      scope
+    };
+  }
+
+  const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id")
+    .eq("bundle_id", bundleId)
+    .in("manager_id", scope.managerIds);
+
+  if (productsError) {
+    return {
+      error: productsError,
+      scope
+    };
+  }
+
+  const productIds = (products ?? []).map((product) => product.id);
+
+  if (productIds.length === 0) {
+    return {
+      error: new Error("삭제할 묶음 상품을 찾지 못했습니다."),
+      scope
+    };
+  }
+
+  const { data: submissions, error: submissionsError } = await supabase
+    .from("submissions")
+    .select("id")
+    .in("product_id", productIds);
+
+  if (submissionsError) {
+    return {
+      error: submissionsError,
+      scope
+    };
+  }
+
+  const submissionIds = (submissions ?? []).map((submission) => submission.id);
+
+  if (submissionIds.length > 0) {
+    const { error: photosError } = await supabase.from("evidence_photos").delete().in("submission_id", submissionIds);
+
+    if (photosError) {
+      return {
+        error: photosError,
+        scope
+      };
+    }
+  }
+
+  const relatedTables = ["submissions", "applications", "product_steps"];
+
+  for (const tableName of relatedTables) {
+    const { error } = await supabase.from(tableName).delete().in("product_id", productIds);
+
+    if (error) {
+      return {
+        error,
+        scope
+      };
+    }
+  }
+
+  const { error: deleteError } = await supabase
+    .from("products")
+    .delete()
+    .in("id", productIds)
+    .in("manager_id", scope.managerIds);
+
+  return {
+    error: deleteError,
+    scope,
+    deletedProductIds: productIds
   };
 }
