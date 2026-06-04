@@ -16,6 +16,8 @@ const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_FALLBACKS = [
 ];
 const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT =
   "id,product_id,is_review_verified,is_deposit_verified,review_fee,created_at";
+const SUBMISSION_STATUS_PRODUCT_ID_CHUNK_SIZE = 100;
+const SUBMISSION_STATUS_PAGE_SIZE = 1000;
 
 function isMissingReviewReceiveProductColumn(error) {
   const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
@@ -42,6 +44,47 @@ async function fetchReviewReceiveProductRows(scope, selectColumns) {
   }
 
   return query.order("id", { ascending: false });
+}
+
+async function fetchReviewReceiveSubmissionStatusRows(productIds) {
+  const rows = [];
+
+  for (let index = 0; index < productIds.length; index += SUBMISSION_STATUS_PRODUCT_ID_CHUNK_SIZE) {
+    const productIdChunk = productIds.slice(index, index + SUBMISSION_STATUS_PRODUCT_ID_CHUNK_SIZE);
+    let pageStart = 0;
+
+    while (true) {
+      const pageEnd = pageStart + SUBMISSION_STATUS_PAGE_SIZE - 1;
+      const result = await supabase
+        .from("submissions")
+        .select(ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT)
+        .in("product_id", productIdChunk)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(pageStart, pageEnd);
+
+      if (result.error) {
+        return {
+          data: null,
+          error: result.error
+        };
+      }
+
+      const pageRows = result.data ?? [];
+      rows.push(...pageRows);
+
+      if (pageRows.length < SUBMISSION_STATUS_PAGE_SIZE) {
+        break;
+      }
+
+      pageStart += SUBMISSION_STATUS_PAGE_SIZE;
+    }
+  }
+
+  return {
+    data: rows,
+    error: null
+  };
 }
 
 export async function fetchAdminProducts(adminId) {
@@ -89,12 +132,7 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
   }
 
   const productIds = productsResult.data.map((product) => product.id);
-  const submissionsResult = await supabase
-    .from("submissions")
-    .select(ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT)
-    .in("product_id", productIds)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
+  const submissionsResult = await fetchReviewReceiveSubmissionStatusRows(productIds);
 
   if (submissionsResult.error) {
     return {

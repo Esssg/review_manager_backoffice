@@ -168,6 +168,14 @@ function areRowsDepositVerifyTargets(rows) {
   return rows.length > 0 && rows.every((row) => row.is_review_verified && !row.is_deposit_verified);
 }
 
+function getReviewBatchActualDepositorName(row, mode, customName) {
+  if (mode === "planned") {
+    return row.planned_depositor_name?.trim() || null;
+  }
+
+  return customName.trim() || null;
+}
+
 function renderOverviewPhotoCell(row, onOpenPhotoViewer) {
   const rowPhotos = Array.isArray(row.review_photos) ? row.review_photos : [];
 
@@ -511,6 +519,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const [reviewBatchScope, setReviewBatchScope] = useState("all");
   const [isReviewBatchModalOpen, setIsReviewBatchModalOpen] = useState(false);
   const [reviewBatchDepositedAt, setReviewBatchDepositedAt] = useState("");
+  const [reviewBatchActualDepositorMode, setReviewBatchActualDepositorMode] = useState("planned");
   const [reviewBatchActualDepositorName, setReviewBatchActualDepositorName] = useState("");
   const [reviewBatchMessage, setReviewBatchMessage] = useState("");
   const [reviewBatchMessageType, setReviewBatchMessageType] = useState("info");
@@ -769,6 +778,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const openReviewBatchModal = (scopeKey) => {
     setReviewBatchScope(scopeKey);
     setReviewBatchDepositedAt("");
+    setReviewBatchActualDepositorMode("planned");
     setReviewBatchActualDepositorName("");
     setReviewBatchMessage("");
     setReviewBatchMessageType("info");
@@ -1106,10 +1116,14 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
     const savedRows = [];
     const normalizedDepositedAt = reviewBatchDepositedAt || null;
-    const normalizedActualDepositorName = reviewBatchActualDepositorName.trim() || null;
 
     for (let index = 0; index < reviewBatchTargetRows.length; index += 1) {
       const row = reviewBatchTargetRows[index];
+      const normalizedActualDepositorName = getReviewBatchActualDepositorName(
+        row,
+        reviewBatchActualDepositorMode,
+        reviewBatchActualDepositorName
+      );
       const result = await updateReviewReceiveSubmission(row.submission_id, {
         is_deposit_verified: true,
         deposited_at: normalizedDepositedAt,
@@ -1163,7 +1177,13 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
     const missingLabels = [
       ...(!reviewBatchDepositedAt ? ["입금일"] : []),
-      ...(!reviewBatchActualDepositorName.trim() ? ["실제입금자명"] : [])
+      ...(reviewBatchActualDepositorMode === "planned" &&
+      reviewBatchTargetRows.some((row) => !row.planned_depositor_name?.trim())
+        ? ["입금자명(예정)"]
+        : []),
+      ...(reviewBatchActualDepositorMode === "custom" && !reviewBatchActualDepositorName.trim()
+        ? ["실제입금자명"]
+        : [])
     ];
 
     if (missingLabels.length > 0) {
@@ -1882,18 +1902,35 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
                     />
                   </div>
                   <div className="detail-summary-item">
-                    <span className="detail-summary-label">실제입금자명</span>
-                    <input
+                    <span className="detail-summary-label">실제입금자명 처리</span>
+                    <select
                       className="table-cell-input"
-                      value={reviewBatchActualDepositorName}
+                      value={reviewBatchActualDepositorMode}
                       onChange={(event) => {
-                        setReviewBatchActualDepositorName(event.target.value);
+                        setReviewBatchActualDepositorMode(event.target.value);
                         setReviewBatchMessage("");
                       }}
-                      placeholder="실제입금자명"
                       disabled={isApplyingReviewBatch}
-                    />
+                    >
+                      <option value="planned">예정 입금자명으로 처리하기</option>
+                      <option value="custom">직접입력하기</option>
+                    </select>
                   </div>
+                  {reviewBatchActualDepositorMode === "custom" && (
+                    <div className="detail-summary-item">
+                      <span className="detail-summary-label">직접 입력할 실제입금자명</span>
+                      <input
+                        className="table-cell-input"
+                        value={reviewBatchActualDepositorName}
+                        onChange={(event) => {
+                          setReviewBatchActualDepositorName(event.target.value);
+                          setReviewBatchMessage("");
+                        }}
+                        placeholder="실제입금자명"
+                        disabled={isApplyingReviewBatch}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="review-receive-review-list-panel">

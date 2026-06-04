@@ -6,7 +6,7 @@ import AppToast from "../../components/common/AppToast";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
-import { ADMIN_STORAGE_KEY, getProductDepositGbLabel } from "../../constants/admin";
+import { ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "../../constants/admin";
 import {
   createReviewReceiveSubmission,
   deleteReviewReceiveSubmission,
@@ -40,6 +40,7 @@ import {
   formatMissingFieldLabels,
   getMissingRequiredFieldLabels
 } from "../../utils/reviewVerifyValidation";
+import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
 
 function parseAmount(value) {
   const digits = String(value ?? "").replace(/[^\d]/g, "");
@@ -200,6 +201,283 @@ function buildBlankPurchaseAssignPayload(productId, assignName, reviewFee = null
   };
 }
 
+function formatBooleanExportValue(value) {
+  return Boolean(value);
+}
+
+function buildReviewReceiveDetailExportRows(rows, options = {}) {
+  const { sectionKey, rowNumberMap = {}, plannedDepositorName = "" } = options;
+
+  return rows.map((row) => {
+    const baseRow = {
+      순번: rowNumberMap[row.id] ?? "",
+      배정: row.assign_name ?? "",
+      주문번호: row.order_number ?? "",
+      구매자: row.buyer_name ?? "",
+      수취인: row.recipient_name ?? "",
+      구매계정: row.purchase_account ?? "",
+      연락처: row.contact ?? "",
+      주소: row.address ?? "",
+      계좌: row.accountInfoInput || formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder),
+      금액: row.amount ?? "",
+      리뷰비: row.review_fee ?? "",
+      사진: Array.isArray(row.photos) ? row.photos.join("\n") : "",
+      "입금자명(예정)": plannedDepositorName ?? "",
+      리뷰완료: formatBooleanExportValue(Boolean(row.is_review_verified)),
+      입금완료: formatBooleanExportValue(Boolean(row.is_deposit_verified))
+    };
+
+    if (sectionKey !== "purchase") {
+      return {
+        ...baseRow,
+        입금일: row.deposited_at ?? "",
+        실제입금자명: row.actual_depositor_name ?? ""
+      };
+    }
+
+    return baseRow;
+  });
+}
+
+const REVIEW_RECEIVE_ROW_FILTER_COLUMNS = [
+  { key: "row_number", label: "순번", type: "text" },
+  { key: "assign_name", label: "배정", type: "text" },
+  { key: "order_number", label: "주문번호", type: "text" },
+  { key: "buyer_name", label: "구매자", type: "text" },
+  { key: "recipient_name", label: "수취인", type: "text" },
+  { key: "purchase_account", label: "구매계정", type: "text" },
+  { key: "contact", label: "연락처", type: "text" },
+  { key: "address", label: "주소", type: "text" },
+  { key: "account", label: "계좌", type: "text" },
+  { key: "amount", label: "금액", type: "text" },
+  { key: "review_fee", label: "리뷰비", type: "text" },
+  { key: "photos", label: "사진", type: "text" },
+  { key: "planned_depositor_name", label: "입금자명(예정)", type: "text" },
+  { key: "is_review_verified", label: "리뷰완료", type: "text" },
+  { key: "is_deposit_verified", label: "입금완료", type: "text" },
+  { key: "deposited_at", label: "입금일", type: "dateRange", hiddenInPurchase: true },
+  { key: "actual_depositor_name", label: "실제입금자명", type: "text", hiddenInPurchase: true }
+];
+
+function getVisibleReviewReceiveRowFilterColumns(sectionKey) {
+  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.filter((column) => sectionKey !== "purchase" || !column.hiddenInPurchase);
+}
+
+function createEmptyReviewReceiveRowFilters() {
+  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.reduce((filters, column) => {
+    filters[column.key] = column.type === "dateRange" ? { start: "", end: "" } : "";
+    return filters;
+  }, {});
+}
+
+function createEmptySectionColumnFilters() {
+  return {
+    purchase: createEmptyReviewReceiveRowFilters(),
+    review: createEmptyReviewReceiveRowFilters(),
+    complete: createEmptyReviewReceiveRowFilters()
+  };
+}
+
+function normalizeReviewReceiveFilterText(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s./\\|_-]+/g, "");
+}
+
+function formatBooleanFilterValue(value) {
+  return value ? "완료 true 체크됨 checked yes" : "미완료 false 체크안됨 unchecked no";
+}
+
+function getReviewReceiveRowFilterValue(row, columnKey, context) {
+  const { rowNumberMap, plannedDepositorName } = context;
+
+  if (columnKey === "row_number") {
+    return rowNumberMap[row.id] ?? "";
+  }
+
+  if (columnKey === "account") {
+    return row.accountInfoInput || formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder);
+  }
+
+  if (columnKey === "photos") {
+    return row.photos?.length ? "제출완료 사진있음 uploaded" : "제출전 사진없음 empty";
+  }
+
+  if (columnKey === "planned_depositor_name") {
+    return plannedDepositorName ?? "";
+  }
+
+  if (columnKey === "is_review_verified") {
+    return formatBooleanFilterValue(Boolean(row.is_review_verified));
+  }
+
+  if (columnKey === "is_deposit_verified") {
+    return formatBooleanFilterValue(Boolean(row.is_deposit_verified));
+  }
+
+  if (columnKey === "deposited_at") {
+    return row.deposited_at ?? "";
+  }
+
+  return row[columnKey] ?? "";
+}
+
+function hasActiveReviewReceiveRowFilters(filters = {}) {
+  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.some((column) => {
+    const value = filters[column.key];
+
+    if (column.type === "dateRange") {
+      return Boolean(value?.start || value?.end);
+    }
+
+    return String(value ?? "").trim() !== "";
+  });
+}
+
+function filterReviewReceiveRowsByColumnFilters(rows, filters = {}, context) {
+  return rows.filter((row) =>
+    REVIEW_RECEIVE_ROW_FILTER_COLUMNS.every((column) => {
+      const filterValue = filters[column.key];
+
+      if (column.type === "dateRange") {
+        const rowDate = getReviewReceiveRowFilterValue(row, column.key, context);
+        const startDate = filterValue?.start || "";
+        const endDate = filterValue?.end || "";
+
+        if (!startDate && !endDate) {
+          return true;
+        }
+
+        if (!rowDate) {
+          return false;
+        }
+
+        if (startDate && rowDate < startDate) {
+          return false;
+        }
+
+        if (endDate && rowDate > endDate) {
+          return false;
+        }
+
+        return true;
+      }
+
+      const searchText = normalizeReviewReceiveFilterText(filterValue);
+
+      if (!searchText) {
+        return true;
+      }
+
+      return normalizeReviewReceiveFilterText(getReviewReceiveRowFilterValue(row, column.key, context)).includes(searchText);
+    })
+  );
+}
+
+function FilterIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path d="M2 3h12l-4.7 5.4v3.2L6.7 13V8.4L2 3Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ReviewReceiveRowFilterHeader({
+  sectionKey,
+  column,
+  filterValue,
+  isOpen,
+  onOpenChange,
+  onFilterChange,
+  onFilterReset,
+  menuRef
+}) {
+  const isDateRange = column.type === "dateRange";
+  const isActive = isDateRange ? Boolean(filterValue?.start || filterValue?.end) : String(filterValue ?? "").trim() !== "";
+  const handleTextFilterInput = (event) => {
+    onFilterChange(sectionKey, column.key, event.currentTarget.value);
+  };
+
+  return (
+    <th
+      className={`review-receive-filterable-header${isDateRange ? " is-date-range" : ""}${isOpen ? " is-open" : ""}${isActive ? " is-filtered" : ""}`}
+    >
+      <div className="review-receive-column-filter" ref={isOpen ? menuRef : null}>
+        <span className="review-receive-column-label">{column.label}</span>
+        <button
+          type="button"
+          className="review-receive-column-filter-button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenChange(isOpen ? "" : `${sectionKey}:${column.key}`);
+          }}
+          aria-label={`${column.label} 필터 열기`}
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+        >
+          <FilterIcon />
+        </button>
+        {isOpen && (
+          <div className="review-receive-column-filter-popover" role="dialog" aria-label={`${column.label} 필터`}>
+            <div className="review-receive-column-filter-title">{column.label} 필터</div>
+            {isDateRange ? (
+              <div className="review-receive-date-filter-fields">
+                <label>
+                  <span>시작일</span>
+                  <input
+                    type="date"
+                    className="table-cell-input"
+                    value={filterValue?.start ?? ""}
+                    onChange={(event) =>
+                      onFilterChange(sectionKey, column.key, {
+                        ...(filterValue ?? { start: "", end: "" }),
+                        start: event.target.value
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>종료일</span>
+                  <input
+                    type="date"
+                    className="table-cell-input"
+                    value={filterValue?.end ?? ""}
+                    onChange={(event) =>
+                      onFilterChange(sectionKey, column.key, {
+                        ...(filterValue ?? { start: "", end: "" }),
+                        end: event.target.value
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : (
+              <input
+                type="text"
+                className="table-cell-input"
+                value={filterValue ?? ""}
+                onInput={handleTextFilterInput}
+                onChange={handleTextFilterInput}
+                placeholder={`${column.label} 검색`}
+                autoFocus
+              />
+            )}
+            <div className="review-receive-column-filter-actions">
+              <button type="button" className="admin-secondary-button" onClick={() => onFilterReset(sectionKey, column.key)}>
+                초기화
+              </button>
+              <button type="button" className="admin-primary-button" onClick={() => onOpenChange("")}>
+                닫기
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </th>
+  );
+}
+
 export default function AdminReviewReceiveDetailPage() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const { productId } = useParams();
@@ -210,11 +488,21 @@ export default function AdminReviewReceiveDetailPage() {
   const [updatingRowId, setUpdatingRowId] = useState(null);
   const [editingRowId, setEditingRowId] = useState(null);
   const [deleteTargetRow, setDeleteTargetRow] = useState(null);
+  const [selectedRowIds, setSelectedRowIds] = useState(() => new Set());
+  const [selectedDeleteTargetRows, setSelectedDeleteTargetRows] = useState([]);
+  const [isDeletingSelectedRows, setIsDeletingSelectedRows] = useState(false);
   const [sectionSearchQueries, setSectionSearchQueries] = useState({
     purchase: "",
     review: "",
     complete: ""
   });
+  const [collapsedSections, setCollapsedSections] = useState({
+    purchase: false,
+    review: true,
+    complete: true
+  });
+  const [sectionColumnFilters, setSectionColumnFilters] = useState(createEmptySectionColumnFilters);
+  const [openSectionColumnFilterKey, setOpenSectionColumnFilterKey] = useState("");
   const [isPurchaseBulkModalOpen, setIsPurchaseBulkModalOpen] = useState(false);
   const [purchaseBulkAssignName, setPurchaseBulkAssignName] = useState("");
   const [purchaseBulkText, setPurchaseBulkText] = useState("");
@@ -237,6 +525,10 @@ export default function AdminReviewReceiveDetailPage() {
   const [reviewBatchMessage, setReviewBatchMessage] = useState("");
   const [reviewBatchMessageType, setReviewBatchMessageType] = useState("info");
   const [isApplyingReviewBatch, setIsApplyingReviewBatch] = useState(false);
+  const [isPhotoReviewBatchModalOpen, setIsPhotoReviewBatchModalOpen] = useState(false);
+  const [photoReviewBatchMessage, setPhotoReviewBatchMessage] = useState("");
+  const [photoReviewBatchMessageType, setPhotoReviewBatchMessageType] = useState("info");
+  const [isApplyingPhotoReviewBatch, setIsApplyingPhotoReviewBatch] = useState(false);
   const [isReviewFeeBatchDialogOpen, setIsReviewFeeBatchDialogOpen] = useState(false);
   const [reviewFeeBatchStartRow, setReviewFeeBatchStartRow] = useState("");
   const [reviewFeeBatchEndRow, setReviewFeeBatchEndRow] = useState("");
@@ -263,6 +555,7 @@ export default function AdminReviewReceiveDetailPage() {
     activeIndex: 0
   });
   const purchaseAssignConflictResolverRef = useRef(null);
+  const sectionColumnFilterRef = useRef(null);
   const { toast, showToast } = useAppToast();
 
   useEffect(() => {
@@ -373,6 +666,45 @@ export default function AdminReviewReceiveDetailPage() {
     };
   }, [editingRowId, rows]);
 
+  useEffect(() => {
+    setSelectedRowIds((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+
+      const existingRowIds = new Set(rows.map((row) => row.id));
+      const next = new Set(Array.from(prev).filter((rowId) => existingRowIds.has(rowId)));
+
+      return next.size === prev.size ? prev : next;
+    });
+  }, [rows]);
+
+  useEffect(() => {
+    if (!openSectionColumnFilterKey) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (!sectionColumnFilterRef.current?.contains(event.target)) {
+        setOpenSectionColumnFilterKey("");
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpenSectionColumnFilterKey("");
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openSectionColumnFilterKey]);
+
   const formatAccountInfo = (row) => {
     return row.accountInfoInput?.trim() ? row.accountInfoInput : "-";
   };
@@ -476,6 +808,107 @@ export default function AdminReviewReceiveDetailPage() {
     }));
   };
 
+  const handleSectionColumnFilterChange = (sectionKey, columnKey, value) => {
+    setSectionColumnFilters((prev) => ({
+      ...prev,
+      [sectionKey]: {
+        ...prev[sectionKey],
+        [columnKey]: value
+      }
+    }));
+  };
+
+  const handleSectionColumnFilterReset = (sectionKey, columnKey) => {
+    const column = REVIEW_RECEIVE_ROW_FILTER_COLUMNS.find((item) => item.key === columnKey);
+
+    setSectionColumnFilters((prev) => ({
+      ...prev,
+      [sectionKey]: {
+        ...prev[sectionKey],
+        [columnKey]: column?.type === "dateRange" ? { start: "", end: "" } : ""
+      }
+    }));
+  };
+
+  const toggleRowSelection = (rowId) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+
+      return next;
+    });
+  };
+
+  const handleRowClick = (event, row) => {
+    const target = event.target;
+
+    if (
+      target instanceof Element &&
+      target.closest("button, input, select, textarea, label, a, [role='button']")
+    ) {
+      return;
+    }
+
+    toggleRowSelection(row.id);
+  };
+
+  const openSelectedRowsDeleteDialog = (targetRows) => {
+    const rowsToDelete = targetRows.filter((row) => selectedRowIds.has(row.id));
+
+    if (rowsToDelete.length === 0) {
+      return;
+    }
+
+    setSelectedDeleteTargetRows(rowsToDelete);
+  };
+
+  const handleSectionExcelDownload = (sectionKey, title, targetRows) => {
+    const exportRows = buildReviewReceiveDetailExportRows(targetRows, {
+      sectionKey,
+      rowNumberMap,
+      plannedDepositorName
+    });
+    const productLabel = product?.title || product?.product_name || productId;
+
+    downloadExcel(buildExportFilename(`구매상세_${productLabel}_${title}`), {
+      name: title,
+      rows: exportRows
+    });
+  };
+
+  const toggleRowsSelection = (targetRows) => {
+    if (targetRows.length === 0) {
+      return;
+    }
+
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      const areAllSelected = targetRows.every((row) => next.has(row.id));
+
+      targetRows.forEach((row) => {
+        if (areAllSelected) {
+          next.delete(row.id);
+        } else {
+          next.add(row.id);
+        }
+      });
+
+      return next;
+    });
+  };
+
+  const toggleSectionCollapsed = (sectionKey) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey]
+    }));
+  };
+
   const handleAddRow = () => {
     setEditingRowId(null);
     setRows((prev) => sortReviewReceiveRowsByCreatedAt([...prev, createEmptyRow(productId, getDefaultReviewFee(prev))]));
@@ -559,6 +992,22 @@ export default function AdminReviewReceiveDetailPage() {
     setReviewBatchMessageType(type);
   };
 
+  const openPhotoReviewBatchModal = () => {
+    setPhotoReviewBatchMessage("");
+    setPhotoReviewBatchMessageType("info");
+    setIsPhotoReviewBatchModalOpen(true);
+  };
+
+  const closePhotoReviewBatchModal = () => {
+    if (isApplyingPhotoReviewBatch) return;
+    setIsPhotoReviewBatchModalOpen(false);
+  };
+
+  const setPhotoReviewBatchFeedback = (message, type = "info") => {
+    setPhotoReviewBatchMessage(message);
+    setPhotoReviewBatchMessageType(type);
+  };
+
   const openReviewFeeBatchDialog = () => {
     setReviewFeeBatchStartRow("");
     setReviewFeeBatchEndRow("");
@@ -577,6 +1026,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
   const purchaseBulkBackdropDismissProps = useBackdropDismiss(closePurchaseBulkModal);
   const reviewBatchBackdropDismissProps = useBackdropDismiss(closeReviewBatchModal);
+  const photoReviewBatchBackdropDismissProps = useBackdropDismiss(closePhotoReviewBatchModal);
   const purchaseAssignBackdropDismissProps = useBackdropDismiss(closePurchaseAssignModal);
   const purchaseAssignConflictBackdropDismissProps = useBackdropDismiss(() => closePurchaseAssignConflictDialog(null));
 
@@ -903,6 +1353,14 @@ export default function AdminReviewReceiveDetailPage() {
     setDeleteTargetRow(null);
   };
 
+  const closeSelectedRowsDeleteDialog = () => {
+    if (isDeletingSelectedRows) {
+      return;
+    }
+
+    setSelectedDeleteTargetRows([]);
+  };
+
   const confirmDeleteRow = async () => {
     if (!deleteTargetRow) {
       return;
@@ -927,6 +1385,52 @@ export default function AdminReviewReceiveDetailPage() {
     }
     setDeleteTargetRow(null);
     setUpdatingRowId(null);
+  };
+
+  const confirmDeleteSelectedRows = async () => {
+    if (selectedDeleteTargetRows.length === 0) {
+      return;
+    }
+
+    setIsDeletingSelectedRows(true);
+    setErrorMessage("");
+
+    const deletedRowIds = new Set();
+
+    for (let index = 0; index < selectedDeleteTargetRows.length; index += 1) {
+      const row = selectedDeleteTargetRows[index];
+
+      if (row.isNew) {
+        deletedRowIds.add(row.id);
+        continue;
+      }
+
+      const { error } = await deleteReviewReceiveSubmission(row.id);
+
+      if (error) {
+        if (deletedRowIds.size > 0) {
+          setRows((prev) => prev.filter((item) => !deletedRowIds.has(item.id)));
+          setSelectedRowIds((prev) => new Set(Array.from(prev).filter((rowId) => !deletedRowIds.has(rowId))));
+        }
+
+        setErrorMessage(
+          `${index + 1}번째 선택 행 삭제 중 오류가 발생했습니다. ${deletedRowIds.size}건만 삭제되었습니다.`
+        );
+        setIsDeletingSelectedRows(false);
+        return;
+      }
+
+      deletedRowIds.add(row.id);
+    }
+
+    setRows((prev) => prev.filter((item) => !deletedRowIds.has(item.id)));
+    setSelectedRowIds((prev) => new Set(Array.from(prev).filter((rowId) => !deletedRowIds.has(rowId))));
+    if (deletedRowIds.has(editingRowId)) {
+      setEditingRowId(null);
+    }
+    showToast(`${deletedRowIds.size}건을 삭제했습니다.`, "success");
+    setSelectedDeleteTargetRows([]);
+    setIsDeletingSelectedRows(false);
   };
 
   const handlePurchaseBulkApply = async () => {
@@ -1132,6 +1636,49 @@ export default function AdminReviewReceiveDetailPage() {
     setIsPurchaseAssignModalOpen(false);
   };
 
+  const applyPhotoReviewBatch = async () => {
+    setPhotoReviewBatchFeedback("");
+
+    if (photoReviewBatchTargetRows.length === 0) {
+      setPhotoReviewBatchFeedback("사진 제출 완료이면서 리뷰완료 미체크인 행이 없습니다.", "error");
+      return;
+    }
+
+    setIsApplyingPhotoReviewBatch(true);
+
+    const updatedRows = [];
+
+    for (let index = 0; index < photoReviewBatchTargetRows.length; index += 1) {
+      const row = photoReviewBatchTargetRows[index];
+      const { error } = await updateReviewReceiveSubmissionStatus(row.id, {
+        is_review_verified: true
+      });
+
+      if (error) {
+        if (updatedRows.length > 0) {
+          setRows((prev) => replaceReviewReceiveRows(prev, updatedRows));
+        }
+
+        setPhotoReviewBatchFeedback(
+          `${index + 1}번째 저장 중 오류가 발생했습니다. ${updatedRows.length}건만 리뷰완료 처리되었습니다.`,
+          "error"
+        );
+        setIsApplyingPhotoReviewBatch(false);
+        return;
+      }
+
+      updatedRows.push({
+        ...row,
+        is_review_verified: true
+      });
+    }
+
+    setRows((prev) => replaceReviewReceiveRows(prev, updatedRows));
+    showToast(`${updatedRows.length}건을 리뷰완료로 처리했습니다.`, "success");
+    setIsApplyingPhotoReviewBatch(false);
+    setIsPhotoReviewBatchModalOpen(false);
+  };
+
   const applyReviewBatch = async () => {
     setIsApplyingReviewBatch(true);
 
@@ -1241,29 +1788,49 @@ export default function AdminReviewReceiveDetailPage() {
     }));
   };
 
-  const { purchaseRows: purchaseCompletedRows, reviewRows: reviewCompletedRows, completeRows: fullyCompletedRows } =
-    splitReviewReceiveRows(rows);
+  const { sortedRows, rowNumberMap, rowByNumberMap, maxRowNumber } = buildReviewReceiveRowPositionMaps(rows);
+  const { reviewRows: reviewCompletedRows, completeRows: fullyCompletedRows } = splitReviewReceiveRows(rows);
+  const purchaseSectionRows = sortedRows;
   const defaultReviewFee = getDefaultReviewFee(rows);
   const plannedDepositorName = product?.planned_depositor_name ?? "";
-  const filteredPurchaseCompletedRows = filterReviewReceiveRows(
-    purchaseCompletedRows,
+  const columnFilterContext = { rowNumberMap, plannedDepositorName };
+  const searchedPurchaseSectionRows = filterReviewReceiveRows(
+    purchaseSectionRows,
     sectionSearchQueries.purchase,
     plannedDepositorName
   );
-  const filteredReviewCompletedRows = filterReviewReceiveRows(
+  const searchedReviewCompletedRows = filterReviewReceiveRows(
     reviewCompletedRows,
     sectionSearchQueries.review,
     plannedDepositorName
   );
-  const filteredFullyCompletedRows = filterReviewReceiveRows(
+  const searchedFullyCompletedRows = filterReviewReceiveRows(
     fullyCompletedRows,
     sectionSearchQueries.complete,
     plannedDepositorName
   );
+  const filteredPurchaseSectionRows = filterReviewReceiveRowsByColumnFilters(
+    searchedPurchaseSectionRows,
+    sectionColumnFilters.purchase,
+    columnFilterContext
+  );
+  const filteredReviewCompletedRows = filterReviewReceiveRowsByColumnFilters(
+    searchedReviewCompletedRows,
+    sectionColumnFilters.review,
+    columnFilterContext
+  );
+  const filteredFullyCompletedRows = filterReviewReceiveRowsByColumnFilters(
+    searchedFullyCompletedRows,
+    sectionColumnFilters.complete,
+    columnFilterContext
+  );
+  const photoReviewBatchTargetRows = purchaseSectionRows.filter(
+    (row) => !row.isNew && !row.is_review_verified && (row.photos?.length ?? 0) > 0
+  );
   const purchaseBulkPreview = buildPurchaseBulkPreview(
     purchaseBulkAssignName,
     purchaseBulkText,
-    filteredPurchaseCompletedRows
+    filteredPurchaseSectionRows
   );
 
   const renderEditableCell = (row, displayValue, inputNode) => (
@@ -1272,7 +1839,6 @@ export default function AdminReviewReceiveDetailPage() {
     </td>
   );
 
-  const { sortedRows, rowNumberMap, rowByNumberMap, maxRowNumber } = buildReviewReceiveRowPositionMaps(rows);
   const purchaseAssignPreview = buildPurchaseAssignPreview(purchaseAssignText, rowByNumberMap, maxRowNumber);
   const purchaseBulkEnterConfirm = useModalEnterConfirm({
     isOpen: isPurchaseBulkModalOpen,
@@ -1280,6 +1846,13 @@ export default function AdminReviewReceiveDetailPage() {
     actionLabel: "구매정보 입력 완료",
     confirmButtonLabel: "완료하기",
     onConfirm: handlePurchaseBulkApply
+  });
+  const photoReviewBatchEnterConfirm = useModalEnterConfirm({
+    isOpen: isPhotoReviewBatchModalOpen,
+    isDisabled: isApplyingPhotoReviewBatch || photoReviewBatchTargetRows.length === 0,
+    actionLabel: "사진 제출 행 리뷰완료 일괄처리",
+    confirmButtonLabel: "처리하기",
+    onConfirm: applyPhotoReviewBatch
   });
   const reviewBatchEnterConfirm = useModalEnterConfirm({
     isOpen: isReviewBatchModalOpen,
@@ -1319,7 +1892,7 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    const targetRows = filteredPurchaseCompletedRows.filter((row) => {
+    const targetRows = filteredPurchaseSectionRows.filter((row) => {
       const rowNumber = rowNumberMap[row.id];
       return !row.isNew && Number.isInteger(rowNumber) && rowNumber >= start && rowNumber <= end;
     });
@@ -1396,14 +1969,21 @@ export default function AdminReviewReceiveDetailPage() {
 
   const renderSection = (sectionKey, title, description, totalRows, filteredRows) => {
     const searchValue = sectionSearchQueries[sectionKey];
+    const isCollapsed = Boolean(collapsedSections[sectionKey]);
+    const sectionBodyId = `review-receive-section-body-${sectionKey}`;
+    const columnFilters = sectionColumnFilters[sectionKey] ?? {};
+    const visibleFilterColumns = getVisibleReviewReceiveRowFilterColumns(sectionKey);
     const hasSearchQuery = Boolean(searchValue.trim());
+    const hasActiveColumnFilters = hasActiveReviewReceiveRowFilters(columnFilters);
+    const selectedRowsInSection = filteredRows.filter((row) => selectedRowIds.has(row.id));
+    const selectedRowsInSectionCount = selectedRowsInSection.length;
     const countLabel =
       totalRows.length === filteredRows.length ? `${filteredRows.length}건` : `${filteredRows.length}/${totalRows.length}건`;
     const emptyMessage =
       totalRows.length === 0
         ? `${title} 상태의 제출 데이터가 없습니다.`
-        : hasSearchQuery
-          ? "검색 결과가 없습니다."
+        : hasSearchQuery || hasActiveColumnFilters
+          ? "필터 조건에 맞는 제출 데이터가 없습니다."
           : `${title} 상태의 제출 데이터가 없습니다.`;
 
     return (
@@ -1413,91 +1993,141 @@ export default function AdminReviewReceiveDetailPage() {
             <h2>{title}</h2>
             <p>{description}</p>
           </div>
-          <span className="status-badge">{countLabel}</span>
+          <div className="review-receive-section-header-actions">
+            <span className="status-badge">{countLabel}</span>
+            <button
+              type="button"
+              className="review-receive-section-download-button"
+              onClick={() => handleSectionExcelDownload(sectionKey, title, filteredRows)}
+              disabled={filteredRows.length === 0}
+            >
+              엑셀로 내려받기
+            </button>
+            <button
+              type="button"
+              className="review-receive-section-toggle"
+              onClick={() => toggleSectionCollapsed(sectionKey)}
+              aria-expanded={!isCollapsed}
+              aria-controls={sectionBodyId}
+            >
+              {isCollapsed ? "펼치기" : "접기"}
+            </button>
+          </div>
         </div>
 
-        <div className="review-receive-section-toolbar">
-          {sectionKey === "purchase" && (
-            <div className="review-receive-toolbar-actions">
-              <div className="review-receive-toolbar-button-row">
-                <button type="button" className="admin-secondary-button" onClick={handleCopyPurchaseBuyers}>
-                  구매자 복사하기
-                </button>
-                <button type="button" className="admin-secondary-button" onClick={openPurchaseAssignModal}>
-                  구매자 일괄 입력
-                </button>
+        <div id={sectionBodyId} hidden={isCollapsed}>
+          <div className="review-receive-section-toolbar">
+            {sectionKey === "purchase" && (
+              <div className="review-receive-toolbar-actions">
+                <div className="review-receive-toolbar-button-row">
+                  <button type="button" className="admin-secondary-button" onClick={handleCopyPurchaseBuyers}>
+                    구매자 복사하기
+                  </button>
+                  <button type="button" className="admin-secondary-button" onClick={openPurchaseAssignModal}>
+                    구매자 일괄 입력
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-secondary-button"
+                    onClick={openReviewFeeBatchDialog}
+                    disabled={filteredPurchaseSectionRows.length === 0}
+                  >
+                    리뷰비 일괄 입력하기
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-secondary-button"
+                    onClick={openPhotoReviewBatchModal}
+                    disabled={photoReviewBatchTargetRows.length === 0}
+                  >
+                    리뷰완료 일괄처리
+                  </button>
+                  <button type="button" className="admin-primary-button" onClick={openPurchaseBulkModal}>
+                    구매정보 입력하기
+                  </button>
+                </div>
+              </div>
+            )}
+            {sectionKey === "review" && (
+              <div className="review-receive-toolbar-actions">
                 <button
                   type="button"
-                  className="admin-secondary-button"
-                  onClick={openReviewFeeBatchDialog}
-                  disabled={filteredPurchaseCompletedRows.length === 0}
+                  className="admin-primary-button"
+                  onClick={openReviewBatchModal}
+                  disabled={filteredReviewCompletedRows.length === 0}
                 >
-                  리뷰비 일괄 입력하기
-                </button>
-                <button type="button" className="admin-primary-button" onClick={openPurchaseBulkModal}>
-                  구매정보 입력하기
+                  일괄처리하기
                 </button>
               </div>
-            </div>
-          )}
-          {sectionKey === "review" && (
-            <div className="review-receive-toolbar-actions">
-              <button
-                type="button"
-                className="admin-primary-button"
-                onClick={openReviewBatchModal}
-                disabled={filteredReviewCompletedRows.length === 0}
-              >
-                일괄처리하기
-              </button>
-            </div>
-          )}
-          <input
-            type="search"
-            className="review-receive-search-input"
-            value={searchValue}
-            onChange={(event) => handleSectionSearchChange(sectionKey, event.target.value)}
-            placeholder={`${title} 섹션 검색`}
-            aria-label={`${title} 섹션 검색`}
-          />
-        </div>
+            )}
+            <button
+              type="button"
+              className="review-receive-select-all-button"
+              onClick={() => toggleRowsSelection(filteredRows)}
+              disabled={filteredRows.length === 0}
+            >
+              {filteredRows.length > 0 && selectedRowsInSectionCount === filteredRows.length ? "전체 해제하기" : "전체 선택하기"}
+            </button>
+            <button
+              type="button"
+              className="review-receive-delete-selected-button"
+              onClick={() => openSelectedRowsDeleteDialog(filteredRows)}
+              disabled={selectedRowsInSectionCount === 0}
+            >
+              {selectedRowsInSectionCount > 0 ? `삭제하기 ${selectedRowsInSectionCount}` : "삭제하기"}
+            </button>
+            <input
+              type="search"
+              className="review-receive-search-input"
+              value={searchValue}
+              onChange={(event) => handleSectionSearchChange(sectionKey, event.target.value)}
+              placeholder={`${title} 섹션 검색`}
+              aria-label={`${title} 섹션 검색`}
+            />
+          </div>
 
-        <div className="table-scroll-wrap">
-          <table className={`review-receive-table review-receive-table-${sectionKey}`}>
-            {renderTableColumns(sectionKey)}
-            <thead>
-              <tr>
-                <th>순번</th>
-                <th>배정</th>
-              <th>주문번호</th>
-              <th>구매자</th>
-              <th>수취인</th>
-              <th>구매계정</th>
-              <th>연락처</th>
-              <th>주소</th>
-              <th>계좌</th>
-              <th>금액</th>
-              <th>리뷰비</th>
-              <th>사진</th>
-              <th>입금자명(예정)</th>
-              <th>리뷰완료</th>
-              <th>입금완료</th>
-              {sectionKey !== "purchase" && <th>입금일</th>}
-              {sectionKey !== "purchase" && <th>실제입금자명</th>}
-              {sectionKey === "purchase" && <th>관리</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={sectionKey === "purchase" ? 16 : 17}>{emptyMessage}</td>
-              </tr>
-            ) : (
-                filteredRows.map((row) => (
+          <div className="table-scroll-wrap review-receive-detail-table-wrap">
+            <table className={`review-receive-table review-receive-table-${sectionKey}`}>
+              {renderTableColumns(sectionKey)}
+              <thead>
+                <tr>
+                  {visibleFilterColumns.map((column) => {
+                    const filterKey = `${sectionKey}:${column.key}`;
+
+                    return (
+                      <ReviewReceiveRowFilterHeader
+                        key={column.key}
+                        sectionKey={sectionKey}
+                        column={column}
+                        filterValue={columnFilters[column.key]}
+                        isOpen={openSectionColumnFilterKey === filterKey}
+                        onOpenChange={setOpenSectionColumnFilterKey}
+                        onFilterChange={handleSectionColumnFilterChange}
+                        onFilterReset={handleSectionColumnFilterReset}
+                        menuRef={sectionColumnFilterRef}
+                      />
+                    );
+                  })}
+                  {sectionKey === "purchase" && <th>관리</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={sectionKey === "purchase" ? 16 : 17}>{emptyMessage}</td>
+                  </tr>
+                ) : (
+                  filteredRows.map((row) => (
                   <Fragment key={row.id}>
                     <tr
-                      className={row.isNew ? "review-receive-row is-new" : row.isDirty ? "review-receive-row is-dirty" : "review-receive-row"}
+                      className={[
+                        "review-receive-row",
+                        row.isNew ? "is-new" : "",
+                        row.isDirty ? "is-dirty" : "",
+                        selectedRowIds.has(row.id) ? "is-selected" : ""
+                      ].filter(Boolean).join(" ")}
                       data-row-editor-id={row.id}
+                      onClick={(event) => handleRowClick(event, row)}
                     >
                       <td className="review-row-index">{rowNumberMap[row.id] ?? "-"}</td>
                       {sectionKey === "purchase" && row.isEditing
@@ -1777,7 +2407,8 @@ export default function AdminReviewReceiveDetailPage() {
                 </tr>
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       </section>
     );
@@ -1817,8 +2448,12 @@ export default function AdminReviewReceiveDetailPage() {
               <strong>{product.review_type ?? "-"}</strong>
             </div>
             <div className="detail-summary-item">
-              <span className="detail-summary-label">입금구분</span>
-              <strong>{getProductDepositGbLabel(product.deposit_GB)}</strong>
+              <span className="detail-summary-label">제품비 입금구분</span>
+              <strong>{getProductDepositGbPartLabels(product.deposit_GB).productFee}</strong>
+            </div>
+            <div className="detail-summary-item">
+              <span className="detail-summary-label">리뷰비 입금구분</span>
+              <strong>{getProductDepositGbPartLabels(product.deposit_GB).reviewFee}</strong>
             </div>
             <div className="detail-summary-item">
               <span className="detail-summary-label">설명</span>
@@ -1837,9 +2472,9 @@ export default function AdminReviewReceiveDetailPage() {
           {renderSection(
             "purchase",
             "구매완료",
-            "리뷰완료 전이거나 아직 전체완료 조건을 만족하지 않은 제출 데이터입니다.",
-            purchaseCompletedRows,
-            filteredPurchaseCompletedRows
+            "리뷰완료나 입금완료 체크 여부와 관계없이 모든 제출 데이터를 보여줍니다.",
+            purchaseSectionRows,
+            filteredPurchaseSectionRows
           )}
           {renderSection(
             "review",
@@ -1971,6 +2606,102 @@ export default function AdminReviewReceiveDetailPage() {
                 disabled={isApplyingPurchaseBulk || purchaseBulkPreview.status !== "ready"}
               >
                 {isApplyingPurchaseBulk ? "입력 중..." : "완료하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPhotoReviewBatchModalOpen && (
+        <div className="review-receive-modal-backdrop" role="presentation" {...photoReviewBatchBackdropDismissProps}>
+          <div
+            className="review-receive-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="사진 제출 행 리뷰완료 일괄처리"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={photoReviewBatchEnterConfirm.handleModalKeyDown}
+          >
+            <div className="review-receive-modal-header">
+              <div>
+                <h2>리뷰완료 일괄처리</h2>
+                <p>사진이 제출됐고 리뷰완료가 아직 체크되지 않은 저장된 행을 리뷰완료로 처리합니다.</p>
+              </div>
+              <button
+                type="button"
+                className="review-receive-modal-close"
+                onClick={closePhotoReviewBatchModal}
+                disabled={isApplyingPhotoReviewBatch}
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="review-receive-modal-body review-receive-modal-body-single">
+              <div className="review-receive-review-list-panel">
+                <div className="review-receive-preview-header">
+                  <h3>처리 대상</h3>
+                  <p>{`현재 ${photoReviewBatchTargetRows.length}건이 리뷰완료 처리 대상입니다.`}</p>
+                </div>
+
+                {photoReviewBatchTargetRows.length > 0 ? (
+                  <div className="review-receive-preview-list">
+                    {photoReviewBatchTargetRows.map((row, index) => (
+                      <div key={row.id} className="review-receive-preview-item">
+                        <div className="review-receive-preview-item-title">
+                          <strong>{index + 1}번째 대상</strong>
+                          <span>{`순번 ${rowNumberMap[row.id] ?? "-"} / 배정 ${row.assign_name || "-"}`}</span>
+                        </div>
+                        <p>{`${row.order_number || "-"} / ${row.buyer_name || "-"} / ${row.recipient_name || "-"}`}</p>
+                        {row.purchase_account && <p>{row.purchase_account}</p>}
+                        <p>{`${row.contact || "-"} / ${row.address || "-"}`}</p>
+                        <p>{`사진 ${row.photos?.length ?? 0}장 / ${formatAccountInfo(row)} / ${row.amount ?? "-"}`}</p>
+                        <div className="photo-link-list review-receive-preview-photo-list">
+                          {row.photos.map((url, photoIndex) => (
+                            <button
+                              key={`${row.id}-${url}-${photoIndex}`}
+                              type="button"
+                              className="photo-thumb-button"
+                              onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                              aria-label={`처리 대상 증빙 이미지 ${photoIndex + 1} 열기`}
+                            >
+                              <img src={url} alt={`처리 대상 증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="review-receive-preview-empty">
+                    <p>사진 제출 완료이면서 리뷰완료 미체크인 행이 없습니다.</p>
+                  </div>
+                )}
+
+                {photoReviewBatchMessage && (
+                  <p className={`review-receive-bulk-message is-${photoReviewBatchMessageType}`}>
+                    {photoReviewBatchMessage}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="review-receive-modal-actions">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={closePhotoReviewBatchModal}
+                disabled={isApplyingPhotoReviewBatch}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="admin-primary-button"
+                onClick={applyPhotoReviewBatch}
+                disabled={isApplyingPhotoReviewBatch || photoReviewBatchTargetRows.length === 0}
+              >
+                {isApplyingPhotoReviewBatch ? "처리 중..." : "처리하기"}
               </button>
             </div>
           </div>
@@ -2288,6 +3019,10 @@ export default function AdminReviewReceiveDetailPage() {
       />
 
       <AppAlertDialog
+        {...photoReviewBatchEnterConfirm.confirmDialogProps}
+      />
+
+      <AppAlertDialog
         {...reviewBatchEnterConfirm.confirmDialogProps}
       />
 
@@ -2364,6 +3099,23 @@ export default function AdminReviewReceiveDetailPage() {
         ariaLabel="리뷰받기 제출 데이터 삭제 확인"
       >
         <p>선택한 제출 데이터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+      </AppAlertDialog>
+
+      <AppAlertDialog
+        isOpen={selectedDeleteTargetRows.length > 0}
+        variant="danger"
+        badgeLabel="선택 삭제"
+        title="선택한 제출 데이터를 삭제할까요?"
+        cancelLabel="취소"
+        confirmLabel="삭제하기"
+        busyConfirmLabel="삭제 중..."
+        isBusy={isDeletingSelectedRows}
+        onCancel={closeSelectedRowsDeleteDialog}
+        onConfirm={confirmDeleteSelectedRows}
+        confirmButtonClassName="admin-danger-button"
+        ariaLabel="리뷰받기 선택 제출 데이터 삭제 확인"
+      >
+        <p>{`선택한 ${selectedDeleteTargetRows.length}건이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`}</p>
       </AppAlertDialog>
 
       <AppAlertDialog

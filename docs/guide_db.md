@@ -1,7 +1,7 @@
 # DB Guide (`public` schema)
 
 기준 프로젝트: `review_manager_backoffice` (`zwqmvttrburcwbdsunwo`)  
-테이블/컬럼 재확인 시각: 2026-05-11 KST (`products.deposit_GB` 추가 마이그레이션 파일 작성 기준)
+테이블/컬럼 재확인 시각: 2026-06-02 KST (`products.deposit_GB` 입금구분 4단계 확장 마이그레이션 파일 작성 기준)
 row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업로드` 메뉴 권한 추가 뒤 갱신)
 
 ## 1) 테이블 관계 요약
@@ -46,12 +46,13 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   - `option_name` text, null
   - `review_type` text, null
   - `planned_depositor_name` text, null
-  - `deposit_GB` int4, not null, default `1`, check (`deposit_GB` in (1, 2))
+  - `deposit_GB` int4, not null, default `1`, check (`deposit_GB` in (1, 2, 3, 4))
 - row count: 124
 - 비고: 2026-04-24에 `company_name`, `option_name`, `review_type`, `planned_depositor_name` 컬럼 추가
   2026-04-26에 `review_fee` 컬럼을 제거하고 `submissions.review_fee`로 이관
   2026-05-11에 `product_date` 컬럼 추가, 기존 행은 `created_at::date` 값으로 초기화
-  2026-05-11에 `deposit_GB` 컬럼 추가 마이그레이션 파일 작성. 값 계약은 1=`자체입금`, 2=`업체입금`이며 기존 행은 1로 초기화
+  2026-05-11에 `deposit_GB` 컬럼 추가 마이그레이션 파일 작성. 기존 값 계약은 1=`자체입금`, 2=`업체입금`이며 기존 행은 1로 초기화
+  2026-06-02에 `deposit_GB` 값 계약을 제품비/리뷰비 입금구분 조합으로 확장. 새 계약은 1=`제품비 자체입금, 리뷰비 자체입금`, 2=`제품비 자체입금, 리뷰비 업체입금`, 3=`제품비 업체입금, 리뷰비 자체입금`, 4=`제품비 업체입금, 리뷰비 업체입금`이며 기존 2=`업체입금` 행은 4로 이관
 
 ## `admin_menu_permissions`
 - PK: `id` (bigint, identity)
@@ -164,7 +165,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `option_name`: `500gx1개`
 - `review_type`: `텍스트`
 - `planned_depositor_name`: `0401나우프레시`
-- `deposit_GB`: 1 (`자체입금`)
+- `deposit_GB`: 1 (`제품비 자체입금, 리뷰비 자체입금`)
 - `is_real_shipping`: false
 
 ## `admin_menu_permissions` sample
@@ -223,7 +224,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - 현재 존재하는 `public` 테이블은 `admins`, `products`, `admin_menu_permissions`, `product_steps`, `applications`, `submissions`, `evidence_photos` 입니다.
 - `products`에서는 `deposit_name`, `review_fee`가 제거됐고, `company_name`, `option_name`, `review_type`, `planned_depositor_name`이 관리됩니다.
 - `products.product_date`는 리뷰받기 목록의 등록일 표시와 상품 추가/수정 입력에 사용합니다. 추가 마이그레이션은 기존 데이터를 `created_at`의 날짜값으로 채웁니다.
-- `products.deposit_GB`는 리뷰받기 상품의 입금구분에 사용합니다. 관리자 `/admin/review-receive/specific/:productId`에서는 표시하고, 구매자용 `/review-receive/specific/:productId` 공개 화면에서는 조회/표시하지 않습니다.
+- `products.deposit_GB`는 리뷰받기 상품의 제품비/리뷰비 입금구분 조합에 사용합니다. 관리자 `/admin/review-receive/*` 화면에서는 `제품비 입금구분`, `리뷰비 입금구분`으로 나누어 표시하고, 구매자용 `/review-receive/specific/:productId` 공개 화면에서는 조회/표시하지 않습니다.
 - `submissions`에는 `assign_name`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name`, `review_fee`가 추가됐습니다.
 - `admin_menu_permissions`는 관리자별 메뉴 노출 권한을 관리하며, 현재 `2sssg` 계정에 `대시보드`, `상품`, `리뷰받기`, `상품전체보기`, `내보내기`, `파일 업로드` 권한 6건이 들어 있습니다.
 - 2026-04-26에 `test1`, `test2`, `test3` 더미 계정을 삽입했습니다. 세 계정은 모두 회사 `테스트커머스` 소속이며, 메뉴 권한은 1=`대시보드`, 3=`리뷰받기`, 4=`상품전체보기`, 5=`내보내기`, 6=`파일 업로드`입니다.

@@ -8,6 +8,7 @@ import AdminExportByDepositDatePage from "./pages/admin/AdminExportByDepositDate
 import AdminExportByProductPage from "./pages/admin/AdminExportByProductPage";
 import AdminExportByStatusPage from "./pages/admin/AdminExportByStatusPage";
 import AdminExportMyProductsPage from "./pages/admin/AdminExportMyProductsPage";
+import AdminExportPhotosPage from "./pages/admin/AdminExportPhotosPage";
 import AdminFileUploadPage from "./pages/admin/AdminFileUploadPage";
 import AdminProductDetailPage from "./pages/admin/AdminProductDetailPage";
 import AdminProductOverviewPage from "./pages/admin/AdminProductOverviewPage";
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="by-deposit-date" element={<AdminExportByDepositDatePage />} />
           <Route path="by-status" element={<AdminExportByStatusPage />} />
           <Route path="applications" element={<AdminExportApplicationsPage />} />
+          <Route path="photos" element={<AdminExportPhotosPage />} />
         </Route>
         <Route path="file-upload" element={<AdminFileUploadPage />} />
         <Route path="setting" element={<AdminSettingPage />} />

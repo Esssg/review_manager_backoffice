@@ -24,7 +24,7 @@
 - 제출 완료 체크
 - 제출 데이터 삭제
 - 증빙 사진 썸네일 및 모달 뷰어
-- 내보내기 메뉴 7종(전체상품, 내상품, 일자별, 상품별, 입금일 기준, 상태별, 신청자 명단)
+- 내보내기 메뉴 8종(전체상품, 내상품, 일자별, 상품별, 입금일 기준, 상태별, 신청자 명단, 사진내려받기)
 - 파일 업로드 메뉴 진입점 및 Excel 파싱/미리보기/DB 반영
 
 현재 프로젝트의 성격은 "빠르게 운영 가능한 내부용 백오피스 MVP"에 가깝습니다. 기능은 이미 운영 흐름을 충분히 담고 있지만, 보안과 유지보수성 관점에서는 구조 개선 여지가 큽니다.
@@ -103,8 +103,9 @@ src/
       AdminExportByDepositDatePage.jsx
       AdminExportByStatusPage.jsx
       AdminExportApplicationsPage.jsx
+      AdminExportPhotosPage.jsx
       AdminFileUploadPage.jsx
-                          내보내기 하위 페이지(전체상품·내상품·일자별·상품별·입금일·상태별·신청자)
+                          내보내기 하위 페이지(전체상품·내상품·일자별·상품별·입금일·상태별·신청자·사진내려받기)
                           관리자 페이지 컴포넌트
     public/
       PublicReviewReceiveDetailPage.jsx
@@ -120,6 +121,7 @@ src/
                           구매자용 리뷰받기 조회 + 사진 업로드 함수 호출 서비스
     reviewReceive.js      리뷰받기 상세 조회/수정/삭제
     exportData.js         내보내기용 products/submissions 등 조회
+    exportPhotos.js       사진내려받기용 products/submissions/evidence_photos 조회
     fileUpload.js         파일 업로드 products 생성 및 submissions 주문번호 기준 저장
   utils/
     applicationRows.js    신청자 정렬 유틸
@@ -131,6 +133,7 @@ src/
     exportColumns.js      내보내기 컬럼·프리셋·행 변환
     exportDateFilters.js  내보내기 날짜 필터 기본값/빠른 범위 유틸
     exportFile.js         xlsx 기반 Excel 다운로드
+    zipFile.js            브라우저 기반 무압축 ZIP 생성/다운로드
     fileUploadParser.js   Excel 파일 업로드 행 파싱/상품 블록 변환
     fileUploadValidation.js
                           파일 업로드 날짜/금액/계좌/상태값 검증 유틸
@@ -218,7 +221,7 @@ Node 스크립트용 대체 키도 지원합니다.
 - `/admin/review-receive/completed`: 관리자 리뷰받기 완료보기
 - `/admin/review-receive/specific/:productId`: 관리자 리뷰받기 상세
 - `/admin/export`: 내보내기 (기본 하위로 리다이렉트)
-- `/admin/export/all-products` 등: 내보내기 하위(전체상품·내상품·일자별·상품별·입금일·상태별·신청자 명단)
+- `/admin/export/all-products` 등: 내보내기 하위(전체상품·내상품·일자별·상품별·입금일·상태별·신청자 명단·사진내려받기)
 - `/admin/file-upload`: 파일 업로드
 - `/admin/setting`: 관리자 설정
 - `/review-receive/specific/:productId`: 구매자용 리뷰받기 상세
@@ -234,7 +237,7 @@ Node 스크립트용 대체 키도 지원합니다.
 관리자 대시보드는 `review_manager_include_company_data` 체크박스를 공유해 본인 데이터와 같은 회사 소속 관리자 데이터를 전환하며, 오늘 KPI, 누적 운영 상태, 조건 기반 알림, 14일/30일 추이, 상위 상품, 최근 활동, 회사 멤버 비교를 실제 운영 데이터 기준으로 보여줍니다.
 관리자 백오피스에는 `admin_menu_permissions.menu_number = 4` 권한으로 제어되는 `상품전체보기` 메뉴가 추가되어, 왼쪽 메뉴의 하위 선택 메뉴에서 `전체보기`와 `상태별보기` 경로로 나뉘어 `products` + `submissions`를 필터 기준으로 일괄 처리할 수 있습니다.
 `admin_menu_permissions.menu_number = 3`인 `리뷰받기` 메뉴도 하위 선택 메뉴를 가지며, `전체보기`, `진행중보기`, `완료보기` 경로에서 상품별 submission의 `is_deposit_verified` 집계 상태를 기준으로 같은 목록을 필터링해 보여줍니다.
-`admin_menu_permissions.menu_number = 5`인 `내보내기` 메뉴는 하위 경로가 `/admin/export/*`이며, 현재 `전체상품`, `내상품`, `일자별`, `상품별`, `입금일 기준`, `상태별`, `신청자 명단` 화면에서 Excel 내보내기(컬럼 선택·미리보기·기간 필터·상태/상품 필터)를 제공합니다.
+`admin_menu_permissions.menu_number = 5`인 `내보내기` 메뉴는 하위 경로가 `/admin/export/*`이며, 현재 `전체상품`, `내상품`, `일자별`, `상품별`, `입금일 기준`, `상태별`, `신청자 명단` 화면에서 Excel 내보내기(컬럼 선택·미리보기·기간 필터·상태/상품 필터)를 제공합니다. `사진내려받기` 화면은 상품내역 필터 후 필터링된 상품의 submission 증빙 사진을 브라우저에서 ZIP으로 묶어 내려받습니다.
 `admin_menu_permissions.menu_number = 6`인 `파일 업로드` 메뉴는 `/admin/file-upload` 경로를 사용합니다. Excel 파일 선택/드래그앤드롭/붙여넣기, 파싱 결과 미리보기, 오류/경고/스킵 행 표시, 오류 행 제외 후 저장 예정 데이터 확인, 샘플 양식 다운로드, Supabase `products` 생성 및 `submissions` 주문번호 기준 insert/update 흐름을 제공합니다.
 
 ## 6. 인증 및 데이터 흐름 요약

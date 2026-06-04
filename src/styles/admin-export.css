@@ -406,6 +406,30 @@
   background: #fbfdff;
 }
 
+.export-photo-product-table-wrap {
+  max-height: min(560px, 62dvh);
+}
+
+.export-photo-product-table {
+  min-width: 1380px;
+}
+
+.export-photo-filter-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.export-photo-filter-input:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
 @media (max-width: 720px) {
   .admin-export-page {
     min-height: auto;

@@ -87,6 +87,10 @@ export const ADMIN_MENU_ITEMS = [
       {
         label: "신청자 명단",
         path: "/admin/export/applications"
+      },
+      {
+        label: "사진내려받기",
+        path: "/admin/export/photos"
       }
     ]
   },
@@ -153,21 +157,100 @@ export const REVIEW_RECEIVE_STATUS_TABS = [
 
 export const PRODUCT_DEPOSIT_GB = {
   SELF: 1,
-  COMPANY: 2
+  PRODUCT_SELF_REVIEW_SELF: 1,
+  PRODUCT_SELF_REVIEW_COMPANY: 2,
+  PRODUCT_COMPANY_REVIEW_SELF: 3,
+  PRODUCT_COMPANY_REVIEW_COMPANY: 4
 };
 
+export const PRODUCT_DEPOSIT_PARTY = {
+  SELF: "self",
+  COMPANY: "company"
+};
+
+export const PRODUCT_DEPOSIT_PARTY_OPTIONS = [
+  { value: PRODUCT_DEPOSIT_PARTY.SELF, label: "자체입금" },
+  { value: PRODUCT_DEPOSIT_PARTY.COMPANY, label: "업체입금" }
+];
+
 export const PRODUCT_DEPOSIT_GB_OPTIONS = [
-  { value: PRODUCT_DEPOSIT_GB.SELF, label: "자체입금" },
-  { value: PRODUCT_DEPOSIT_GB.COMPANY, label: "업체입금" }
+  {
+    value: PRODUCT_DEPOSIT_GB.PRODUCT_SELF_REVIEW_SELF,
+    label: "제품비 자체입금 / 리뷰비 자체입금",
+    productDepositValue: PRODUCT_DEPOSIT_PARTY.SELF,
+    reviewDepositValue: PRODUCT_DEPOSIT_PARTY.SELF,
+    productDepositLabel: "자체입금",
+    reviewDepositLabel: "자체입금"
+  },
+  {
+    value: PRODUCT_DEPOSIT_GB.PRODUCT_SELF_REVIEW_COMPANY,
+    label: "제품비 자체입금 / 리뷰비 업체입금",
+    productDepositValue: PRODUCT_DEPOSIT_PARTY.SELF,
+    reviewDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
+    productDepositLabel: "자체입금",
+    reviewDepositLabel: "업체입금"
+  },
+  {
+    value: PRODUCT_DEPOSIT_GB.PRODUCT_COMPANY_REVIEW_SELF,
+    label: "제품비 업체입금 / 리뷰비 자체입금",
+    productDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
+    reviewDepositValue: PRODUCT_DEPOSIT_PARTY.SELF,
+    productDepositLabel: "업체입금",
+    reviewDepositLabel: "자체입금"
+  },
+  {
+    value: PRODUCT_DEPOSIT_GB.PRODUCT_COMPANY_REVIEW_COMPANY,
+    label: "제품비 업체입금 / 리뷰비 업체입금",
+    productDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
+    reviewDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
+    productDepositLabel: "업체입금",
+    reviewDepositLabel: "업체입금"
+  }
 ];
 
 export function normalizeProductDepositGb(value) {
-  return Number(value) === PRODUCT_DEPOSIT_GB.COMPANY ? PRODUCT_DEPOSIT_GB.COMPANY : PRODUCT_DEPOSIT_GB.SELF;
+  const numericValue = Number(value);
+  return PRODUCT_DEPOSIT_GB_OPTIONS.some((option) => option.value === numericValue)
+    ? numericValue
+    : PRODUCT_DEPOSIT_GB.PRODUCT_SELF_REVIEW_SELF;
 }
 
 export function getProductDepositGbLabel(value) {
   const normalizedValue = normalizeProductDepositGb(value);
-  return PRODUCT_DEPOSIT_GB_OPTIONS.find((option) => option.value === normalizedValue)?.label ?? "자체입금";
+  return PRODUCT_DEPOSIT_GB_OPTIONS.find((option) => option.value === normalizedValue)?.label ?? "제품비 자체입금 / 리뷰비 자체입금";
+}
+
+export function getProductDepositGbPartLabels(value) {
+  const normalizedValue = normalizeProductDepositGb(value);
+  const option = PRODUCT_DEPOSIT_GB_OPTIONS.find((item) => item.value === normalizedValue) ?? PRODUCT_DEPOSIT_GB_OPTIONS[0];
+
+  return {
+    productFee: option.productDepositLabel,
+    reviewFee: option.reviewDepositLabel
+  };
+}
+
+export function getProductDepositGbPartValues(value) {
+  const normalizedValue = normalizeProductDepositGb(value);
+  const option = PRODUCT_DEPOSIT_GB_OPTIONS.find((item) => item.value === normalizedValue) ?? PRODUCT_DEPOSIT_GB_OPTIONS[0];
+
+  return {
+    productFee: option.productDepositValue,
+    reviewFee: option.reviewDepositValue
+  };
+}
+
+export function buildProductDepositGb(productDepositValue, reviewDepositValue) {
+  const productValue =
+    productDepositValue === PRODUCT_DEPOSIT_PARTY.COMPANY ? PRODUCT_DEPOSIT_PARTY.COMPANY : PRODUCT_DEPOSIT_PARTY.SELF;
+  const reviewValue =
+    reviewDepositValue === PRODUCT_DEPOSIT_PARTY.COMPANY ? PRODUCT_DEPOSIT_PARTY.COMPANY : PRODUCT_DEPOSIT_PARTY.SELF;
+
+  const option = PRODUCT_DEPOSIT_GB_OPTIONS.find(
+    (item) => item.productDepositValue === productValue && item.reviewDepositValue === reviewValue
+  );
+
+  return option?.value ?? PRODUCT_DEPOSIT_GB.PRODUCT_SELF_REVIEW_SELF;
 }
 
 export const STEP_NUMBER_BY_TAB = {

@@ -1,3 +1,5 @@
+import { getProductDepositGbPartLabels } from "../constants/admin";
+
 function normalizeFilterValue(value) {
   return String(value ?? "")
     .replace(/\s+/g, " ")
@@ -83,13 +85,17 @@ export const PRODUCT_OVERVIEW_COLUMNS = [
   { key: "is_review_verified", label: "리뷰완료", source: "submissions", type: "boolean" },
   { key: "is_deposit_verified", label: "입금완료", source: "submissions", type: "boolean" },
   { key: "deposited_at", label: "입금일", source: "submissions", type: "date" },
-  { key: "actual_depositor_name", label: "실제입금자명", source: "submissions", type: "text" }
+  { key: "actual_depositor_name", label: "실제입금자명", source: "submissions", type: "text" },
+  { key: "product_fee_deposit_GB", label: "제품비 입금구분", source: "products", type: "text" },
+  { key: "review_fee_deposit_GB", label: "리뷰비 입금구분", source: "products", type: "text" }
 ];
 
 export function buildProductOverviewRow(product, submission, reviewPhotos = []) {
   if (!product || !submission) {
     return null;
   }
+
+  const depositGbLabels = getProductDepositGbPartLabels(product.deposit_GB);
 
   return {
     product_id: product.id,
@@ -123,7 +129,9 @@ export function buildProductOverviewRow(product, submission, reviewPhotos = []) 
     is_review_verified: submission.is_review_verified ?? false,
     is_deposit_verified: submission.is_deposit_verified ?? false,
     deposited_at: submission.deposited_at ?? null,
-    actual_depositor_name: submission.actual_depositor_name ?? null
+    actual_depositor_name: submission.actual_depositor_name ?? null,
+    product_fee_deposit_GB: depositGbLabels.productFee,
+    review_fee_deposit_GB: depositGbLabels.reviewFee
   };
 }
 
