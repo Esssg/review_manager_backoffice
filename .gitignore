@@ -48,4 +48,6 @@ temp.xlsx
 supabase/migrations/*
 supabase/migrations
 !supabase/migrations/
+!supabase/migrations/20260602110000_expand_deposit_gb_to_product_and_review_fee.sql
 !supabase/migrations/20260604123000_add_bundle_id_to_products.sql
+!supabase/migrations/20260605193000_fix_products_deposit_gb_check.sql

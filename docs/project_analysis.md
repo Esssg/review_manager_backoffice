@@ -83,6 +83,8 @@ src/
       ExportDownloadButton.jsx
       ExportWorkbookDownloadButton.jsx
                           내보내기 공용 레이아웃·컬럼 선택·미리보기·필터·다운로드 UI
+    common/
+      ProductLinkCopy.jsx 상품 링크 3줄 말줄임 표시 및 전체 복사 버튼
     public/
       PublicReviewReceiveSection.jsx
                           구매자용 리뷰받기 읽기 전용 섹션 컴포넌트
@@ -135,6 +137,9 @@ src/
     exportDateFilters.js  내보내기 날짜 필터 기본값/빠른 범위 유틸
     exportFile.js         xlsx 기반 Excel 다운로드
     zipFile.js            브라우저 기반 무압축 ZIP 생성/다운로드
+    productLink.js        상품 설명/링크 분리 유틸
+    plannedDepositorName.js
+                         등록일·업체명 기반 예정 입금자명 생성 유틸
     fileUploadParser.js   Excel 파일 업로드 행 파싱/상품 블록 변환
     fileUploadValidation.js
                           파일 업로드 날짜/금액/계좌/상태값 검증 유틸

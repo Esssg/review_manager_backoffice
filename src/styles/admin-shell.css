@@ -491,9 +491,74 @@
   height: calc(100vh - 260px);
   height: calc(100dvh - 260px);
   min-height: 360px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.review-receive-product-list-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.review-receive-product-list-table th,
+.review-receive-product-list-table td {
+  min-width: 0;
+}
+
+.review-receive-product-list-table th {
+  padding: 8px 3px;
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.review-receive-product-list-table .review-receive-column-filter {
+  gap: 3px;
+  min-height: 32px;
+}
+
+.review-receive-product-list-table .review-receive-column-label {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.review-receive-product-list-table .review-receive-column-filter-button {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 7px;
+}
+
+.review-receive-product-list-table .review-receive-column-filter-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.review-receive-clamp-cell {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.review-receive-nowrap-fit-cell {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.45;
+  word-break: keep-all;
 }
 
 .review-receive-product-list-scroll th {
@@ -637,14 +702,12 @@
 
 .review-receive-actions-column,
 .review-receive-actions-cell {
-  width: 64px;
   text-align: center;
 }
 
 .review-receive-summary-column,
 .review-receive-summary-cell {
-  min-width: 150px;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .review-receive-summary-cell {

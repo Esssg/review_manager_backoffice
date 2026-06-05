@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerModal";
 import PublicPhotoUploadModal from "../../components/public/PublicPhotoUploadModal";
@@ -11,10 +11,8 @@ import {
   preparePublicReviewReceivePhotoUpload,
   rollbackPublicReviewReceivePhotoUpload
 } from "../../services/reviewReceivePublic";
-import {
-  sortReviewReceiveRowsByCreatedAt,
-  splitReviewReceiveRows
-} from "../../utils/reviewReceiveRows";
+import { formatPlannedDepositorName } from "../../utils/plannedDepositorName";
+import { sortReviewReceiveRowsByCreatedAt } from "../../utils/reviewReceiveRows";
 
 const DEFAULT_LOOKUP_TYPE = "account_holder";
 const PUBLIC_LOOKUP_OPTIONS = [
@@ -64,11 +62,44 @@ function getLookupTypeLabel(lookupType) {
   return PUBLIC_LOOKUP_OPTIONS.find((option) => option.value === lookupType)?.label ?? "배정명";
 }
 
-function buildRowNumberMap(rows) {
-  return rows.reduce((acc, row, index) => {
-    acc[row.id] = index + 1;
-    return acc;
-  }, {});
+function getPublicPlannedDepositorName(product) {
+  const storedPlannedDepositorName = String(product?.planned_depositor_name ?? "").trim();
+  const generatedPlannedDepositorName = formatPlannedDepositorName(product?.product_date, product?.company_name);
+
+  if (storedPlannedDepositorName && storedPlannedDepositorName !== "업체페이") {
+    return storedPlannedDepositorName;
+  }
+
+  return generatedPlannedDepositorName || storedPlannedDepositorName || "-";
+}
+
+function getPublicDepositorNames(product) {
+  const plannedDepositorName = getPublicPlannedDepositorName(product);
+  const depositGb = Number(product?.deposit_GB);
+
+  switch (depositGb) {
+    case 2:
+      return {
+        productFeeDepositorName: plannedDepositorName,
+        reviewFeeDepositorName: "없음"
+      };
+    case 3:
+      return {
+        productFeeDepositorName: "업체페이",
+        reviewFeeDepositorName: plannedDepositorName
+      };
+    case 4:
+      return {
+        productFeeDepositorName: "업체페이",
+        reviewFeeDepositorName: "없음"
+      };
+    case 1:
+    default:
+      return {
+        productFeeDepositorName: plannedDepositorName,
+        reviewFeeDepositorName: plannedDepositorName
+      };
+  }
 }
 
 function hasPhotoDraftChanges(draft) {
@@ -634,13 +665,9 @@ export default function PublicReviewReceiveDetailPage() {
     persistPhotoChanges();
   };
 
-  const { purchaseRows, reviewRows, completeRows } = useMemo(
-    () => splitReviewReceiveRows(rows),
-    [rows]
-  );
-  const rowNumberMap = useMemo(() => buildRowNumberMap(rows), [rows]);
   const lookupTypeLabel = getLookupTypeLabel(lookupType);
   const activeLookupTypeLabel = getLookupTypeLabel(activeLookupType);
+  const publicDepositorNames = getPublicDepositorNames(product);
 
   return (
     <div className="public-review-page">
@@ -663,20 +690,12 @@ export default function PublicReviewReceiveDetailPage() {
                 <strong>{product.product_name ?? "-"}</strong>
               </div>
               <div className="detail-summary-item">
-                <span className="detail-summary-label">옵션</span>
-                <strong>{product.option_name ?? "-"}</strong>
+                <span className="detail-summary-label">제품비 입금자명</span>
+                <strong>{publicDepositorNames.productFeeDepositorName}</strong>
               </div>
               <div className="detail-summary-item">
-                <span className="detail-summary-label">리뷰형태</span>
-                <strong>{product.review_type ?? "-"}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-label">설명</span>
-                <strong>{product.description ?? "-"}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-label">입금자명(예정)</span>
-                <strong>{product.planned_depositor_name ?? "-"}</strong>
+                <span className="detail-summary-label">리뷰비 입금자명</span>
+                <strong>{publicDepositorNames.reviewFeeDepositorName}</strong>
               </div>
             </div>
           </section>
@@ -687,14 +706,6 @@ export default function PublicReviewReceiveDetailPage() {
           {!isProductLoading && productErrorMessage && <p className="login-error">{productErrorMessage}</p>}
           {!isProductLoading && !productErrorMessage && (
             <>
-              <div className="public-review-product-heading">
-                <div>
-                  <span className="detail-summary-label">상품 제목</span>
-                  <strong>{product?.title ?? "-"}</strong>
-                </div>
-                <p>왼쪽 드롭다운에서 배정명(카카오톡에 배정된 이름) / 계좌주명 선택 후 검색 해주세요.</p>
-              </div>
-
               <form className="public-review-lookup-form" onSubmit={handleSubmit}>
                 <label className="public-review-field">
                   <span>조회 값</span>
@@ -760,27 +771,10 @@ export default function PublicReviewReceiveDetailPage() {
                 <PublicReviewReceiveSection
                   sectionKey="purchase"
                   title="구매완료"
-                  description="리뷰완료 전이거나 아직 전체완료 조건을 만족하지 않은 제출 데이터입니다."
-                  rows={purchaseRows}
-                  rowNumberMap={rowNumberMap}
+                  description="조회된 모든 제출 데이터입니다."
+                  rows={rows}
                   onOpenPhotoViewer={openPhotoViewer}
                   onOpenPhotoManager={openPhotoManager}
-                />
-                <PublicReviewReceiveSection
-                  sectionKey="review"
-                  title="리뷰완료"
-                  description="관리자가 리뷰완료 처리했고 입금완료는 아직 반영되지 않은 제출 데이터입니다."
-                  rows={reviewRows}
-                  rowNumberMap={rowNumberMap}
-                  onOpenPhotoViewer={openPhotoViewer}
-                />
-                <PublicReviewReceiveSection
-                  sectionKey="complete"
-                  title="전체완료"
-                  description="리뷰완료와 입금완료가 모두 반영된 제출 데이터입니다."
-                  rows={completeRows}
-                  rowNumberMap={rowNumberMap}
-                  onOpenPhotoViewer={openPhotoViewer}
                 />
               </>
             )}

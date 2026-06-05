@@ -1,7 +1,7 @@
 # DB Guide (`public` schema)
 
 기준 프로젝트: `review_manager_backoffice` (`zwqmvttrburcwbdsunwo`)  
-테이블/컬럼 재확인 시각: 2026-06-04 KST (`admins` 동작 권한 컬럼 추가 마이그레이션 파일 작성 기준)
+테이블/컬럼 문서화 기준: 2026-06-05 KST (`products.product_link` 컬럼 추가 마이그레이션 파일 작성 기준)
 row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업로드` 메뉴 권한 추가 뒤 갱신)
 
 ## 1) 테이블 관계 요약
@@ -45,6 +45,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   - `deposit_date` date, null
   - `product_date` date, not null, default `current_date`
   - `description` text, null
+  - `product_link` text, null
   - `is_real_shipping` bool, default `true`
   - `created_at` timestamptz, default `now()`
   - `company_name` text, null
@@ -58,9 +59,11 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   2026-04-26에 `review_fee` 컬럼을 제거하고 `submissions.review_fee`로 이관
   2026-05-11에 `product_date` 컬럼 추가, 기존 행은 `created_at::date` 값으로 초기화
   2026-05-11에 `deposit_GB` 컬럼 추가 마이그레이션 파일 작성. 기존 값 계약은 1=`자체입금`, 2=`업체입금`이며 기존 행은 1로 초기화
-  2026-06-02에 `deposit_GB` 값 계약을 제품비/리뷰비 입금구분 조합으로 확장. 새 계약은 1=`제품비 자체입금, 리뷰비 자체입금`, 2=`제품비 자체입금, 리뷰비 업체입금`, 3=`제품비 업체입금, 리뷰비 자체입금`, 4=`제품비 업체입금, 리뷰비 업체입금`이며 기존 2=`업체입금` 행은 4로 이관
+  2026-06-02에 `deposit_GB` 값 계약을 제품비/리뷰비 입금구분 조합으로 확장. 새 계약은 1=`제품비 자체입금, 리뷰비 자체입금`, 2=`제품비 자체입금, 리뷰비 없음`, 3=`제품비 업체입금, 리뷰비 자체입금`, 4=`제품비 업체입금, 리뷰비 없음`이며 기존 2=`업체입금` 행은 4로 이관
+  2026-06-05에 실제 DB의 `products_deposit_gb_check`가 3, 4를 막는 경우를 보정하기 위해 제약 조건만 1~4 허용으로 재생성하는 마이그레이션 파일 작성
   2026-06-04에 `bundle_id` 컬럼 추가 마이그레이션 파일 작성. 기존 row는 `bundle_id = id`로 초기화하며, 같은 `bundle_id`를 가진 여러 `products` row는 리뷰받기 화면에서 하나의 묶음으로 취급
   2026-06-04에 리뷰받기 번들 생성 시 날짜/업체명만 먼저 저장할 수 있도록 `title`, `product_name`을 null 허용으로 변경
+  2026-06-05에 `product_link` 컬럼 추가 마이그레이션 파일 작성. 기존 `description`에서 `http://` 또는 `https://`로 시작하는 줄은 `product_link`로 옮기고 `description`에서는 제거
 
 ## `admin_menu_permissions`
 - PK: `id` (bigint, identity)
@@ -179,6 +182,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `planned_depositor_name`: `0401나우프레시`
 - `deposit_GB`: 1 (`제품비 자체입금, 리뷰비 자체입금`)
 - `bundle_id`: 1
+- `product_link`: `null`
 - `is_real_shipping`: false
 
 ## `admin_menu_permissions` sample
@@ -239,8 +243,9 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `admins.can_verify_deposit`는 `submissions.is_deposit_verified`, `deposited_at`, `actual_depositor_name`을 수정하는 입금완료 처리 권한입니다. `aram2525`, `kimhanbi77`은 false, 그 외 계정은 true로 관리합니다.
 - `products`에서는 `deposit_name`, `review_fee`가 제거됐고, `company_name`, `option_name`, `review_type`, `planned_depositor_name`이 관리됩니다.
 - `products.product_date`는 리뷰받기 목록의 등록일 표시와 상품 추가/수정 입력에 사용합니다. 추가 마이그레이션은 기존 데이터를 `created_at`의 날짜값으로 채웁니다.
-- `products.deposit_GB`는 리뷰받기 상품의 제품비/리뷰비 입금구분 조합에 사용합니다. 관리자 `/admin/review-receive/*` 화면에서는 `제품비 입금구분`, `리뷰비 입금구분`으로 나누어 표시하고, 구매자용 `/review-receive/specific/:productId` 공개 화면에서는 조회/표시하지 않습니다.
+- `products.deposit_GB`는 리뷰받기 상품의 제품비/리뷰비 입금구분 조합에 사용합니다. 관리자 `/admin/review-receive/*` 화면에서는 `제품비 입금구분`, `리뷰비 입금구분`으로 나누어 표시합니다. 구매자용 `/review-receive/specific/:productId` 공개 화면에서는 이 값을 기준으로 `제품비 입금자명`, `리뷰비 입금자명`을 계산해 표시합니다.
 - `products.bundle_id`는 리뷰받기 화면에서 여러 `products` row를 같은 묶음으로 보여주기 위한 값입니다. 기존 단일 상품은 `bundle_id = id`이며, 같은 번들에 두 번째 이후 품목을 추가할 때는 첫 품목의 `bundle_id`를 그대로 사용합니다. 리뷰받기 외 상품전체보기, 내보내기, 사진내려받기, 파일 업로드 등은 기본적으로 개별 `products` row 기준을 유지합니다.
+- `products.product_link`는 상품 링크 저장용 컬럼입니다. 리뷰받기 상품/리뷰어 일괄 입력과 상품/품목 저장 시 `description` 안에 `http://` 또는 `https://`로 시작하는 줄이 있으면 이 컬럼으로 분리하고, `description`에는 링크가 아닌 설명만 저장합니다.
 - `submissions`에는 `assign_name`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name`, `review_fee`가 추가됐습니다.
 - `admin_menu_permissions`는 관리자별 메뉴 노출 권한을 관리하며, 현재 `2sssg` 계정에 `대시보드`, `상품`, `리뷰받기`, `상품전체보기`, `내보내기`, `파일 업로드` 권한 6건이 들어 있습니다.
 - 2026-04-26에 `test1`, `test2`, `test3` 더미 계정을 삽입했습니다. 세 계정은 모두 회사 `테스트커머스` 소속이며, 메뉴 권한은 1=`대시보드`, 3=`리뷰받기`, 4=`상품전체보기`, 5=`내보내기`, 6=`파일 업로드`입니다.

@@ -1,3 +1,4 @@
+import ProductLinkCopy from "../../common/ProductLinkCopy";
 import { buildExportPreviewRows } from "../../../utils/exportColumns";
 
 export default function ExportPreviewTable({ rows, limit = 50 }) {
@@ -30,7 +31,9 @@ export default function ExportPreviewTable({ rows, limit = 50 }) {
               {previewRows.map((row, rowIndex) => (
                 <tr key={`export-preview-${rowIndex}`}>
                   {columns.map((column) => (
-                    <td key={`${rowIndex}-${column}`}>{row[column] == null || row[column] === "" ? "-" : row[column]}</td>
+                    <td key={`${rowIndex}-${column}`}>
+                      {column === "링크" ? <ProductLinkCopy value={row[column]} /> : row[column] == null || row[column] === "" ? "-" : row[column]}
+                    </td>
                   ))}
                 </tr>
               ))}

@@ -3,13 +3,16 @@ import { useNavigate } from "react-router-dom";
 import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
+import ProductLinkCopy from "../../components/common/ProductLinkCopy";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import {
   ADMIN_STORAGE_KEY,
+  PRODUCT_DEPOSIT_PARTY,
   PRODUCT_DEPOSIT_PARTY_OPTIONS,
+  REVIEW_FEE_DEPOSIT_PARTY_OPTIONS,
   buildProductDepositGb,
   getProductDepositGbPartLabels,
   getProductDepositGbPartValues,
@@ -27,6 +30,8 @@ import {
   normalizeProductReviewerRowForSave,
   parseProductReviewerBulkInput
 } from "../../utils/reviewReceiveProductReviewerBulkInput";
+import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
+import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import { sortReviewReceiveRowsByCreatedAt, splitReviewReceiveRows } from "../../utils/reviewReceiveRows";
 
 function normalizeOptionalValue(value) {
@@ -64,16 +69,19 @@ function formatDisplayDate(value) {
 }
 
 function createInitialProductForm() {
+  const productDate = formatDateInputValue(new Date());
+
   return {
     title: "",
-    productDate: formatDateInputValue(new Date()),
+    productDate,
     productName: "",
     companyName: "",
     optionName: "",
     reviewType: "",
-    plannedDepositorName: "",
+    plannedDepositorName: formatPlannedDepositorName(productDate, ""),
     productFeeDepositGb: PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value,
     reviewFeeDepositGb: PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value,
+    productLink: "",
     description: ""
   };
 }
@@ -93,6 +101,7 @@ function isBundleShellProduct(product) {
     product?.option_name,
     product?.review_type,
     product?.description,
+    product?.product_link,
     product?.planned_depositor_name
   ].every((value) => !String(value ?? "").trim());
 }
@@ -107,6 +116,80 @@ function isMultiProductBundleRow(product) {
 
 function formatMultiProductCell(product, value) {
   return isMultiProductBundleRow(product) ? "다중품목" : value;
+}
+
+function renderMultiProductLinkCell(product, value) {
+  return isMultiProductBundleRow(product) ? "다중품목" : <ProductLinkCopy value={value} />;
+}
+
+function renderClampedCell(value) {
+  return <span className="review-receive-clamp-cell">{value ?? "-"}</span>;
+}
+
+const REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE = 13;
+const REVIEW_RECEIVE_NOWRAP_MIN_FONT_SIZE = 10;
+
+function ReviewReceiveNoWrapFitCell({ value }) {
+  const cellRef = useRef(null);
+  const text = value ?? "-";
+  const [fontSize, setFontSize] = useState(REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE);
+
+  useEffect(() => {
+    const element = cellRef.current;
+
+    if (!element) {
+      return undefined;
+    }
+
+    const updateFontSize = () => {
+      element.style.fontSize = `${REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE}px`;
+
+      const availableWidth = element.clientWidth;
+      const requiredWidth = element.scrollWidth;
+      const nextFontSize =
+        availableWidth > 0 && requiredWidth > availableWidth
+          ? Math.max(
+              REVIEW_RECEIVE_NOWRAP_MIN_FONT_SIZE,
+              Math.floor((REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE * availableWidth) / requiredWidth)
+            )
+          : REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE;
+
+      setFontSize(nextFontSize);
+    };
+
+    updateFontSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateFontSize);
+      return () => window.removeEventListener("resize", updateFontSize);
+    }
+
+    const resizeObserver = new ResizeObserver(updateFontSize);
+    resizeObserver.observe(element);
+
+    return () => resizeObserver.disconnect();
+  }, [text]);
+
+  return (
+    <span ref={cellRef} className="review-receive-nowrap-fit-cell" style={{ fontSize }}>
+      {text}
+    </span>
+  );
+}
+
+function renderNoWrapFitCell(value) {
+  return <ReviewReceiveNoWrapFitCell value={value} />;
+}
+
+function getPlannedDepositorNameForSave(productForm) {
+  if (
+    productForm.productFeeDepositGb === PRODUCT_DEPOSIT_PARTY.COMPANY &&
+    productForm.reviewFeeDepositGb === PRODUCT_DEPOSIT_PARTY.COMPANY
+  ) {
+    return "업체페이";
+  }
+
+  return productForm.plannedDepositorName;
 }
 
 function buildReviewReceiveBundleRows(products = []) {
@@ -144,6 +227,7 @@ function buildReviewReceiveBundleRows(products = []) {
       option_name: "다중품목",
       review_type: "다중품목",
       description: "다중품목",
+      product_link: "다중품목",
       submissions: visibleItems.flatMap((item) => item.submissions ?? []),
       bundleItems: sortedItems,
       bundleVisibleItems: visibleItems,
@@ -193,6 +277,7 @@ function getProductFormFromProduct(product) {
     plannedDepositorName: product.planned_depositor_name ?? "",
     productFeeDepositGb: depositGbParts.productFee,
     reviewFeeDepositGb: depositGbParts.reviewFee,
+    productLink: product.product_link ?? "",
     description: product.description ?? ""
   };
 }
@@ -203,6 +288,7 @@ function getProductPayload(productForm, adminId, options = {}) {
   const productName = productForm.productName.trim();
   const productDate = productForm.productDate.trim();
   const companyName = productForm.companyName.trim();
+  const { description, productLink } = normalizeProductDescriptionAndLink(productForm.description, productForm.productLink);
 
   if (bundleOnly) {
     if (!productDate || !companyName) {
@@ -218,6 +304,7 @@ function getProductPayload(productForm, adminId, options = {}) {
         product_date: productDate,
         product_name: null,
         description: null,
+        product_link: null,
         company_name: companyName,
         option_name: null,
         review_type: null,
@@ -246,11 +333,12 @@ function getProductPayload(productForm, adminId, options = {}) {
       title,
       product_date: productDate,
       product_name: productName,
-      description: normalizeOptionalValue(productForm.description),
+      description: normalizeOptionalValue(description),
+      product_link: normalizeOptionalValue(productLink),
       company_name: normalizeOptionalValue(productForm.companyName),
       option_name: normalizeOptionalValue(productForm.optionName),
       review_type: normalizeOptionalValue(productForm.reviewType),
-      planned_depositor_name: normalizeOptionalValue(productForm.plannedDepositorName),
+      planned_depositor_name: normalizeOptionalValue(getPlannedDepositorNameForSave(productForm)),
       deposit_GB: buildProductDepositGb(productForm.productFeeDepositGb, productForm.reviewFeeDepositGb),
       ...(bundleId != null ? { bundle_id: bundleId } : {})
     }
@@ -308,17 +396,20 @@ function getPublicReviewReceiveUrl(productId) {
 }
 
 const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS = [
-  { key: "manager_id", label: "담당자", type: "text" },
-  { key: "title", label: "상품 제목", type: "text" },
-  { key: "company_name", label: "업체명", type: "text" },
-  { key: "product_name", label: "품명", type: "text" },
-  { key: "option_name", label: "옵션", type: "text" },
-  { key: "review_type", label: "리뷰형태", type: "text" },
-  { key: "description", label: "설명", type: "text" },
-  { key: "product_fee_deposit_GB", label: "제품비 입금구분", type: "text" },
-  { key: "review_fee_deposit_GB", label: "리뷰비 입금구분", type: "text" },
-  { key: "registered_date", label: "등록일", type: "dateRange" }
+  { key: "manager_id", label: "담당자", type: "text", widthRatio: 5 },
+  { key: "title", label: "상품 제목", type: "text", widthRatio: 15 },
+  { key: "company_name", label: "업체명", type: "text", widthRatio: 5 },
+  { key: "product_name", label: "품명", type: "text", widthRatio: 15 },
+  { key: "option_name", label: "옵션", type: "text", widthRatio: 10 },
+  { key: "review_type", label: "리뷰형태", type: "text", widthRatio: 5 },
+  { key: "description", label: "설명", type: "text", widthRatio: 10 },
+  { key: "product_link", label: "링크", type: "text", widthRatio: 10 },
+  { key: "product_fee_deposit_GB", label: "제품비 입금구분", type: "text", widthRatio: 4 },
+  { key: "review_fee_deposit_GB", label: "리뷰비 입금구분", type: "text", widthRatio: 4 },
+  { key: "registered_date", label: "등록일", type: "dateRange", widthRatio: 5 }
 ];
+const REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO = 9;
+const REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO = 3;
 
 function createEmptyReviewReceiveProductFilters() {
   return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.reduce((filters, column) => {
@@ -716,10 +807,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const handleProductFormChange = (event) => {
     const { name, value } = event.target;
 
-    setProductForm((prev) => ({
-      ...prev,
-      [name]: value
-    }));
+    setProductForm((prev) => applyPlannedDepositorNameDefault(prev, { [name]: value }));
   };
 
   const setProductReviewerBulkMessage = (message, type = "info") => {
@@ -744,10 +832,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     setProductReviewerBulk((prev) => ({
       ...prev,
-      productForm: {
-        ...prev.productForm,
-        [name]: value
-      },
+      productForm: applyPlannedDepositorNameDefault(prev.productForm, { [name]: value }),
       message: "",
       messageType: "info"
     }));
@@ -1028,7 +1113,14 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         {!isLoading && errorMessage && <p className="login-error">{errorMessage}</p>}
         {!isLoading && !errorMessage && (
           <div className="review-receive-product-list-scroll">
-            <table>
+            <table className="review-receive-product-list-table">
+              <colgroup>
+                {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.map((column) => (
+                  <col key={column.key} style={{ width: `${column.widthRatio}%` }} />
+                ))}
+                <col style={{ width: `${REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO}%` }} />
+                <col style={{ width: `${REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO}%` }} />
+              </colgroup>
               <thead>
                 <tr>
                   {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.map((column) => (
@@ -1071,17 +1163,18 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       className="clickable-row"
                       onClick={() => navigate(`/admin/review-receive/specific/${product.id}`)}
                     >
-                      <td>{product.manager_id ?? "-"}</td>
-                      <td>{formatMultiProductCell(product, product.title ?? "-")}</td>
-                      <td>{product.company_name ?? "-"}</td>
-                      <td>{formatMultiProductCell(product, product.product_name ?? "-")}</td>
-                      <td>{formatMultiProductCell(product, product.option_name ?? "-")}</td>
-                      <td>{formatMultiProductCell(product, product.review_type ?? "-")}</td>
-                      <td>{formatMultiProductCell(product, product.description ?? "-")}</td>
-                      <td>{formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee)}</td>
-                      <td>{formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee)}</td>
-                      <td>{formatDisplayDate(product.product_date ?? product.created_at)}</td>
-                      <td className="review-receive-summary-cell">{formatMultiProductCell(product, getReviewReceiveSubmissionSummary(product))}</td>
+                      <td>{renderNoWrapFitCell(product.manager_id)}</td>
+                      <td>{renderClampedCell(formatMultiProductCell(product, product.title ?? "-"))}</td>
+                      <td>{renderNoWrapFitCell(product.company_name)}</td>
+                      <td>{renderClampedCell(formatMultiProductCell(product, product.product_name ?? "-"))}</td>
+                      <td>{renderClampedCell(formatMultiProductCell(product, product.option_name ?? "-"))}</td>
+                      <td>{renderClampedCell(formatMultiProductCell(product, product.review_type ?? "-"))}</td>
+                      <td>{renderClampedCell(formatMultiProductCell(product, product.description ?? "-"))}</td>
+                      <td>{renderMultiProductLinkCell(product, product.product_link)}</td>
+                      <td>{renderNoWrapFitCell(formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee))}</td>
+                      <td>{renderNoWrapFitCell(formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee))}</td>
+                      <td>{renderClampedCell(formatDisplayDate(product.product_date ?? product.created_at))}</td>
+                      <td className="review-receive-summary-cell">{renderClampedCell(formatMultiProductCell(product, getReviewReceiveSubmissionSummary(product)))}</td>
                       <td className="review-receive-actions-cell">
                         <div className="review-receive-row-actions">
                           <button
@@ -1151,6 +1244,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                                     <th>옵션</th>
                                     <th>리뷰형태</th>
                                     <th>설명</th>
+                                    <th>링크</th>
                                     <th>제품비 입금구분</th>
                                     <th>리뷰비 입금구분</th>
                                     <th>완료현황</th>
@@ -1159,15 +1253,16 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                                 <tbody>
                                   {visibleItems.map((item) => (
                                     <tr key={item.id}>
-                                      <td>{item.title ?? "-"}</td>
-                                      <td>{item.company_name ?? "-"}</td>
-                                      <td>{item.product_name ?? "-"}</td>
-                                      <td>{item.option_name ?? "-"}</td>
-                                      <td>{item.review_type ?? "-"}</td>
-                                      <td>{item.description ?? "-"}</td>
-                                      <td>{getProductDepositGbPartLabels(item.deposit_GB).productFee}</td>
-                                      <td>{getProductDepositGbPartLabels(item.deposit_GB).reviewFee}</td>
-                                      <td>{getReviewReceiveSubmissionSummary(item)}</td>
+                                      <td>{renderClampedCell(item.title)}</td>
+                                      <td>{renderNoWrapFitCell(item.company_name)}</td>
+                                      <td>{renderClampedCell(item.product_name)}</td>
+                                      <td>{renderClampedCell(item.option_name)}</td>
+                                      <td>{renderClampedCell(item.review_type)}</td>
+                                      <td>{renderClampedCell(item.description)}</td>
+                                      <td><ProductLinkCopy value={item.product_link} /></td>
+                                      <td>{renderNoWrapFitCell(getProductDepositGbPartLabels(item.deposit_GB).productFee)}</td>
+                                      <td>{renderNoWrapFitCell(getProductDepositGbPartLabels(item.deposit_GB).reviewFee)}</td>
+                                      <td>{renderClampedCell(getReviewReceiveSubmissionSummary(item))}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -1304,6 +1399,19 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         onChange={handleProductReviewerBulkProductChange}
                       />
                     </div>
+                    <div className="detail-summary-item review-receive-create-product-field is-full-width">
+                      <label className="detail-summary-label" htmlFor="review-receive-bulk-product-link">
+                        링크
+                      </label>
+                      <textarea
+                        id="review-receive-bulk-product-link"
+                        name="productLink"
+                        className="review-receive-bulk-textarea review-receive-create-product-textarea"
+                        value={productReviewerBulk.productForm.productLink}
+                        onChange={handleProductReviewerBulkProductChange}
+                        rows={3}
+                      />
+                    </div>
                     <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-bulk-company-name">
                         업체명
@@ -1381,7 +1489,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         value={productReviewerBulk.productForm.reviewFeeDepositGb}
                         onChange={handleProductReviewerBulkProductChange}
                       >
-                        {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
+                        {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
@@ -1647,6 +1755,22 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         />
                       </div>
                     )}
+                    {productModalMode !== "bundle" && (
+                      <div className="detail-summary-item review-receive-create-product-field is-full-width">
+                        <label className="detail-summary-label" htmlFor="review-receive-product-link">
+                          링크
+                        </label>
+                        <textarea
+                          id="review-receive-product-link"
+                          name="productLink"
+                          className="review-receive-bulk-textarea review-receive-create-product-textarea"
+                          value={productForm.productLink}
+                          onChange={handleProductFormChange}
+                          placeholder="상품 링크가 있으면 입력하세요."
+                          rows={3}
+                        />
+                      </div>
+                    )}
                     <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-company-name">
                         업체명 {productModalMode === "bundle" && <span className="required-indicator" aria-hidden="true">*</span>}
@@ -1729,7 +1853,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         value={productForm.reviewFeeDepositGb}
                         onChange={handleProductFormChange}
                       >
-                        {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
+                        {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>

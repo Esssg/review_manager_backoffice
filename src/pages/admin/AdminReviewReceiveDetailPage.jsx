@@ -3,13 +3,16 @@ import { useParams } from "react-router-dom";
 import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerModal";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
+import ProductLinkCopy from "../../components/common/ProductLinkCopy";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
 import { useAdminCapabilities } from "../../hooks/useAdminCapabilities";
 import {
   ADMIN_STORAGE_KEY,
+  PRODUCT_DEPOSIT_PARTY,
   PRODUCT_DEPOSIT_PARTY_OPTIONS,
+  REVIEW_FEE_DEPOSIT_PARTY_OPTIONS,
   buildProductDepositGb,
   getProductDepositGbPartLabels,
   getProductDepositGbPartValues
@@ -51,6 +54,8 @@ import {
   normalizeProductReviewerRowForSave,
   parseProductReviewerBulkInput
 } from "../../utils/reviewReceiveProductReviewerBulkInput";
+import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
+import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
   formatMissingFieldLabels,
@@ -110,23 +115,38 @@ function formatDisplayDate(value) {
 
 function createProductItemForm(baseProduct = null) {
   const depositGbParts = getProductDepositGbPartValues(baseProduct?.deposit_GB);
+  const productDate = formatDateInputValue(baseProduct?.product_date ?? baseProduct?.created_at ?? new Date());
+  const companyName = baseProduct?.company_name ?? "";
 
   return {
     title: baseProduct?.title ?? "",
-    productDate: formatDateInputValue(baseProduct?.product_date ?? baseProduct?.created_at ?? new Date()),
+    productDate,
     productName: baseProduct?.product_name ?? "",
-    companyName: baseProduct?.company_name ?? "",
+    companyName,
     optionName: baseProduct?.option_name ?? "",
     reviewType: baseProduct?.review_type ?? "",
-    plannedDepositorName: baseProduct?.planned_depositor_name ?? "",
+    plannedDepositorName: baseProduct?.planned_depositor_name ?? formatPlannedDepositorName(productDate, companyName),
     productFeeDepositGb: depositGbParts.productFee,
     reviewFeeDepositGb: depositGbParts.reviewFee,
+    productLink: baseProduct?.product_link ?? "",
     description: baseProduct?.description ?? ""
   };
 }
 
+function getPlannedDepositorNameForSave(productForm) {
+  if (
+    productForm.productFeeDepositGb === PRODUCT_DEPOSIT_PARTY.COMPANY &&
+    productForm.reviewFeeDepositGb === PRODUCT_DEPOSIT_PARTY.COMPANY
+  ) {
+    return "업체페이";
+  }
+
+  return productForm.plannedDepositorName;
+}
+
 function getProductItemPayload(productForm, adminId, bundleId) {
   const productDate = productForm.productDate.trim();
+  const { description, productLink } = normalizeProductDescriptionAndLink(productForm.description, productForm.productLink);
 
   if (!productDate) {
     return {
@@ -140,11 +160,12 @@ function getProductItemPayload(productForm, adminId, bundleId) {
       title: normalizeOptionalValue(productForm.title),
       product_date: productDate,
       product_name: normalizeOptionalValue(productForm.productName),
-      description: normalizeOptionalValue(productForm.description),
+      description: normalizeOptionalValue(description),
+      product_link: normalizeOptionalValue(productLink),
       company_name: normalizeOptionalValue(productForm.companyName),
       option_name: normalizeOptionalValue(productForm.optionName),
       review_type: normalizeOptionalValue(productForm.reviewType),
-      planned_depositor_name: normalizeOptionalValue(productForm.plannedDepositorName),
+      planned_depositor_name: normalizeOptionalValue(getPlannedDepositorNameForSave(productForm)),
       deposit_GB: buildProductDepositGb(productForm.productFeeDepositGb, productForm.reviewFeeDepositGb),
       bundle_id: bundleId
     }
@@ -158,6 +179,7 @@ function isProductItemEmptyShell(product) {
     product?.option_name,
     product?.review_type,
     product?.description,
+    product?.product_link,
     product?.planned_depositor_name
   ].every((value) => !String(value ?? "").trim());
 }
@@ -1342,7 +1364,7 @@ export default function AdminReviewReceiveDetailPage() {
       productName: "",
       optionName: "",
       reviewType: "",
-      plannedDepositorName: "",
+      plannedDepositorName: formatPlannedDepositorName(baseForm.productDate, baseForm.companyName),
       description: ""
     });
     setIsProductItemModalOpen(true);
@@ -1359,10 +1381,7 @@ export default function AdminReviewReceiveDetailPage() {
   const handleProductItemFormChange = (event) => {
     const { name, value } = event.target;
 
-    setProductItemForm((prev) => ({
-      ...prev,
-      [name]: value
-    }));
+    setProductItemForm((prev) => applyPlannedDepositorNameDefault(prev, { [name]: value }));
   };
 
   const handleProductItemSubmit = async (event) => {
@@ -3028,6 +3047,10 @@ export default function AdminReviewReceiveDetailPage() {
                         <strong>{item.description ?? "-"}</strong>
                       </div>
                       <div className="detail-summary-item">
+                        <span className="detail-summary-label">링크</span>
+                        <ProductLinkCopy value={item.product_link} />
+                      </div>
+                      <div className="detail-summary-item">
                         <span className="detail-summary-label">상품 제목</span>
                         <strong>{item.title ?? "-"}</strong>
                       </div>
@@ -3217,7 +3240,7 @@ export default function AdminReviewReceiveDetailPage() {
                         value={productItemForm.reviewFeeDepositGb}
                         onChange={handleProductItemFormChange}
                       >
-                        {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
+                        {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
@@ -3235,6 +3258,19 @@ export default function AdminReviewReceiveDetailPage() {
                         value={productItemForm.description}
                         onChange={handleProductItemFormChange}
                         rows={4}
+                      />
+                    </div>
+                    <div className="detail-summary-item review-receive-create-product-field is-full-width">
+                      <label className="detail-summary-label" htmlFor="review-receive-item-product-link">
+                        링크
+                      </label>
+                      <textarea
+                        id="review-receive-item-product-link"
+                        name="productLink"
+                        className="review-receive-bulk-textarea review-receive-create-product-textarea"
+                        value={productItemForm.productLink}
+                        onChange={handleProductItemFormChange}
+                        rows={3}
                       />
                     </div>
                   </div>

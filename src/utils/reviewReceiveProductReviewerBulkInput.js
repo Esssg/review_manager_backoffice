@@ -1,4 +1,6 @@
 import { parsePurchaseBulkInput } from "./reviewReceiveBulkInput.js";
+import { normalizeProductDescriptionAndLink } from "./productLink.js";
+import { formatPlannedDepositorName } from "./plannedDepositorName.js";
 
 function parseAmount(value) {
   const digits = String(value ?? "").replace(/[^\d]/g, "");
@@ -121,7 +123,8 @@ export function parseProductReviewerBulkInput(rawText, options = {}) {
   const optionName = normalizeCell(firstRow[6]);
   const rawReviewType = normalizeCell(firstRow[7]);
   const reviewType = rawReviewType && Number.isNaN(Number(rawReviewType)) ? rawReviewType : "";
-  const plannedDepositorName = normalizeCell(firstRow[18]);
+  const plannedDepositorName = normalizeCell(firstRow[18]) || formatPlannedDepositorName(productDate, companyName);
+  const { description, productLink } = normalizeProductDescriptionAndLink(firstRow[2]);
 
   if (!productName) {
     throw new Error("첫 행의 품명을 확인해주세요.");
@@ -135,7 +138,8 @@ export function parseProductReviewerBulkInput(rawText, options = {}) {
     optionName,
     reviewType,
     plannedDepositorName,
-    description: normalizeCell(firstRow[2])
+    description,
+    productLink
   };
 
   const reviewers = rows.map((cells, index) => {

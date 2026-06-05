@@ -59,6 +59,78 @@ body {
   cursor: pointer;
 }
 
+.product-link-copy-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.product-link-copy {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #0369a1;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.product-link-copy-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.product-link-copy:hover {
+  color: #0284c7;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.product-link-copy:focus {
+  outline: none;
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+.product-link-copy.is-copied {
+  color: #0f766e;
+}
+
+.product-link-copy.is-failed {
+  color: #b91c1c;
+}
+
+.product-link-copy-alert {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  max-width: min(260px, 80vw);
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #f0f9ff;
+  color: #0369a1;
+  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.16);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .admin-secondary-button {
   border: 1px solid #cbd5e1;
   border-radius: 10px;

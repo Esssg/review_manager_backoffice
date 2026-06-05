@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase";
 
-const PRODUCT_META_SELECT = "id,title,product_name,description,manager_id";
+const PRODUCT_META_SELECT = "id,title,product_name,description,product_link,manager_id";
 const SUBMISSION_LIST_SELECT =
   "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,is_purchase_verified,is_review_verified,created_at";
 

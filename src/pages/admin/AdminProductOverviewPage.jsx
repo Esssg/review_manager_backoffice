@@ -3,6 +3,7 @@ import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerM
 import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
+import ProductLinkCopy from "../../components/common/ProductLinkCopy";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
@@ -201,6 +202,18 @@ function renderOverviewPhotoCell(row, onOpenPhotoViewer) {
       ))}
     </div>
   );
+}
+
+function renderOverviewCell(row, column, onOpenPhotoViewer) {
+  if (column.type === "photo") {
+    return renderOverviewPhotoCell(row, onOpenPhotoViewer);
+  }
+
+  if (column.key === "product_link") {
+    return <ProductLinkCopy value={row[column.key]} />;
+  }
+
+  return formatCellValue(row[column.key], column.type);
 }
 
 function buildOverviewRowFromSubmission(productMap, productId, submission, fallbackRow = null) {
@@ -425,9 +438,7 @@ function ProductOverviewTable({
                     key={`${row.submission_id}-${column.key}`}
                     className={column.type === "photo" ? "product-overview-photo-cell" : ""}
                   >
-                    {column.type === "photo"
-                      ? renderOverviewPhotoCell(row, onOpenPhotoViewer)
-                      : formatCellValue(row[column.key], column.type)}
+                    {renderOverviewCell(row, column, onOpenPhotoViewer)}
                   </td>
                 ))}
               </tr>

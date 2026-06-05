@@ -1,3 +1,5 @@
+import ProductLinkCopy from "../../common/ProductLinkCopy";
+
 export default function ProductSummary({ product }) {
   if (!product) {
     return <p>상품 정보를 불러오는 중...</p>;
@@ -16,6 +18,10 @@ export default function ProductSummary({ product }) {
       <div className="product-note-box">
         <strong>비고</strong>
         <p>{product.description ?? "-"}</p>
+      </div>
+      <div className="product-note-box">
+        <strong>링크</strong>
+        <ProductLinkCopy value={product.product_link} />
       </div>
     </div>
   );

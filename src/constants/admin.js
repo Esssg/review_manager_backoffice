@@ -173,6 +173,11 @@ export const PRODUCT_DEPOSIT_PARTY_OPTIONS = [
   { value: PRODUCT_DEPOSIT_PARTY.COMPANY, label: "업체입금" }
 ];
 
+export const REVIEW_FEE_DEPOSIT_PARTY_OPTIONS = [
+  { value: PRODUCT_DEPOSIT_PARTY.SELF, label: "자체입금" },
+  { value: PRODUCT_DEPOSIT_PARTY.COMPANY, label: "없음" }
+];
+
 export const PRODUCT_DEPOSIT_GB_OPTIONS = [
   {
     value: PRODUCT_DEPOSIT_GB.PRODUCT_SELF_REVIEW_SELF,
@@ -184,11 +189,11 @@ export const PRODUCT_DEPOSIT_GB_OPTIONS = [
   },
   {
     value: PRODUCT_DEPOSIT_GB.PRODUCT_SELF_REVIEW_COMPANY,
-    label: "제품비 자체입금 / 리뷰비 업체입금",
+    label: "제품비 자체입금 / 리뷰비 없음",
     productDepositValue: PRODUCT_DEPOSIT_PARTY.SELF,
     reviewDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
     productDepositLabel: "자체입금",
-    reviewDepositLabel: "업체입금"
+    reviewDepositLabel: "없음"
   },
   {
     value: PRODUCT_DEPOSIT_GB.PRODUCT_COMPANY_REVIEW_SELF,
@@ -200,11 +205,11 @@ export const PRODUCT_DEPOSIT_GB_OPTIONS = [
   },
   {
     value: PRODUCT_DEPOSIT_GB.PRODUCT_COMPANY_REVIEW_COMPANY,
-    label: "제품비 업체입금 / 리뷰비 업체입금",
+    label: "제품비 업체입금 / 리뷰비 없음",
     productDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
     reviewDepositValue: PRODUCT_DEPOSIT_PARTY.COMPANY,
     productDepositLabel: "업체입금",
-    reviewDepositLabel: "업체입금"
+    reviewDepositLabel: "없음"
   }
 ];
 
