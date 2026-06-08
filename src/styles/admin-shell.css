@@ -919,6 +919,33 @@
   color: #b91c1c;
 }
 
+.product-overview-deposit-cancel-button {
+  min-width: 148px;
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 13px;
+}
+
+.product-overview-deposit-cancel-button:disabled {
+  border-color: #cbd5e1;
+  background: #e5e7eb;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.product-overview-deposit-cancel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.product-overview-deposit-cancel-reason {
+  height: 42px;
+  font-size: 14px;
+}
+
 .product-overview-export-button {
   min-width: 132px;
 }

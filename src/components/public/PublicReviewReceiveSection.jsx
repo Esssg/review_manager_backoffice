@@ -40,7 +40,7 @@ function renderPhotoActionButton(row, onOpenPhotoManager) {
 export default function PublicReviewReceiveSection({
   sectionKey,
   title,
-  description,
+  description = "",
   rows,
   onOpenPhotoViewer,
   onOpenPhotoManager
@@ -52,7 +52,7 @@ export default function PublicReviewReceiveSection({
       <div className="review-receive-section-header">
         <div>
           <h2>{title}</h2>
-          <p>{description}</p>
+          {description && <p>{description}</p>}
         </div>
         <span className="status-badge">{`${rows.length}건`}</span>
       </div>

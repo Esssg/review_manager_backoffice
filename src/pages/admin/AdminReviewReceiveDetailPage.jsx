@@ -1253,103 +1253,121 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    let reviewerPayloads;
+    const bundleId = product?.bundle_id ?? product?.id;
+    const baseProductForm = createProductItemForm(product);
+    let groupPayloads;
 
     try {
-      reviewerPayloads = parsed.reviewers.map((row, index) => normalizeProductReviewerRowForSave(row, index + 1));
+      groupPayloads = parsed.productGroups.map((group, groupIndex) => {
+        const { payload, errorMessage: validationErrorMessage } = getProductItemPayload(
+          {
+            ...baseProductForm,
+            ...group.productForm
+          },
+          adminId,
+          bundleId
+        );
+
+        if (validationErrorMessage) {
+          throw new Error(`${groupIndex + 1}번째 품목: ${validationErrorMessage}`);
+        }
+
+        return {
+          productPayload: payload,
+          reviewerPayloads: group.reviewers.map((row, index) =>
+            normalizeProductReviewerRowForSave(row, row.sourceLineNumber ?? index + 1)
+          )
+        };
+      });
     } catch (error) {
       setProductReviewerBulkMessage(error.message || "리뷰어 정보를 확인해주세요.", "error");
       return;
     }
 
-    const bundleId = product?.bundle_id ?? product?.id;
-    const baseProductForm = createProductItemForm(product);
-    const { payload, errorMessage: validationErrorMessage } = getProductItemPayload(
-      {
-        ...baseProductForm,
-        ...parsed.productForm
-      },
-      adminId,
-      bundleId
-    );
-
-    if (validationErrorMessage) {
-      setProductReviewerBulkMessage(validationErrorMessage, "error");
-      return;
-    }
-
-    const reusableShellProduct = bundleProducts.find((item) => isProductItemEmptyShell(item)) ?? null;
+    const reusableShellProducts = bundleProducts.filter((item) => isProductItemEmptyShell(item));
 
     setIsSavingProductReviewerBulk(true);
     setProductReviewerBulkMessage("");
 
-    const productResult = reusableShellProduct
-      ? await updateAdminReviewReceiveProduct(reusableShellProduct.id, adminId, payload, { includeCompanyData: true })
-      : await createAdminReviewReceiveProduct(payload);
-
-    if (productResult.error || !productResult.data) {
-      setProductReviewerBulkMessage(productResult.error?.message || "품목 저장 결과를 확인하지 못했습니다.", "error");
-      setIsSavingProductReviewerBulk(false);
-      return;
-    }
-
+    const savedProducts = [];
     const createdSubmissions = [];
 
-    for (let index = 0; index < reviewerPayloads.length; index += 1) {
-      const submissionResult = await createReviewReceiveSubmission({
-        product_id: productResult.data.id,
-        ...reviewerPayloads[index]
+    const reflectSavedProducts = () => {
+      setBundleProducts((prev) => {
+        const next = savedProducts.reduce((items, savedProduct) => {
+          if (items.some((item) => Number(item.id) === Number(savedProduct.id))) {
+            return items.map((item) => (Number(item.id) === Number(savedProduct.id) ? savedProduct : item));
+          }
+
+          return [...items, savedProduct];
+        }, prev);
+
+        return [...next].sort((left, right) => Number(left.id) - Number(right.id));
       });
+      setRows((prev) =>
+        sortReviewReceiveRowsByCreatedAt([
+          ...prev,
+          ...createdSubmissions.map((item) => buildEditableRow({ ...item, photos: [] }))
+        ])
+      );
+      const lastSavedProduct = savedProducts[savedProducts.length - 1];
 
-      if (submissionResult.error) {
-        setBundleProducts((prev) => {
-          const next = reusableShellProduct
-            ? prev.map((item) => (item.id === reusableShellProduct.id ? productResult.data : item))
-            : [...prev, productResult.data];
+      if (lastSavedProduct) {
+        setActiveProductId(Number(lastSavedProduct.id));
+      }
 
-          return [...next].sort((left, right) => Number(left.id) - Number(right.id));
-        });
-        setRows((prev) =>
-          sortReviewReceiveRowsByCreatedAt([
-            ...prev,
-            ...createdSubmissions.map((item) => buildEditableRow({ ...item, photos: [] }))
-          ])
-        );
-        setActiveProductId(Number(productResult.data.id));
+      const savedCurrentProduct = savedProducts.find((item) => Number(item.id) === Number(product?.id));
+
+      if (savedCurrentProduct) {
+        setProduct(savedCurrentProduct);
+      }
+    };
+
+    for (let groupIndex = 0; groupIndex < groupPayloads.length; groupIndex += 1) {
+      const reusableShellProduct = reusableShellProducts.shift() ?? null;
+      const productResult = reusableShellProduct
+        ? await updateAdminReviewReceiveProduct(reusableShellProduct.id, adminId, groupPayloads[groupIndex].productPayload, {
+            includeCompanyData: true
+          })
+        : await createAdminReviewReceiveProduct(groupPayloads[groupIndex].productPayload);
+
+      if (productResult.error || !productResult.data) {
+        reflectSavedProducts();
         setProductReviewerBulkMessage(
-          `품목은 저장됐지만 ${index + 1}번째 리뷰어 저장 중 오류가 발생했습니다. ${createdSubmissions.length}건만 반영되었습니다.`,
+          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다. ${savedProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
           "error"
         );
         setIsSavingProductReviewerBulk(false);
         return;
       }
 
-      createdSubmissions.push(submissionResult.data);
+      savedProducts.push(productResult.data);
+
+      for (let reviewerIndex = 0; reviewerIndex < groupPayloads[groupIndex].reviewerPayloads.length; reviewerIndex += 1) {
+        const submissionResult = await createReviewReceiveSubmission({
+          product_id: productResult.data.id,
+          ...groupPayloads[groupIndex].reviewerPayloads[reviewerIndex]
+        });
+
+        if (submissionResult.error) {
+          reflectSavedProducts();
+          setProductReviewerBulkMessage(
+            `${groupIndex + 1}번째 품목의 ${reviewerIndex + 1}번째 리뷰어 저장 중 오류가 발생했습니다. ${savedProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
+            "error"
+          );
+          setIsSavingProductReviewerBulk(false);
+          return;
+        }
+
+        createdSubmissions.push(submissionResult.data);
+      }
     }
 
-    setBundleProducts((prev) => {
-      const next = reusableShellProduct
-        ? prev.map((item) => (item.id === reusableShellProduct.id ? productResult.data : item))
-        : [...prev, productResult.data];
-
-      return [...next].sort((left, right) => Number(left.id) - Number(right.id));
-    });
-
-    if (product?.id === productResult.data.id) {
-      setProduct(productResult.data);
-    }
-
-    setRows((prev) =>
-      sortReviewReceiveRowsByCreatedAt([
-        ...prev,
-        ...createdSubmissions.map((item) => buildEditableRow({ ...item, photos: [] }))
-      ])
-    );
-    setActiveProductId(Number(productResult.data.id));
+    reflectSavedProducts();
     setProductReviewerBulk(createInitialProductReviewerBulkState());
     setIsProductReviewerBulkModalOpen(false);
     setIsSavingProductReviewerBulk(false);
-    showToast(`품목 1건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
+    showToast(`품목 ${savedProducts.length}건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
   };
 
   const openCreateProductItemModal = () => {
@@ -3320,7 +3338,7 @@ export default function AdminReviewReceiveDetailPage() {
             <div className="review-receive-modal-header">
               <div>
                 <h2>상품/리뷰어 일괄 입력</h2>
-                <p>붙여넣은 첫 행의 상품 정보를 현재 bundle_id의 품목으로 저장하고, 각 행을 리뷰어로 등록합니다.</p>
+                <p>붙여넣은 행에서 품목 정보가 바뀌는 구간마다 현재 bundle_id의 품목으로 나눠 등록합니다.</p>
               </div>
               <button
                 type="button"
@@ -3355,7 +3373,7 @@ export default function AdminReviewReceiveDetailPage() {
                   </p>
                 </div>
                 <div className="review-receive-preview-empty">
-                  <p>첫 행의 날짜, 업체명, 링크, 품명, 옵션, 리뷰형태, 예정 입금자명을 품목 정보로 사용합니다.</p>
+                  <p>날짜, 업체명, 품명, 옵션, 리뷰형태가 바뀌면 새 품목으로 나누고 각 품목의 첫 행 링크를 사용합니다.</p>
                 </div>
                 {productReviewerBulk.message && (
                   <p className={`review-receive-bulk-message is-${productReviewerBulk.messageType}`}>

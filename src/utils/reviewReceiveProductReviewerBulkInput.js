@@ -23,8 +23,11 @@ function normalizeCell(value) {
 function splitRows(rawText) {
   return String(rawText ?? "")
     .split(/\r?\n/)
-    .map((line) => line.replace(/\r$/, ""))
-    .filter((line) => line.split("\t").some((cell) => normalizeCell(cell)));
+    .map((line, index) => ({
+      lineNumber: index + 1,
+      line: line.replace(/\r$/, "")
+    }))
+    .filter(({ line }) => line.split("\t").some((cell) => normalizeCell(cell)));
 }
 
 function parseProductDate(value, currentYear) {
@@ -71,6 +74,68 @@ function buildProductTitle({ productDate, companyName, productName }) {
   return titleParts ? `${formatTitleDate(productDate)} / ${titleParts}` : formatTitleDate(productDate);
 }
 
+function hasReviewerCells(cells) {
+  return cells.slice(8, 18).some((cell) => normalizeCell(cell));
+}
+
+function isIgnorableRow(cells) {
+  return !normalizeCell(cells[5]) && !normalizeCell(cells[2]) && !hasReviewerCells(cells);
+}
+
+function normalizeReviewType(value) {
+  const rawReviewType = normalizeCell(value);
+  return rawReviewType && Number.isNaN(Number(rawReviewType)) ? rawReviewType : "";
+}
+
+function getProductIdentity(cells, currentYear, currentProductForm = null) {
+  const productName = normalizeCell(cells[5]);
+
+  if (!productName) {
+    return null;
+  }
+
+  const rawDate = normalizeCell(cells[0]);
+  const productDate = rawDate
+    ? parseProductDate(rawDate, currentYear)
+    : currentProductForm?.productDate ?? formatDateInputValue(new Date());
+  const companyName = normalizeCell(cells[1]) || currentProductForm?.companyName || "";
+  const optionName = normalizeCell(cells[6]);
+  const reviewType = normalizeReviewType(cells[7]);
+  const key = [productDate, companyName, productName, optionName, reviewType].join("\u001f");
+
+  return {
+    key,
+    productDate,
+    companyName,
+    productName,
+    optionName,
+    reviewType
+  };
+}
+
+function buildProductFormFromCells(cells, identity) {
+  const productDate = identity.productDate;
+  const companyName = identity.companyName;
+  const productName = identity.productName;
+  const optionName = identity.optionName;
+  const reviewType = identity.reviewType;
+  const plannedDepositorSourceName = normalizeCell(cells[18]) || companyName;
+  const plannedDepositorName = formatPlannedDepositorName(productDate, plannedDepositorSourceName);
+  const { description, productLink } = normalizeProductDescriptionAndLink(cells[2]);
+
+  return {
+    title: buildProductTitle({ productDate, companyName, productName }),
+    productDate,
+    productName,
+    companyName,
+    optionName,
+    reviewType,
+    plannedDepositorName,
+    description,
+    productLink
+  };
+}
+
 function parseReviewerCells(cells, lineNumber) {
   const purchaseCells = [
     cells[8],
@@ -87,7 +152,8 @@ function parseReviewerCells(cells, lineNumber) {
   const parsed = parsePurchaseBulkInput(purchaseCells.join("\t"), { allowAssignName: true })[0];
 
   return {
-    clientId: `${lineNumber}-${parsed.order_number || Date.now()}`,
+    clientId: `${lineNumber}-${parsed.order_number || "row"}`,
+    sourceLineNumber: lineNumber,
     assign_name: parsed.assign_name || "",
     order_number: parsed.order_number || "",
     buyer_name: parsed.buyer_name || "",
@@ -109,50 +175,63 @@ function parseReviewerCells(cells, lineNumber) {
 export function parseProductReviewerBulkInput(rawText, options = {}) {
   const currentYear = options.currentYear ?? new Date().getFullYear();
   const rows = splitRows(rawText)
-    .map((line) => line.split("\t"))
-    .filter((cells) => !isHeaderRow(cells));
+    .map(({ line, lineNumber }) => ({
+      lineNumber,
+      cells: line.split("\t")
+    }))
+    .filter(({ cells }) => !isHeaderRow(cells))
+    .filter(({ cells }) => !isIgnorableRow(cells));
 
   if (rows.length === 0) {
     throw new Error("상품/리뷰어 일괄 입력 데이터를 붙여넣어주세요.");
   }
 
-  const firstRow = rows[0];
-  const productDate = parseProductDate(firstRow[0], currentYear);
-  const companyName = normalizeCell(firstRow[1]);
-  const productName = normalizeCell(firstRow[5]);
-  const optionName = normalizeCell(firstRow[6]);
-  const rawReviewType = normalizeCell(firstRow[7]);
-  const reviewType = rawReviewType && Number.isNaN(Number(rawReviewType)) ? rawReviewType : "";
-  const plannedDepositorName = normalizeCell(firstRow[18]) || formatPlannedDepositorName(productDate, companyName);
-  const { description, productLink } = normalizeProductDescriptionAndLink(firstRow[2]);
+  const productGroups = [];
+  let currentGroup = null;
 
-  if (!productName) {
-    throw new Error("첫 행의 품명을 확인해주세요.");
-  }
+  rows.forEach(({ cells, lineNumber }) => {
+    const identity = getProductIdentity(cells, currentYear, currentGroup?.productForm);
 
-  const productForm = {
-    title: buildProductTitle({ productDate, companyName, productName }),
-    productDate,
-    productName,
-    companyName,
-    optionName,
-    reviewType,
-    plannedDepositorName,
-    description,
-    productLink
-  };
+    if (!currentGroup || (identity && identity.key !== currentGroup.identityKey)) {
+      if (!identity) {
+        throw new Error(`${lineNumber}번째 행의 품명을 확인해주세요.`);
+      }
 
-  const reviewers = rows.map((cells, index) => {
+      currentGroup = {
+        clientId: `product-group-${productGroups.length + 1}`,
+        identityKey: identity.key,
+        productForm: buildProductFormFromCells(cells, identity),
+        reviewers: []
+      };
+      productGroups.push(currentGroup);
+    }
+
+    if (!hasReviewerCells(cells)) {
+      return;
+    }
+
     try {
-      return parseReviewerCells(cells, index + 1);
+      currentGroup.reviewers.push({
+        ...parseReviewerCells(cells, lineNumber),
+        productGroupClientId: currentGroup.clientId
+      });
     } catch (error) {
-      throw new Error(`${index + 1}번째 행: ${error.message || "구매자 정보를 확인해주세요."}`);
+      throw new Error(`${lineNumber}번째 행: ${error.message || "구매자 정보를 확인해주세요."}`);
     }
   });
 
+  const emptyGroup = productGroups.find((group) => group.reviewers.length === 0);
+
+  if (emptyGroup) {
+    throw new Error(`${emptyGroup.productForm.productName || "품목"}에 등록할 리뷰어 행이 없습니다.`);
+  }
+
+  const reviewers = productGroups.flatMap((group) => group.reviewers);
+
   return {
-    productForm,
-    reviewers
+    productForm: productGroups[0].productForm,
+    reviewers,
+    productGroups: productGroups.map(({ identityKey, ...group }) => group)
   };
 }
 

@@ -48,7 +48,10 @@ function hasMeaningfulValue(value) {
 }
 
 function isLikelyContactField(value) {
-  return String(value ?? "").replace(/\D/g, "").length >= 8;
+  const text = String(value ?? "").trim();
+  const digits = text.replace(/\D/g, "");
+
+  return digits.length >= 8 && /^[\d\s()+.-]+$/.test(text);
 }
 
 function normalizeLines(rawText) {

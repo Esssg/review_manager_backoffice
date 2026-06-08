@@ -169,6 +169,10 @@ function areRowsDepositVerifyTargets(rows) {
   return rows.length > 0 && rows.every((row) => row.is_review_verified && !row.is_deposit_verified);
 }
 
+function areRowsDepositCancelTargets(rows) {
+  return rows.length > 0 && rows.every((row) => row.is_review_verified && row.is_deposit_verified);
+}
+
 function getReviewBatchActualDepositorName(row, mode, customName) {
   if (mode === "planned") {
     return row.planned_depositor_name?.trim() || null;
@@ -550,6 +554,10 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     isOpen: false,
     missingLabels: []
   });
+  const [depositCancelTargetRows, setDepositCancelTargetRows] = useState([]);
+  const [depositCancelReason, setDepositCancelReason] = useState("");
+  const [depositCancelMessage, setDepositCancelMessage] = useState("");
+  const [isCancellingDeposit, setIsCancellingDeposit] = useState(false);
   const [selectedDeleteTargetRows, setSelectedDeleteTargetRows] = useState([]);
   const [isDeletingSelectedRows, setIsDeletingSelectedRows] = useState(false);
   const [exportModal, setExportModal] = useState({
@@ -843,6 +851,38 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       isOpen: false,
       missingLabels: []
     });
+  };
+
+  const openDepositCancelDialog = (scopeKey) => {
+    if (!canVerifyDeposit) {
+      showToast("입금완료 처리 권한이 없습니다.", "error");
+      return;
+    }
+
+    const selectedRows = selectedRowsByScope[scopeKey] ?? [];
+
+    if (selectedRows.length === 0) {
+      return;
+    }
+
+    if (!areRowsDepositCancelTargets(selectedRows)) {
+      showToast("입금완료 예인 전체완료 행만 선택해야 합니다.", "error");
+      return;
+    }
+
+    setDepositCancelTargetRows(selectedRows);
+    setDepositCancelReason("");
+    setDepositCancelMessage("");
+  };
+
+  const closeDepositCancelDialog = () => {
+    if (isCancellingDeposit) {
+      return;
+    }
+
+    setDepositCancelTargetRows([]);
+    setDepositCancelReason("");
+    setDepositCancelMessage("");
   };
 
   const openSelectedDeleteDialog = (scopeKey) => {
@@ -1316,6 +1356,65 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     await applyReviewBatch();
   };
 
+  const handleDepositCancelApply = async () => {
+    setDepositCancelMessage("");
+
+    if (!canVerifyDeposit) {
+      setDepositCancelMessage("입금완료 처리 권한이 없습니다.");
+      return;
+    }
+
+    if (!areRowsDepositCancelTargets(depositCancelTargetRows)) {
+      setDepositCancelMessage("입금완료 예인 전체완료 행만 선택해야 합니다.");
+      return;
+    }
+
+    const normalizedReason = depositCancelReason.trim();
+
+    if (!normalizedReason) {
+      setDepositCancelMessage("입금취소사유를 입력해주세요.");
+      return;
+    }
+
+    setIsCancellingDeposit(true);
+
+    const savedRows = [];
+
+    for (let index = 0; index < depositCancelTargetRows.length; index += 1) {
+      const row = depositCancelTargetRows[index];
+      const result = await updateReviewReceiveSubmission(row.submission_id, {
+        is_deposit_verified: false,
+        deposited_at: null,
+        actual_depositor_name: normalizedReason
+      });
+
+      if (result.error) {
+        if (savedRows.length > 0) {
+          setRows((prev) => replaceProductOverviewRows(prev, savedRows));
+        }
+
+        setDepositCancelMessage(
+          `${index + 1}번째 저장 중 오류가 발생했습니다. ${savedRows.length}건만 반영되었습니다.`
+        );
+        setIsCancellingDeposit(false);
+        return;
+      }
+
+      const savedRow = buildOverviewRowFromSubmission(productMap, row.product_id, result.data, row);
+
+      if (savedRow) {
+        savedRows.push(savedRow);
+      }
+    }
+
+    setRows((prev) => replaceProductOverviewRows(prev, savedRows));
+    clearSelectedRows(savedRows.map((row) => row.submission_id));
+    showToast(`${savedRows.length}건의 입금완료를 취소했습니다.`, "success");
+    setIsCancellingDeposit(false);
+    setDepositCancelTargetRows([]);
+    setDepositCancelReason("");
+  };
+
   const purchaseBulkEnterConfirm = useModalEnterConfirm({
     isOpen: isPurchaseBulkModalOpen,
     isDisabled:
@@ -1406,6 +1505,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const renderFilterResetAction = (scopeKey) => {
     const selectedRows = selectedRowsByScope[scopeKey] ?? [];
     const exportRows = scopeRowsByKey[scopeKey] ?? [];
+    const shouldShowDepositCancelButton = scopeKey === "complete" && selectedRows.length > 0;
+    const canCancelSelectedDeposit = areRowsDepositCancelTargets(selectedRows);
 
     return (
       <div className="review-receive-toolbar-actions product-overview-reset-actions">
@@ -1417,6 +1518,17 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         >
           엑셀로 내보내기
         </button>
+        {shouldShowDepositCancelButton && (
+          <button
+            type="button"
+            className="admin-secondary-button product-overview-deposit-cancel-button"
+            onClick={() => openDepositCancelDialog(scopeKey)}
+            disabled={!canVerifyDeposit || !canCancelSelectedDeposit || isCancellingDeposit}
+            title={!canVerifyDeposit ? "입금완료 처리 권한이 없습니다." : ""}
+          >
+            입금완료 취소하기
+          </button>
+        )}
         <button
           type="button"
           className="admin-secondary-button"
@@ -2176,6 +2288,41 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
           <strong>{formatMissingFieldLabels(reviewBatchConfirmDialog.missingLabels)}</strong> 칸이 비어있습니다. 입금완료
           처리 하시겠습니까?
         </p>
+      </AppAlertDialog>
+
+      <AppAlertDialog
+        isOpen={depositCancelTargetRows.length > 0}
+        variant="danger"
+        badgeLabel="입금완료 취소"
+        title="입금완료를 취소할까요?"
+        cancelLabel="취소"
+        confirmLabel="확인"
+        busyConfirmLabel="처리 중..."
+        isBusy={isCancellingDeposit}
+        onCancel={closeDepositCancelDialog}
+        onConfirm={handleDepositCancelApply}
+        confirmButtonClassName="admin-danger-button"
+        ariaLabel="상품전체보기 입금완료 취소 확인"
+      >
+        <p>
+          선택한 <strong>{depositCancelTargetRows.length}건</strong>의 입금일을 삭제하고 입금완료를 아니오로
+          바꿉니다. 입력한 사유는 실제입금자명에 저장됩니다.
+        </p>
+        <label className="product-overview-deposit-cancel-field">
+          <span className="detail-summary-label">입금취소사유</span>
+          <input
+            className="table-cell-input product-overview-deposit-cancel-reason"
+            value={depositCancelReason}
+            onChange={(event) => {
+              setDepositCancelReason(event.target.value);
+              setDepositCancelMessage("");
+            }}
+            placeholder="입금취소사유"
+            disabled={isCancellingDeposit}
+            autoFocus
+          />
+        </label>
+        {depositCancelMessage && <p className="login-error">{depositCancelMessage}</p>}
       </AppAlertDialog>
 
       <AppAlertDialog

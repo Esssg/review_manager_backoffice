@@ -242,6 +242,7 @@ function createInitialProductReviewerBulkState() {
     step: "input",
     text: "",
     productForm: createInitialProductForm(),
+    productGroups: [],
     reviewers: [],
     message: "",
     messageType: "info"
@@ -263,6 +264,39 @@ const PRODUCT_REVIEWER_REVIEWER_FIELDS = [
   { key: "review_fee", label: "리뷰비", minWidth: 100 },
   { key: "actual_depositor_name", label: "실제입금자", minWidth: 120 }
 ];
+
+function getProductReviewerBulkGroups(productReviewerBulk) {
+  if (Array.isArray(productReviewerBulk.productGroups) && productReviewerBulk.productGroups.length > 0) {
+    return productReviewerBulk.productGroups;
+  }
+
+  if (productReviewerBulk.reviewers.length > 0 || productReviewerBulk.productForm.productName) {
+    return [
+      {
+        clientId: "product-group-1",
+        productForm: productReviewerBulk.productForm,
+        reviewers: productReviewerBulk.reviewers
+      }
+    ];
+  }
+
+  return [];
+}
+
+function getProductReviewerBulkReviewerCount(productGroups) {
+  return productGroups.reduce((sum, group) => sum + group.reviewers.length, 0);
+}
+
+function formatProductReviewerBulkGroupLabel(group, index) {
+  if (!group) {
+    return index >= 0 ? `품목 ${index + 1}` : "-";
+  }
+
+  const productName = group.productForm.productName || `품목 ${index + 1}`;
+  const optionName = group.productForm.optionName ? ` / ${group.productForm.optionName}` : "";
+
+  return `${productName}${optionName}`;
+}
 
 function getProductFormFromProduct(product) {
   const depositGbParts = getProductDepositGbPartValues(product.deposit_GB);
@@ -724,6 +758,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       : viewMode === "in_progress"
         ? "submission이 없거나, 입금완료체크가 하나라도 false인 상품을 표시합니다."
         : "전체 상품 리스트를 표시합니다.";
+  const productReviewerBulkGroups = getProductReviewerBulkGroups(productReviewerBulk);
+  const productReviewerBulkGroupCount = productReviewerBulkGroups.length;
+  const productReviewerBulkReviewerCount = getProductReviewerBulkReviewerCount(productReviewerBulkGroups);
+  const isProductReviewerBulkMultiProduct = productReviewerBulkGroupCount > 1;
 
   const openCreateTypeDialog = () => {
     setIsCreateTypeDialogOpen(true);
@@ -833,6 +871,15 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setProductReviewerBulk((prev) => ({
       ...prev,
       productForm: applyPlannedDepositorNameDefault(prev.productForm, { [name]: value }),
+      productGroups:
+        prev.productGroups.length === 1
+          ? [
+              {
+                ...prev.productGroups[0],
+                productForm: applyPlannedDepositorNameDefault(prev.productGroups[0].productForm, { [name]: value })
+              }
+            ]
+          : prev.productGroups,
       message: "",
       messageType: "info"
     }));
@@ -842,6 +889,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setProductReviewerBulk((prev) => ({
       ...prev,
       reviewers: prev.reviewers.map((row) => (row.clientId === clientId ? { ...row, [field]: value } : row)),
+      productGroups: prev.productGroups.map((group) => ({
+        ...group,
+        reviewers: group.reviewers.map((row) => (row.clientId === clientId ? { ...row, [field]: value } : row))
+      })),
       message: "",
       messageType: "info"
     }));
@@ -850,16 +901,29 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const handleProductReviewerBulkParse = () => {
     try {
       const parsed = parseProductReviewerBulkInput(productReviewerBulk.text);
+      const productGroups = parsed.productGroups.map((group) => ({
+        ...group,
+        productForm: {
+          ...createInitialProductForm(),
+          ...group.productForm
+        }
+      }));
+      const reviewers = productGroups.flatMap((group) => group.reviewers);
+      const productCount = productGroups.length;
 
       setProductReviewerBulk((prev) => ({
         ...prev,
         step: "product",
-        productForm: {
+        productForm: productGroups[0]?.productForm ?? {
           ...createInitialProductForm(),
           ...parsed.productForm
         },
-        reviewers: parsed.reviewers,
-        message: `${parsed.reviewers.length}명의 리뷰어를 확인했습니다. 상품 정보를 수정한 뒤 다음으로 진행하세요.`,
+        productGroups,
+        reviewers,
+        message:
+          productCount > 1
+            ? `${productCount}개 품목과 리뷰어 ${reviewers.length}명을 확인했습니다. 품목별 정보를 확인한 뒤 다음으로 진행하세요.`
+            : `${reviewers.length}명의 리뷰어를 확인했습니다. 상품 정보를 수정한 뒤 다음으로 진행하세요.`,
         messageType: "success"
       }));
     } catch (error) {
@@ -868,14 +932,23 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   };
 
   const handleProductReviewerBulkProductNext = () => {
-    const { errorMessage: validationErrorMessage } = getProductPayload(productReviewerBulk.productForm, adminId);
+    const productGroups = getProductReviewerBulkGroups(productReviewerBulk);
 
-    if (validationErrorMessage) {
-      setProductReviewerBulkMessage(validationErrorMessage, "error");
+    if (productGroups.length === 0) {
+      setProductReviewerBulkMessage("등록할 품목이 없습니다.", "error");
       return;
     }
 
-    if (productReviewerBulk.reviewers.length === 0) {
+    for (let index = 0; index < productGroups.length; index += 1) {
+      const { errorMessage: validationErrorMessage } = getProductPayload(productGroups[index].productForm, adminId);
+
+      if (validationErrorMessage) {
+        setProductReviewerBulkMessage(`${index + 1}번째 품목: ${validationErrorMessage}`, "error");
+        return;
+      }
+    }
+
+    if (getProductReviewerBulkReviewerCount(productGroups) === 0) {
       setProductReviewerBulkMessage("등록할 리뷰어 행이 없습니다.", "error");
       return;
     }
@@ -883,7 +956,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setProductReviewerBulk((prev) => ({
       ...prev,
       step: "reviewers",
-      message: "리뷰어 정보를 칸별로 수정한 뒤 완료하기를 눌러주세요.",
+      message:
+        productGroups.length > 1
+          ? "리뷰어 정보를 칸별로 수정한 뒤 완료하기를 누르면 품목별로 나눠 등록합니다."
+          : "리뷰어 정보를 칸별로 수정한 뒤 완료하기를 눌러주세요.",
       messageType: "info"
     }));
   };
@@ -894,17 +970,30 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       return;
     }
 
-    const { payload, errorMessage: validationErrorMessage } = getProductPayload(productReviewerBulk.productForm, adminId);
+    const productGroups = getProductReviewerBulkGroups(productReviewerBulk);
 
-    if (validationErrorMessage) {
-      setProductReviewerBulkMessage(validationErrorMessage, "error");
+    if (productGroups.length === 0) {
+      setProductReviewerBulkMessage("등록할 품목이 없습니다.", "error");
       return;
     }
 
-    let reviewerPayloads;
+    let groupPayloads;
 
     try {
-      reviewerPayloads = productReviewerBulk.reviewers.map((row, index) => normalizeProductReviewerRowForSave(row, index + 1));
+      groupPayloads = productGroups.map((group, groupIndex) => {
+        const { payload, errorMessage: validationErrorMessage } = getProductPayload(group.productForm, adminId);
+
+        if (validationErrorMessage) {
+          throw new Error(`${groupIndex + 1}번째 품목: ${validationErrorMessage}`);
+        }
+
+        return {
+          productPayload: payload,
+          reviewerPayloads: group.reviewers.map((row, index) =>
+            normalizeProductReviewerRowForSave(row, row.sourceLineNumber ?? index + 1)
+          )
+        };
+      });
     } catch (error) {
       setProductReviewerBulkMessage(error.message || "리뷰어 정보를 확인해주세요.", "error");
       return;
@@ -913,48 +1002,79 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setIsSavingProductReviewerBulk(true);
     setProductReviewerBulkMessage("");
 
-    const productResult = await createAdminReviewReceiveProduct(payload);
-
-    if (productResult.error || !productResult.data) {
-      setProductReviewerBulkMessage(productResult.error?.message || "상품 저장 결과를 확인하지 못했습니다.", "error");
-      setIsSavingProductReviewerBulk(false);
-      return;
-    }
-
+    const createdProducts = [];
     const createdSubmissions = [];
+    let bundleId = null;
 
-    for (let index = 0; index < reviewerPayloads.length; index += 1) {
-      const submissionResult = await createReviewReceiveSubmission({
-        product_id: productResult.data.id,
-        ...reviewerPayloads[index]
-      });
+    const reflectPartialSave = () => {
+      if (createdProducts.length > 0) {
+        setProducts((prev) => [
+          ...createdProducts.map((item) => ({
+            ...item,
+            submissions: [...(item.submissions ?? [])]
+          })),
+          ...prev
+        ]);
+      }
+    };
 
-      if (submissionResult.error) {
-        const productWithPartialSubmissions = {
-          ...productResult.data,
-          submissions: createdSubmissions
-        };
+    for (let groupIndex = 0; groupIndex < groupPayloads.length; groupIndex += 1) {
+      const productPayload =
+        bundleId == null
+          ? groupPayloads[groupIndex].productPayload
+          : {
+              ...groupPayloads[groupIndex].productPayload,
+              bundle_id: bundleId
+            };
+      const productResult = await createAdminReviewReceiveProduct(productPayload);
 
-        setProducts((prev) => [productWithPartialSubmissions, ...prev]);
+      if (productResult.error || !productResult.data) {
+        reflectPartialSave();
         setProductReviewerBulkMessage(
-          `상품은 생성됐지만 ${index + 1}번째 리뷰어 저장 중 오류가 발생했습니다. ${createdSubmissions.length}건만 반영되었습니다.`,
+          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다. ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
           "error"
         );
         setIsSavingProductReviewerBulk(false);
         return;
       }
 
-      createdSubmissions.push(submissionResult.data);
+      bundleId = bundleId ?? productResult.data.bundle_id ?? productResult.data.id;
+
+      const productWithSubmissions = {
+        ...productResult.data,
+        submissions: []
+      };
+      createdProducts.push(productWithSubmissions);
+
+      for (let reviewerIndex = 0; reviewerIndex < groupPayloads[groupIndex].reviewerPayloads.length; reviewerIndex += 1) {
+        const submissionResult = await createReviewReceiveSubmission({
+          product_id: productResult.data.id,
+          ...groupPayloads[groupIndex].reviewerPayloads[reviewerIndex]
+        });
+
+        if (submissionResult.error) {
+          reflectPartialSave();
+          setProductReviewerBulkMessage(
+            `${groupIndex + 1}번째 품목의 ${reviewerIndex + 1}번째 리뷰어 저장 중 오류가 발생했습니다. ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
+            "error"
+          );
+          setIsSavingProductReviewerBulk(false);
+          return;
+        }
+
+        productWithSubmissions.submissions.push(submissionResult.data);
+        createdSubmissions.push(submissionResult.data);
+      }
     }
 
     setProducts((prev) => [
-      {
-        ...productResult.data,
-        submissions: createdSubmissions
-      },
+      ...createdProducts.map((item) => ({
+        ...item,
+        submissions: [...(item.submissions ?? [])]
+      })),
       ...prev
     ]);
-    showToast(`상품 1건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
+    showToast(`품목 ${createdProducts.length}건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
     setProductReviewerBulk(createInitialProductReviewerBulkState());
     setIsProductReviewerBulkModalOpen(false);
     setIsSavingProductReviewerBulk(false);
@@ -1296,9 +1416,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                 <h2>상품/리뷰어 일괄 입력하기</h2>
                 <p>
                   {productReviewerBulk.step === "input"
-                    ? "스프레드시트 행을 그대로 붙여넣으면 첫 행 기준으로 상품 정보를 만들고 각 행을 리뷰어로 등록합니다."
+                    ? "스프레드시트 행을 그대로 붙여넣으면 품목 정보가 바뀌는 구간마다 상품을 나누고 각 행을 리뷰어로 등록합니다."
                     : productReviewerBulk.step === "product"
-                      ? "첫 행에서 읽은 상품 정보를 확인하고 필요한 값을 수정합니다."
+                      ? isProductReviewerBulkMultiProduct
+                        ? "붙여넣은 행에서 나뉜 품목 정보를 확인합니다."
+                        : "첫 행에서 읽은 상품 정보를 확인하고 필요한 값을 수정합니다."
                       : "등록될 리뷰어 정보를 칸별로 확인하고 수정합니다."}
                 </p>
               </div>
@@ -1329,10 +1451,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                 <div className="review-receive-preview-panel">
                   <div className="review-receive-preview-header">
                     <h3>입력 형식</h3>
-                    <p>첫 행의 날짜, 업체명, 링크, 품명, 옵션, 리뷰형태, 예정 입금자명을 상품 정보로 사용합니다.</p>
+                    <p>날짜, 업체명, 품명, 옵션, 리뷰형태가 바뀌면 새 품목으로 나눕니다.</p>
                   </div>
                   <div className="review-receive-preview-empty">
-                    <p>리뷰작성과 입금여부는 TRUE/FALSE 값으로 입력합니다.</p>
+                    <p>각 품목의 첫 행에 있는 링크와 예정 입금자명을 해당 품목 정보로 사용합니다.</p>
                   </div>
                   {productReviewerBulk.message && (
                     <p className={`review-receive-bulk-message is-${productReviewerBulk.messageType}`}>
@@ -1346,7 +1468,43 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             {productReviewerBulk.step === "product" && (
               <div className="review-receive-modal-body review-receive-modal-body-single">
                 <div className="review-receive-review-batch-fields">
-                  <div className="review-receive-review-batch-grid review-receive-create-product-grid">
+                  {isProductReviewerBulkMultiProduct ? (
+                    <div className="review-receive-product-reviewer-table-scroll">
+                      <table className="review-receive-product-reviewer-table">
+                        <thead>
+                          <tr>
+                            <th>품목</th>
+                            <th>등록날짜</th>
+                            <th>업체명</th>
+                            <th>품명</th>
+                            <th>옵션</th>
+                            <th>리뷰형태</th>
+                            <th>링크</th>
+                            <th>예정 입금자명</th>
+                            <th>리뷰어</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {productReviewerBulkGroups.map((group, index) => (
+                            <tr key={group.clientId}>
+                              <td>{index + 1}</td>
+                              <td>{group.productForm.productDate}</td>
+                              <td>{group.productForm.companyName || "-"}</td>
+                              <td>{group.productForm.productName || "-"}</td>
+                              <td>{group.productForm.optionName || "-"}</td>
+                              <td>{group.productForm.reviewType || "-"}</td>
+                              <td>
+                                <ProductLinkCopy value={group.productForm.productLink} />
+                              </td>
+                              <td>{group.productForm.plannedDepositorName || "-"}</td>
+                              <td>{group.reviewers.length}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="review-receive-review-batch-grid review-receive-create-product-grid">
                     <div className="detail-summary-item review-receive-create-product-field is-full-width">
                       <label className="detail-summary-label" htmlFor="review-receive-bulk-product-title">
                         상품 제목 <span className="required-indicator" aria-hidden="true">*</span>
@@ -1497,6 +1655,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       </select>
                     </div>
                   </div>
+                  )}
                   {productReviewerBulk.message && (
                     <p className={`review-receive-bulk-message is-${productReviewerBulk.messageType}`}>
                       {productReviewerBulk.message}
@@ -1509,7 +1668,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             {productReviewerBulk.step === "reviewers" && (
               <div className="review-receive-product-reviewer-reviewers">
                 <div className="review-receive-preview-header">
-                  <h3>{`리뷰어 ${productReviewerBulk.reviewers.length}명`}</h3>
+                  <h3>
+                    {isProductReviewerBulkMultiProduct
+                      ? `품목 ${productReviewerBulkGroupCount}개 / 리뷰어 ${productReviewerBulkReviewerCount}명`
+                      : `리뷰어 ${productReviewerBulk.reviewers.length}명`}
+                  </h3>
                   <p>각 칸을 수정할 수 있습니다. 완료하기를 누르면 상품과 리뷰어가 함께 등록됩니다.</p>
                 </div>
                 <div className="review-receive-product-reviewer-table-scroll">
@@ -1517,6 +1680,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                     <thead>
                       <tr>
                         <th>순번</th>
+                        {isProductReviewerBulkMultiProduct && <th>품목</th>}
                         {PRODUCT_REVIEWER_REVIEWER_FIELDS.map((field) => (
                           <th key={field.key} style={{ minWidth: field.minWidth }}>
                             {field.label}
@@ -1530,6 +1694,14 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       {productReviewerBulk.reviewers.map((row, index) => (
                         <tr key={row.clientId}>
                           <td>{index + 1}</td>
+                          {isProductReviewerBulkMultiProduct && (
+                            <td>
+                              {formatProductReviewerBulkGroupLabel(
+                                productReviewerBulkGroups.find((group) => group.clientId === row.productGroupClientId),
+                                productReviewerBulkGroups.findIndex((group) => group.clientId === row.productGroupClientId)
+                              )}
+                            </td>
+                          )}
                           {PRODUCT_REVIEWER_REVIEWER_FIELDS.map((field) => (
                             <td key={field.key}>
                               <input

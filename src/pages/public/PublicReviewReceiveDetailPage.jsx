@@ -17,7 +17,7 @@ import { sortReviewReceiveRowsByCreatedAt } from "../../utils/reviewReceiveRows"
 const DEFAULT_LOOKUP_TYPE = "account_holder";
 const PUBLIC_LOOKUP_OPTIONS = [
   { value: "assign_name", label: "배정명" },
-  { value: "account_holder", label: "계좌주명" }
+  { value: "account_holder", label: "예금주" }
 ];
 
 function getLookupValueStorageKey(productId) {
@@ -59,7 +59,15 @@ function readStoredLookupType(productId) {
 }
 
 function getLookupTypeLabel(lookupType) {
-  return PUBLIC_LOOKUP_OPTIONS.find((option) => option.value === lookupType)?.label ?? "배정명";
+  return PUBLIC_LOOKUP_OPTIONS.find((option) => option.value === lookupType)?.label ?? "예금주";
+}
+
+function getLookupTypePlaceholder(lookupType) {
+  if (lookupType === "account_holder") {
+    return "예금주를 입력해주세요";
+  }
+
+  return `${getLookupTypeLabel(lookupType)}을 입력해주세요`;
 }
 
 function getPublicPlannedDepositorName(product) {
@@ -675,10 +683,7 @@ export default function PublicReviewReceiveDetailPage() {
         <header className="public-review-header">
           <div>
             <p className="public-review-eyebrow">Review Receive</p>
-            <h1>리뷰 제출 현황 확인</h1>
-            <p className="public-review-description">
-              배정명 또는 계좌주명으로 조회하면 본인에게 연결된 제출 행만 확인할 수 있습니다.
-            </p>
+            <h1>리뷰 제출</h1>
           </div>
         </header>
 
@@ -708,7 +713,7 @@ export default function PublicReviewReceiveDetailPage() {
             <>
               <form className="public-review-lookup-form" onSubmit={handleSubmit}>
                 <label className="public-review-field">
-                  <span>조회 값</span>
+                  <span>양식 제출 시 입력한 예금주로 구매 내역 검색</span>
                   <div className="public-review-input-combo">
                     <select
                       className="public-review-lookup-type-select"
@@ -733,7 +738,7 @@ export default function PublicReviewReceiveDetailPage() {
                         setLookupName(event.target.value);
                         setFormErrorMessage("");
                       }}
-                      placeholder={`${lookupTypeLabel}을 입력해주세요`}
+                      placeholder={getLookupTypePlaceholder(lookupType)}
                       autoComplete={lookupType === "assign_name" ? "name" : "off"}
                     />
                   </div>
@@ -765,13 +770,11 @@ export default function PublicReviewReceiveDetailPage() {
               <>
                 <div className="public-review-access-note">
                   <span className="status-badge">{`${rows.length}건 조회됨`}</span>
-                  <p>구매완료 섹션에서는 사진 업로드/삭제 초안을 만들 수 있습니다.</p>
                 </div>
                 {photoStatusMessage && <p className="login-message">{photoStatusMessage}</p>}
                 <PublicReviewReceiveSection
                   sectionKey="purchase"
-                  title="구매완료"
-                  description="조회된 모든 제출 데이터입니다."
+                  title="구매내역"
                   rows={rows}
                   onOpenPhotoViewer={openPhotoViewer}
                   onOpenPhotoManager={openPhotoManager}
