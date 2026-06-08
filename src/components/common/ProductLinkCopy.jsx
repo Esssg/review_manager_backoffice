@@ -32,8 +32,9 @@ async function copyText(text) {
 
 const COPY_STATE_RESET_DELAY_MS = 3000;
 
-export default function ProductLinkCopy({ value, emptyText = "-", className = "" }) {
+export default function ProductLinkCopy({ value, displayValue, emptyText = "-", className = "" }) {
   const text = String(value ?? "").trim();
+  const displayText = displayValue == null ? text : String(displayValue).trim();
   const [copyState, setCopyState] = useState("idle");
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export default function ProductLinkCopy({ value, emptyText = "-", className = ""
         title={statusLabel}
         aria-label={statusLabel}
       >
-        <span className="product-link-copy-text">{text}</span>
+        <span className="product-link-copy-text">{displayText}</span>
       </button>
       {copyState === "copied" && (
         <span className="product-link-copy-alert" role="status">

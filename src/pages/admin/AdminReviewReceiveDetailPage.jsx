@@ -339,10 +339,32 @@ function formatBooleanExportValue(value) {
   return Boolean(value);
 }
 
+function getReviewReceiveExportAccountFields(row) {
+  const accountInfoInput = String(row.accountInfoInput ?? "").trim();
+
+  if (accountInfoInput) {
+    const parsedAccount = parseReviewReceiveAccount(accountInfoInput);
+
+    return {
+      bankName: parsedAccount.bank_name ?? "",
+      bankAccount: parsedAccount.bank_account ?? "",
+      accountHolder: parsedAccount.account_holder ?? ""
+    };
+  }
+
+  return {
+    bankName: row.bank_name ?? "",
+    bankAccount: row.bank_account ?? "",
+    accountHolder: row.account_holder ?? ""
+  };
+}
+
 function buildReviewReceiveDetailExportRows(rows, options = {}) {
-  const { sectionKey, rowNumberMap = {}, plannedDepositorName = "" } = options;
+  const { sectionKey, rowNumberMap = {}, plannedDepositorName = "", getPlannedDepositorName } = options;
 
   return rows.map((row) => {
+    const accountFields = getReviewReceiveExportAccountFields(row);
+    const resolvedPlannedDepositorName = getPlannedDepositorName?.(row) ?? plannedDepositorName;
     const baseRow = {
       순번: rowNumberMap[row.id] ?? "",
       배정: row.assign_name ?? "",
@@ -352,11 +374,13 @@ function buildReviewReceiveDetailExportRows(rows, options = {}) {
       구매계정: row.purchase_account ?? "",
       연락처: row.contact ?? "",
       주소: row.address ?? "",
-      계좌: row.accountInfoInput || formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder),
+      은행: accountFields.bankName,
+      계좌번호: accountFields.bankAccount,
+      예금주: accountFields.accountHolder,
       금액: row.amount ?? "",
       리뷰비: row.review_fee ?? "",
       사진: Array.isArray(row.photos) ? row.photos.join("\n") : "",
-      "입금자명(예정)": plannedDepositorName ?? "",
+      "입금자명(예정)": resolvedPlannedDepositorName ?? "",
       리뷰완료: formatBooleanExportValue(Boolean(row.is_review_verified)),
       입금완료: formatBooleanExportValue(Boolean(row.is_deposit_verified))
     };
@@ -393,8 +417,8 @@ const REVIEW_RECEIVE_ROW_FILTER_COLUMNS = [
   { key: "actual_depositor_name", label: "실제입금자명", type: "text", hiddenInPurchase: true }
 ];
 
-function getVisibleReviewReceiveRowFilterColumns(sectionKey) {
-  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.filter((column) => sectionKey !== "purchase" || !column.hiddenInPurchase);
+function getVisibleReviewReceiveRowFilterColumns(isPurchaseSection) {
+  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.filter((column) => !isPurchaseSection || !column.hiddenInPurchase);
 }
 
 function createEmptyReviewReceiveRowFilters() {
@@ -406,6 +430,9 @@ function createEmptyReviewReceiveRowFilters() {
 
 function createEmptySectionColumnFilters() {
   return {
+    allProducts: createEmptyReviewReceiveRowFilters(),
+    allProductsReview: createEmptyReviewReceiveRowFilters(),
+    allProductsComplete: createEmptyReviewReceiveRowFilters(),
     purchase: createEmptyReviewReceiveRowFilters(),
     review: createEmptyReviewReceiveRowFilters(),
     complete: createEmptyReviewReceiveRowFilters()
@@ -424,7 +451,7 @@ function formatBooleanFilterValue(value) {
 }
 
 function getReviewReceiveRowFilterValue(row, columnKey, context) {
-  const { rowNumberMap, plannedDepositorName } = context;
+  const { rowNumberMap, plannedDepositorName, getPlannedDepositorName } = context;
 
   if (columnKey === "row_number") {
     return rowNumberMap[row.id] ?? "";
@@ -439,7 +466,7 @@ function getReviewReceiveRowFilterValue(row, columnKey, context) {
   }
 
   if (columnKey === "planned_depositor_name") {
-    return plannedDepositorName ?? "";
+    return getPlannedDepositorName?.(row) ?? plannedDepositorName ?? "";
   }
 
   if (columnKey === "is_review_verified") {
@@ -620,7 +647,9 @@ export default function AdminReviewReceiveDetailPage() {
     !isLoadingCapabilities && !capabilitiesErrorMessage && capabilities.canVerifyDeposit;
   const [product, setProduct] = useState(null);
   const [bundleProducts, setBundleProducts] = useState([]);
-  const [activeProductId, setActiveProductId] = useState(Number(productId));
+  const [activeProductId, setActiveProductId] = useState(null);
+  const [selectedAllProductRowId, setSelectedAllProductRowId] = useState(null);
+  const [isAllProductsPanelCollapsed, setIsAllProductsPanelCollapsed] = useState(false);
   const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -631,11 +660,17 @@ export default function AdminReviewReceiveDetailPage() {
   const [selectedDeleteTargetRows, setSelectedDeleteTargetRows] = useState([]);
   const [isDeletingSelectedRows, setIsDeletingSelectedRows] = useState(false);
   const [sectionSearchQueries, setSectionSearchQueries] = useState({
+    allProducts: "",
+    allProductsReview: "",
+    allProductsComplete: "",
     purchase: "",
     review: "",
     complete: ""
   });
   const [collapsedSections, setCollapsedSections] = useState({
+    allProducts: false,
+    allProductsReview: true,
+    allProductsComplete: true,
     purchase: false,
     review: true,
     complete: true
@@ -758,11 +793,11 @@ export default function AdminReviewReceiveDetailPage() {
       }, {});
 
       const loadedBundleProducts = productItemsData?.length ? productItemsData : [productData];
-      const visibleBundleProducts = loadedBundleProducts.filter((item) => !isProductItemEmptyShell(item));
 
       setProduct(productData);
       setBundleProducts(loadedBundleProducts);
-      setActiveProductId(Number(visibleBundleProducts[0]?.id ?? productData.id));
+      setActiveProductId(null);
+      setSelectedAllProductRowId(null);
       setRows(
         sortReviewReceiveRowsByCreatedAt(
         (submissionData ?? []).map((item) =>
@@ -839,6 +874,12 @@ export default function AdminReviewReceiveDetailPage() {
       return next.size === prev.size ? prev : next;
     });
   }, [rows]);
+
+  useEffect(() => {
+    if (selectedAllProductRowId && !rows.some((row) => row.id === selectedAllProductRowId)) {
+      setSelectedAllProductRowId(null);
+    }
+  }, [rows, selectedAllProductRowId]);
 
   useEffect(() => {
     if (!openSectionColumnFilterKey) {
@@ -1005,7 +1046,7 @@ export default function AdminReviewReceiveDetailPage() {
     });
   };
 
-  const handleRowClick = (event, row) => {
+  const handleRowClick = (event, row, onActivate, selectRow = true) => {
     const target = event.target;
 
     if (
@@ -1015,7 +1056,10 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    toggleRowSelection(row.id);
+    onActivate?.(row);
+    if (selectRow) {
+      toggleRowSelection(row.id);
+    }
   };
 
   const openSelectedRowsDeleteDialog = (targetRows) => {
@@ -1028,13 +1072,19 @@ export default function AdminReviewReceiveDetailPage() {
     setSelectedDeleteTargetRows(rowsToDelete);
   };
 
-  const handleSectionExcelDownload = (sectionKey, title, targetRows) => {
+  const handleSectionExcelDownload = (sectionKey, title, targetRows, options = {}) => {
+    const {
+      sectionRowNumberMap = rowNumberMap,
+      sectionPlannedDepositorName = plannedDepositorName,
+      getSectionPlannedDepositorName,
+      productLabel = activeProduct?.title || activeProduct?.product_name || activeProductId
+    } = options;
     const exportRows = buildReviewReceiveDetailExportRows(targetRows, {
       sectionKey,
-      rowNumberMap,
-      plannedDepositorName
+      rowNumberMap: sectionRowNumberMap,
+      plannedDepositorName: sectionPlannedDepositorName,
+      getPlannedDepositorName: getSectionPlannedDepositorName
     });
-    const productLabel = activeProduct?.title || activeProduct?.product_name || activeProductId;
 
     downloadExcel(buildExportFilename(`구매상세_${productLabel}_${title}`), {
       name: title,
@@ -1494,7 +1544,7 @@ export default function AdminReviewReceiveDetailPage() {
     setRows((prev) => prev.filter((row) => Number(row.product_id) !== deletedProductId));
     setSelectedRowIds((prev) => new Set(Array.from(prev).filter((rowId) => !rows.find((row) => row.id === rowId && Number(row.product_id) === deletedProductId))));
     if (Number(activeProductId) === deletedProductId) {
-      setActiveProductId(Number(nextProducts[0]?.id ?? productId));
+      setActiveProductId(null);
     }
 
     showToast("품목을 삭제했습니다.", "success");
@@ -2314,6 +2364,53 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const visibleBundleProducts = bundleProducts.filter((item) => !isProductItemEmptyShell(item));
+  const bundleProductMap = new Map(visibleBundleProducts.map((item) => [Number(item.id), item]));
+  const getProductForRow = (row) => bundleProductMap.get(Number(row?.product_id)) ?? null;
+  const getPlannedDepositorNameForRow = (row) => getProductForRow(row)?.planned_depositor_name ?? "";
+  const {
+    sortedRows: allProductRows,
+    rowNumberMap: allProductRowNumberMap
+  } = buildReviewReceiveRowPositionMaps(rows);
+  const {
+    reviewRows: allProductReviewCompletedRows,
+    completeRows: allProductFullyCompletedRows
+  } = splitReviewReceiveRows(allProductRows);
+  const selectedAllProductRow = allProductRows.find((row) => row.id === selectedAllProductRowId) ?? null;
+  const selectedAllProduct = getProductForRow(selectedAllProductRow);
+  const allProductColumnFilterContext = {
+    rowNumberMap: allProductRowNumberMap,
+    getPlannedDepositorName: getPlannedDepositorNameForRow
+  };
+  const searchedAllProductRows = filterReviewReceiveRows(
+    allProductRows,
+    sectionSearchQueries.allProducts,
+    getPlannedDepositorNameForRow
+  );
+  const filteredAllProductRows = filterReviewReceiveRowsByColumnFilters(
+    searchedAllProductRows,
+    sectionColumnFilters.allProducts,
+    allProductColumnFilterContext
+  );
+  const searchedAllProductReviewCompletedRows = filterReviewReceiveRows(
+    allProductReviewCompletedRows,
+    sectionSearchQueries.allProductsReview,
+    getPlannedDepositorNameForRow
+  );
+  const searchedAllProductFullyCompletedRows = filterReviewReceiveRows(
+    allProductFullyCompletedRows,
+    sectionSearchQueries.allProductsComplete,
+    getPlannedDepositorNameForRow
+  );
+  const filteredAllProductReviewCompletedRows = filterReviewReceiveRowsByColumnFilters(
+    searchedAllProductReviewCompletedRows,
+    sectionColumnFilters.allProductsReview,
+    allProductColumnFilterContext
+  );
+  const filteredAllProductFullyCompletedRows = filterReviewReceiveRowsByColumnFilters(
+    searchedAllProductFullyCompletedRows,
+    sectionColumnFilters.allProductsComplete,
+    allProductColumnFilterContext
+  );
   const activeProduct = visibleBundleProducts.find((item) => Number(item.id) === Number(activeProductId)) ?? product;
   const activeRows = rows.filter((row) => Number(row.product_id) === Number(activeProductId));
   const { sortedRows, rowNumberMap, rowByNumberMap, maxRowNumber } = buildReviewReceiveRowPositionMaps(activeRows);
@@ -2472,7 +2569,7 @@ export default function AdminReviewReceiveDetailPage() {
     showToast(`리뷰비 ${updatedRows.length}건을 일괄 입력했습니다.`, "success");
   };
 
-  const renderTableColumns = (sectionKey) => (
+  const renderTableColumns = (isPurchaseSection, showPurchaseActions) => (
     <colgroup>
       <col className="review-col-index" />
       <col className="review-col-assign" />
@@ -2489,18 +2586,37 @@ export default function AdminReviewReceiveDetailPage() {
       <col className="review-col-planned-depositor" />
       <col className="review-col-check" />
       <col className="review-col-check" />
-      {sectionKey !== "purchase" && <col className="review-col-date" />}
-      {sectionKey !== "purchase" && <col className="review-col-actual-depositor" />}
-      {sectionKey === "purchase" && <col className="review-col-actions" />}
+      {!isPurchaseSection && <col className="review-col-date" />}
+      {!isPurchaseSection && <col className="review-col-actual-depositor" />}
+      {showPurchaseActions && <col className="review-col-actions" />}
     </colgroup>
   );
 
-  const renderSection = (sectionKey, title, description, totalRows, filteredRows) => {
+  const renderSection = (sectionKey, title, description, totalRows, filteredRows, options = {}) => {
+    const {
+      bodyIntro = null,
+      isSubsection = false,
+      isPurchaseSection = sectionKey === "purchase",
+      showPurchaseToolbar = isPurchaseSection,
+      showPurchaseActions = isPurchaseSection,
+      showAddRow = isPurchaseSection,
+      showSelectionActions = true,
+      selectRowsOnClick = true,
+      isReviewCompletionSection = sectionKey === "review",
+      sectionRowNumberMap = rowNumberMap,
+      sectionPlannedDepositorName = plannedDepositorName,
+      getSectionProductForRow = () => activeProduct,
+      getSectionPlannedDepositorName = (row) =>
+        getSectionProductForRow(row)?.planned_depositor_name ?? sectionPlannedDepositorName,
+      onRowActivate,
+      activeRowId = null,
+      exportProductLabel
+    } = options;
     const searchValue = sectionSearchQueries[sectionKey];
     const isCollapsed = Boolean(collapsedSections[sectionKey]);
     const sectionBodyId = `review-receive-section-body-${sectionKey}`;
     const columnFilters = sectionColumnFilters[sectionKey] ?? {};
-    const visibleFilterColumns = getVisibleReviewReceiveRowFilterColumns(sectionKey);
+    const visibleFilterColumns = getVisibleReviewReceiveRowFilterColumns(isPurchaseSection);
     const hasSearchQuery = Boolean(searchValue.trim());
     const hasActiveColumnFilters = hasActiveReviewReceiveRowFilters(columnFilters);
     const selectedRowsInSection = filteredRows.filter((row) => selectedRowIds.has(row.id));
@@ -2515,7 +2631,10 @@ export default function AdminReviewReceiveDetailPage() {
           : `${title} 상태의 제출 데이터가 없습니다.`;
 
     return (
-      <section className="dashboard-panel review-receive-section" aria-label={title}>
+      <section
+        className={`${isSubsection ? "review-receive-all-products-subsection" : "dashboard-panel"} review-receive-section`}
+        aria-label={title}
+      >
         <div className="review-receive-section-header">
           <div>
             <h2>{title}</h2>
@@ -2526,7 +2645,14 @@ export default function AdminReviewReceiveDetailPage() {
             <button
               type="button"
               className="review-receive-section-download-button"
-              onClick={() => handleSectionExcelDownload(sectionKey, title, filteredRows)}
+              onClick={() =>
+                handleSectionExcelDownload(sectionKey, title, filteredRows, {
+                  sectionRowNumberMap,
+                  sectionPlannedDepositorName,
+                  getSectionPlannedDepositorName,
+                  productLabel: exportProductLabel
+                })
+              }
               disabled={filteredRows.length === 0}
             >
               엑셀로 내려받기
@@ -2544,8 +2670,9 @@ export default function AdminReviewReceiveDetailPage() {
         </div>
 
         <div id={sectionBodyId} hidden={isCollapsed}>
+          {bodyIntro}
           <div className="review-receive-section-toolbar">
-            {sectionKey === "purchase" && (
+            {showPurchaseToolbar && (
               <div className="review-receive-toolbar-actions">
                 <div className="review-receive-toolbar-button-row">
                   <button type="button" className="admin-secondary-button" onClick={handleCopyPurchaseBuyers}>
@@ -2590,22 +2717,28 @@ export default function AdminReviewReceiveDetailPage() {
                 {!canVerifyDeposit && <p className="login-error">입금완료 처리 권한이 없습니다.</p>}
               </div>
             )}
-            <button
-              type="button"
-              className="review-receive-select-all-button"
-              onClick={() => toggleRowsSelection(filteredRows)}
-              disabled={filteredRows.length === 0}
-            >
-              {filteredRows.length > 0 && selectedRowsInSectionCount === filteredRows.length ? "전체 해제하기" : "전체 선택하기"}
-            </button>
-            <button
-              type="button"
-              className="review-receive-delete-selected-button"
-              onClick={() => openSelectedRowsDeleteDialog(filteredRows)}
-              disabled={selectedRowsInSectionCount === 0}
-            >
-              {selectedRowsInSectionCount > 0 ? `삭제하기 ${selectedRowsInSectionCount}` : "삭제하기"}
-            </button>
+            {showSelectionActions && (
+              <>
+                <button
+                  type="button"
+                  className="review-receive-select-all-button"
+                  onClick={() => toggleRowsSelection(filteredRows)}
+                  disabled={filteredRows.length === 0}
+                >
+                  {filteredRows.length > 0 && selectedRowsInSectionCount === filteredRows.length
+                    ? "전체 해제하기"
+                    : "전체 선택하기"}
+                </button>
+                <button
+                  type="button"
+                  className="review-receive-delete-selected-button"
+                  onClick={() => openSelectedRowsDeleteDialog(filteredRows)}
+                  disabled={selectedRowsInSectionCount === 0}
+                >
+                  {selectedRowsInSectionCount > 0 ? `삭제하기 ${selectedRowsInSectionCount}` : "삭제하기"}
+                </button>
+              </>
+            )}
             <input
               type="search"
               className="review-receive-search-input"
@@ -2617,8 +2750,14 @@ export default function AdminReviewReceiveDetailPage() {
           </div>
 
           <div className="table-scroll-wrap review-receive-detail-table-wrap">
-            <table className={`review-receive-table review-receive-table-${sectionKey}`}>
-              {renderTableColumns(sectionKey)}
+            <table
+              className={[
+                "review-receive-table",
+                `review-receive-table-${isPurchaseSection ? "purchase" : sectionKey}`,
+                showPurchaseActions ? "has-row-actions" : ""
+              ].filter(Boolean).join(" ")}
+            >
+              {renderTableColumns(isPurchaseSection, showPurchaseActions)}
               <thead>
                 <tr>
                   {visibleFilterColumns.map((column) => {
@@ -2638,13 +2777,13 @@ export default function AdminReviewReceiveDetailPage() {
                       />
                     );
                   })}
-                  {sectionKey === "purchase" && <th>관리</th>}
+                  {showPurchaseActions && <th>관리</th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={sectionKey === "purchase" ? 16 : 17}>{emptyMessage}</td>
+                    <td colSpan={isPurchaseSection ? (showPurchaseActions ? 16 : 15) : 17}>{emptyMessage}</td>
                   </tr>
                 ) : (
                   filteredRows.map((row) => (
@@ -2654,13 +2793,14 @@ export default function AdminReviewReceiveDetailPage() {
                         "review-receive-row",
                         row.isNew ? "is-new" : "",
                         row.isDirty ? "is-dirty" : "",
-                        selectedRowIds.has(row.id) ? "is-selected" : ""
+                        selectedRowIds.has(row.id) ? "is-selected" : "",
+                        activeRowId === row.id ? "is-context-active" : ""
                       ].filter(Boolean).join(" ")}
                       data-row-editor-id={row.id}
-                      onClick={(event) => handleRowClick(event, row)}
+                      onClick={(event) => handleRowClick(event, row, onRowActivate, selectRowsOnClick)}
                     >
-                      <td className="review-row-index">{rowNumberMap[row.id] ?? "-"}</td>
-                      {sectionKey === "purchase" && row.isEditing
+                      <td className="review-row-index">{sectionRowNumberMap[row.id] ?? "-"}</td>
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.assign_name,
@@ -2672,7 +2812,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.assign_name || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.order_number,
@@ -2684,7 +2824,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.order_number || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.buyer_name,
@@ -2696,7 +2836,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.buyer_name || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.recipient_name,
@@ -2708,7 +2848,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.recipient_name || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.purchase_account,
@@ -2720,7 +2860,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.purchase_account || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.contact,
@@ -2732,7 +2872,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.contact || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.address,
@@ -2744,7 +2884,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.address || "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             formatAccountInfo(row),
@@ -2756,7 +2896,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{formatAccountInfo(row)}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.amount == null ? "" : String(row.amount),
@@ -2768,7 +2908,7 @@ export default function AdminReviewReceiveDetailPage() {
                             />
                           )
                         : <td>{row.amount ?? "-"}</td>}
-                      {sectionKey === "purchase" && row.isEditing
+                      {showPurchaseActions && row.isEditing
                         ? renderEditableCell(
                             row,
                             row.review_fee == null ? "" : String(row.review_fee),
@@ -2798,7 +2938,7 @@ export default function AdminReviewReceiveDetailPage() {
                           )}
                         </div>
                       </td>
-                      <td>{activeProduct?.planned_depositor_name ?? "-"}</td>
+                      <td>{getSectionPlannedDepositorName(row) || "-"}</td>
                       <td>
                         <label className="pretty-checkbox">
                           <input
@@ -2821,8 +2961,8 @@ export default function AdminReviewReceiveDetailPage() {
                           <span className="checkmark" aria-hidden="true" />
                         </label>
                       </td>
-                      {sectionKey !== "purchase" &&
-                        (sectionKey === "review" ? (
+                      {!isPurchaseSection &&
+                        (isReviewCompletionSection ? (
                           <>
                             <td>
                               <input
@@ -2851,7 +2991,7 @@ export default function AdminReviewReceiveDetailPage() {
                             <td>{row.actual_depositor_name || "-"}</td>
                           </>
                         ))}
-                      {sectionKey === "purchase" && (
+                      {showPurchaseActions && (
                         <td>
                           <div className="table-cell-actions">
                             {row.isEditing && (
@@ -2892,7 +3032,7 @@ export default function AdminReviewReceiveDetailPage() {
                         </td>
                       )}
                     </tr>
-                    {sectionKey === "purchase" && row.isEditing && (
+                    {showPurchaseActions && row.isEditing && (
                       <tr className="review-receive-inline-fill-row" data-row-editor-id={row.id}>
                         <td colSpan={16}>
                           <div className="review-receive-inline-fill-box">
@@ -2922,7 +3062,7 @@ export default function AdminReviewReceiveDetailPage() {
                   </Fragment>
                 ))
               )}
-              {sectionKey === "purchase" && (
+              {showAddRow && (
                 <tr className="review-receive-add-row">
                   <td colSpan={15}>
                     <button
@@ -2943,6 +3083,8 @@ export default function AdminReviewReceiveDetailPage() {
       </section>
     );
   };
+
+  const allProductsPanelBodyId = "review-receive-all-products-panel-body";
 
   return (
     <>
@@ -2973,6 +3115,134 @@ export default function AdminReviewReceiveDetailPage() {
           </div>
         )}
       </section>
+
+      {!isLoading && !errorMessage && (
+        <section className="dashboard-panel review-receive-all-products-panel" aria-label="전체 품목">
+          <div className="review-receive-section-header">
+            <div>
+              <h2>전체 품목</h2>
+              <p>아래 모든 품목의 제출 데이터를 상태별로 한 번에 보여줍니다.</p>
+            </div>
+            <div className="review-receive-section-header-actions">
+              <button type="button" className="admin-secondary-button" onClick={openProductReviewerBulkModal}>
+                상품/리뷰어 일괄 입력
+              </button>
+              <button
+                type="button"
+                className="review-receive-section-toggle"
+                onClick={() => setIsAllProductsPanelCollapsed((prev) => !prev)}
+                aria-expanded={!isAllProductsPanelCollapsed}
+                aria-controls={allProductsPanelBodyId}
+              >
+                {isAllProductsPanelCollapsed ? "펼치기" : "접기"}
+              </button>
+            </div>
+          </div>
+
+          <div id={allProductsPanelBodyId} hidden={isAllProductsPanelCollapsed}>
+            <div className="detail-summary-grid review-receive-all-products-summary">
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">품명</span>
+                <strong>{selectedAllProduct?.product_name ?? ""}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">옵션</span>
+                <strong>{selectedAllProduct?.option_name ?? ""}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">리뷰형태</span>
+                <strong>{selectedAllProduct?.review_type ?? ""}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">제품비 입금구분</span>
+                <strong>
+                  {selectedAllProduct ? getProductDepositGbPartLabels(selectedAllProduct.deposit_GB).productFee : ""}
+                </strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">리뷰비 입금구분</span>
+                <strong>
+                  {selectedAllProduct ? getProductDepositGbPartLabels(selectedAllProduct.deposit_GB).reviewFee : ""}
+                </strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">설명</span>
+                <strong>{selectedAllProduct?.description ?? ""}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">링크</span>
+                <ProductLinkCopy value={selectedAllProduct?.product_link} emptyText="" />
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">상품 제목</span>
+                <strong>{selectedAllProduct?.title ?? ""}</strong>
+              </div>
+            </div>
+
+            {renderSection(
+              "allProducts",
+              "구매완료",
+              "리뷰완료나 입금완료 체크 여부와 관계없이 전체 품목의 모든 제출 데이터를 보여줍니다.",
+              allProductRows,
+              filteredAllProductRows,
+              {
+                isSubsection: true,
+                isPurchaseSection: true,
+                showPurchaseToolbar: false,
+                showPurchaseActions: false,
+                showAddRow: false,
+                showSelectionActions: false,
+                selectRowsOnClick: false,
+                sectionRowNumberMap: allProductRowNumberMap,
+                getSectionProductForRow: getProductForRow,
+                getSectionPlannedDepositorName: getPlannedDepositorNameForRow,
+                onRowActivate: (row) => setSelectedAllProductRowId(row.id),
+                activeRowId: selectedAllProductRowId,
+                exportProductLabel: product?.company_name || product?.bundle_id || product?.id
+              }
+            )}
+            {renderSection(
+              "allProductsReview",
+              "리뷰완료",
+              "전체 품목 중 리뷰완료는 체크됐고 입금완료는 아직 체크되지 않은 제출 데이터입니다.",
+              allProductReviewCompletedRows,
+              filteredAllProductReviewCompletedRows,
+              {
+                isSubsection: true,
+                isPurchaseSection: false,
+                isReviewCompletionSection: true,
+                showSelectionActions: false,
+                selectRowsOnClick: false,
+                sectionRowNumberMap: allProductRowNumberMap,
+                getSectionProductForRow: getProductForRow,
+                getSectionPlannedDepositorName: getPlannedDepositorNameForRow,
+                onRowActivate: (row) => setSelectedAllProductRowId(row.id),
+                activeRowId: selectedAllProductRowId,
+                exportProductLabel: product?.company_name || product?.bundle_id || product?.id
+              }
+            )}
+            {renderSection(
+              "allProductsComplete",
+              "전체완료",
+              "전체 품목 중 리뷰완료와 입금완료가 모두 체크된 제출 데이터입니다.",
+              allProductFullyCompletedRows,
+              filteredAllProductFullyCompletedRows,
+              {
+                isSubsection: true,
+                isPurchaseSection: false,
+                showSelectionActions: false,
+                selectRowsOnClick: false,
+                sectionRowNumberMap: allProductRowNumberMap,
+                getSectionProductForRow: getProductForRow,
+                getSectionPlannedDepositorName: getPlannedDepositorNameForRow,
+                onRowActivate: (row) => setSelectedAllProductRowId(row.id),
+                activeRowId: selectedAllProductRowId,
+                exportProductLabel: product?.company_name || product?.bundle_id || product?.id
+              }
+            )}
+          </div>
+        </section>
+      )}
 
       {!isLoading && !errorMessage && (
         <section className="dashboard-panel review-receive-bundle-panel" aria-label="리뷰받기 품목 목록">

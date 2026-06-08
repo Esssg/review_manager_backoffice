@@ -27,6 +27,9 @@ export function parseReviewReceiveAccount(value) {
 }
 
 function buildReviewReceiveSearchText(row, plannedDepositorName) {
+  const resolvedPlannedDepositorName =
+    typeof plannedDepositorName === "function" ? plannedDepositorName(row) : plannedDepositorName;
+
   return normalizeSearchValue(
     [
       row.assign_name,
@@ -39,7 +42,7 @@ function buildReviewReceiveSearchText(row, plannedDepositorName) {
       row.accountInfoInput || formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder),
       row.amount == null ? "" : String(row.amount),
       row.review_fee == null ? "" : String(row.review_fee),
-      plannedDepositorName,
+      resolvedPlannedDepositorName,
       row.deposited_at,
       row.actual_depositor_name
     ].join(" ")

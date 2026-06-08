@@ -41,24 +41,7 @@ import {
   getMissingRequiredFieldLabels
 } from "../../utils/reviewVerifyValidation";
 
-const PRODUCT_OVERVIEW_EXPORT_COLUMNS = PRODUCT_OVERVIEW_COLUMNS.reduce((columns, column) => {
-  if (column.key === "bank_name") {
-    return [
-      ...columns,
-      {
-        key: "bank_info",
-        label: "은행정보",
-        type: "bank_info"
-      }
-    ];
-  }
-
-  if (["bank_account", "account_holder"].includes(column.key)) {
-    return columns;
-  }
-
-  return [...columns, column];
-}, []);
+const PRODUCT_OVERVIEW_EXPORT_COLUMNS = PRODUCT_OVERVIEW_COLUMNS;
 const PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS = PRODUCT_OVERVIEW_EXPORT_COLUMNS.map((column) => column.key);
 
 function formatCellValue(value, type) {
@@ -78,13 +61,6 @@ function formatCellValue(value, type) {
 }
 
 function formatExcelCellValue(row, column) {
-  if (column.key === "bank_info") {
-    return [row.bank_name, row.bank_account, row.account_holder]
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean)
-      .join(" ");
-  }
-
   const value = row[column.key];
 
   if (column.type === "boolean") {

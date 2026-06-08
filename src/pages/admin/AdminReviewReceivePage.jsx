@@ -118,8 +118,43 @@ function formatMultiProductCell(product, value) {
   return isMultiProductBundleRow(product) ? "다중품목" : value;
 }
 
+function formatProductLinkPreview(value) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(line) ? line : `https://${line}`);
+        const hasRemainder = url.pathname !== "/" || Boolean(url.search || url.hash);
+        return `${url.host}/${hasRemainder ? "..." : ""}`;
+      } catch {
+        const textWithoutProtocol = line.replace(/^[a-z][a-z\d+.-]*:\/\//i, "");
+        const firstSlashIndex = textWithoutProtocol.indexOf("/");
+
+        if (firstSlashIndex === -1) {
+          return textWithoutProtocol;
+        }
+
+        const hasRemainder = firstSlashIndex < textWithoutProtocol.length - 1;
+        return `${textWithoutProtocol.slice(0, firstSlashIndex + 1)}${hasRemainder ? "..." : ""}`;
+      }
+    })
+    .join("\n");
+}
+
+function renderProductLinkCopy(value) {
+  return <ProductLinkCopy value={value} displayValue={formatProductLinkPreview(value)} />;
+}
+
 function renderMultiProductLinkCell(product, value) {
-  return isMultiProductBundleRow(product) ? "다중품목" : <ProductLinkCopy value={value} />;
+  return isMultiProductBundleRow(product) ? "다중품목" : renderProductLinkCopy(value);
 }
 
 function renderClampedCell(value) {
@@ -429,21 +464,27 @@ function getPublicReviewReceiveUrl(productId) {
   return `${window.location.origin}${publicPath}`;
 }
 
-const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS = [
-  { key: "manager_id", label: "담당자", type: "text", widthRatio: 5 },
-  { key: "title", label: "상품 제목", type: "text", widthRatio: 15 },
-  { key: "company_name", label: "업체명", type: "text", widthRatio: 5 },
-  { key: "product_name", label: "품명", type: "text", widthRatio: 15 },
+const REVIEW_RECEIVE_ROW_NUMBER_COLUMN_WIDTH_RATIO = 5;
+const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY = [
+  { key: "registered_date", label: "등록일", type: "dateRange", widthRatio: 5 },
+  { key: "company_name", label: "업체명", type: "text", widthRatio: 10 },
+  { key: "product_name", label: "품명", type: "text", widthRatio: 20 },
   { key: "option_name", label: "옵션", type: "text", widthRatio: 10 },
-  { key: "review_type", label: "리뷰형태", type: "text", widthRatio: 5 },
-  { key: "description", label: "설명", type: "text", widthRatio: 10 },
-  { key: "product_link", label: "링크", type: "text", widthRatio: 10 },
-  { key: "product_fee_deposit_GB", label: "제품비 입금구분", type: "text", widthRatio: 4 },
-  { key: "review_fee_deposit_GB", label: "리뷰비 입금구분", type: "text", widthRatio: 4 },
-  { key: "registered_date", label: "등록일", type: "dateRange", widthRatio: 5 }
+  { key: "review_type", label: "리뷰형태", type: "text", widthRatio: 10 },
+  { key: "product_fee_deposit_GB", label: "제품비 입금구분", type: "text", widthRatio: 5 },
+  { key: "review_fee_deposit_GB", label: "리뷰비 입금구분", type: "text", widthRatio: 5 }
 ];
-const REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO = 9;
-const REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO = 3;
+const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY = [
+  { key: "product_link", label: "링크", type: "text", widthRatio: 10 },
+  { key: "manager_id", label: "담당자", type: "text", widthRatio: 5 }
+];
+const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS = [
+  ...REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY,
+  ...REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY
+];
+const REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO = 10;
+const REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO = 5;
+const REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT = REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 3;
 
 function createEmptyReviewReceiveProductFilters() {
   return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.reduce((filters, column) => {
@@ -1235,15 +1276,20 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
           <div className="review-receive-product-list-scroll">
             <table className="review-receive-product-list-table">
               <colgroup>
-                {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.map((column) => (
+                <col style={{ width: `${REVIEW_RECEIVE_ROW_NUMBER_COLUMN_WIDTH_RATIO}%` }} />
+                {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY.map((column) => (
                   <col key={column.key} style={{ width: `${column.widthRatio}%` }} />
                 ))}
                 <col style={{ width: `${REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO}%` }} />
+                {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY.map((column) => (
+                  <col key={column.key} style={{ width: `${column.widthRatio}%` }} />
+                ))}
                 <col style={{ width: `${REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO}%` }} />
               </colgroup>
               <thead>
                 <tr>
-                  {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.map((column) => (
+                  <th className="review-receive-row-number-column">No.</th>
+                  {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY.map((column) => (
                     <ReviewReceiveProductFilterHeader
                       key={column.key}
                       column={column}
@@ -1256,13 +1302,25 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                     />
                   ))}
                   <th className="review-receive-summary-column">완료현황</th>
+                  {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY.map((column) => (
+                    <ReviewReceiveProductFilterHeader
+                      key={column.key}
+                      column={column}
+                      filterValue={productFilters[column.key]}
+                      isOpen={openProductFilterKey === column.key}
+                      onOpenChange={setOpenProductFilterKey}
+                      onFilterChange={handleProductFilterChange}
+                      onFilterReset={handleProductFilterReset}
+                      menuRef={productFilterRef}
+                    />
+                  ))}
                   <th className="review-receive-actions-column">관리</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 2}>
+                    <td colSpan={REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT}>
                       {products.length === 0
                         ? "등록된 리뷰받기 상품이 없습니다."
                         : hasActiveProductFilters
@@ -1271,7 +1329,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                     </td>
                   </tr>
                 ) : (
-                  filteredProducts.map((product) => {
+                  filteredProducts.map((product, productIndex) => {
                     const isMultiProductBundle = isMultiProductBundleRow(product);
                     const bundleKey = getBundleKey(product);
                     const visibleItems = getBundleVisibleItems(product);
@@ -1283,18 +1341,17 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       className="clickable-row"
                       onClick={() => navigate(`/admin/review-receive/specific/${product.id}`)}
                     >
-                      <td>{renderNoWrapFitCell(product.manager_id)}</td>
-                      <td>{renderClampedCell(formatMultiProductCell(product, product.title ?? "-"))}</td>
+                      <td className="review-receive-row-number-cell">{productIndex + 1}</td>
+                      <td>{renderClampedCell(formatDisplayDate(product.product_date ?? product.created_at))}</td>
                       <td>{renderNoWrapFitCell(product.company_name)}</td>
                       <td>{renderClampedCell(formatMultiProductCell(product, product.product_name ?? "-"))}</td>
                       <td>{renderClampedCell(formatMultiProductCell(product, product.option_name ?? "-"))}</td>
                       <td>{renderClampedCell(formatMultiProductCell(product, product.review_type ?? "-"))}</td>
-                      <td>{renderClampedCell(formatMultiProductCell(product, product.description ?? "-"))}</td>
-                      <td>{renderMultiProductLinkCell(product, product.product_link)}</td>
                       <td>{renderNoWrapFitCell(formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee))}</td>
                       <td>{renderNoWrapFitCell(formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee))}</td>
-                      <td>{renderClampedCell(formatDisplayDate(product.product_date ?? product.created_at))}</td>
                       <td className="review-receive-summary-cell">{renderClampedCell(formatMultiProductCell(product, getReviewReceiveSubmissionSummary(product)))}</td>
+                      <td>{renderMultiProductLinkCell(product, product.product_link)}</td>
+                      <td>{renderNoWrapFitCell(product.manager_id)}</td>
                       <td className="review-receive-actions-cell">
                         <div className="review-receive-row-actions">
                           <button
@@ -1350,7 +1407,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                     </tr>
                     {isMultiProductBundle && isExpanded && (
                       <tr className="review-receive-bundle-expanded-row">
-                        <td colSpan={REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 2}>
+                        <td colSpan={REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT}>
                           {visibleItems.length === 0 ? (
                             <div className="review-receive-bundle-empty">등록된 품목이 없습니다. 상세 화면에서 품목을 추가해주세요.</div>
                           ) : (
@@ -1379,7 +1436,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                                       <td>{renderClampedCell(item.option_name)}</td>
                                       <td>{renderClampedCell(item.review_type)}</td>
                                       <td>{renderClampedCell(item.description)}</td>
-                                      <td><ProductLinkCopy value={item.product_link} /></td>
+                                      <td>{renderProductLinkCopy(item.product_link)}</td>
                                       <td>{renderNoWrapFitCell(getProductDepositGbPartLabels(item.deposit_GB).productFee)}</td>
                                       <td>{renderNoWrapFitCell(getProductDepositGbPartLabels(item.deposit_GB).reviewFee)}</td>
                                       <td>{renderClampedCell(getReviewReceiveSubmissionSummary(item))}</td>
