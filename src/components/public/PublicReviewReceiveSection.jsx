@@ -18,6 +18,9 @@ function renderPhotoCell(row, onOpenPhotoViewer) {
 
 function getMobileFieldItems(row) {
   return [
+    { label: "품명", value: row.product_name || "-" },
+    { label: "옵션", value: row.option_name || "-" },
+    { label: "리뷰형태", value: row.review_type || "-" },
     { label: "주문번호", value: row.order_number || "-" },
     { label: "구매자", value: row.buyer_name || "-" },
     { label: "수취인", value: row.recipient_name || "-" },
@@ -45,7 +48,7 @@ export default function PublicReviewReceiveSection({
   onOpenPhotoViewer,
   onOpenPhotoManager
 }) {
-  const emptyColumnCount = 6;
+  const emptyColumnCount = 9;
 
   return (
     <section className="dashboard-panel review-receive-section public-review-section" aria-label={title}>
@@ -68,7 +71,7 @@ export default function PublicReviewReceiveSection({
               <article key={row.id} className="public-review-mobile-card">
                 <div className="public-review-mobile-card-header">
                   <div>
-                    <span className="public-review-mobile-card-eyebrow">{row.order_number || "주문번호 없음"}</span>
+                    <span className="public-review-mobile-card-eyebrow">{row.product_name || "품명 없음"}</span>
                     <h3>{row.recipient_name || row.buyer_name || "제출 데이터"}</h3>
                   </div>
                 </div>
@@ -104,6 +107,9 @@ export default function PublicReviewReceiveSection({
       <div className="table-scroll-wrap">
         <table className={`review-receive-table public-review-table public-review-table-${sectionKey}`}>
           <colgroup>
+            <col className="review-col-product" />
+            <col className="review-col-option" />
+            <col className="review-col-review-type" />
             <col className="review-col-order" />
             <col className="review-col-name" />
             <col className="review-col-name" />
@@ -113,6 +119,9 @@ export default function PublicReviewReceiveSection({
           </colgroup>
           <thead>
             <tr>
+              <th>품명</th>
+              <th>옵션</th>
+              <th>리뷰형태</th>
               <th>주문번호</th>
               <th>구매자</th>
               <th>수취인</th>
@@ -129,6 +138,9 @@ export default function PublicReviewReceiveSection({
             ) : (
               rows.map((row) => (
                 <tr key={row.id} className="review-receive-row">
+                  <td>{row.product_name || "-"}</td>
+                  <td>{row.option_name || "-"}</td>
+                  <td>{row.review_type || "-"}</td>
                   <td>{row.order_number || "-"}</td>
                   <td>{row.buyer_name || "-"}</td>
                   <td>{row.recipient_name || "-"}</td>

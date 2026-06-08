@@ -54,24 +54,21 @@
   gap: 16px;
 }
 
-.public-review-product-heading {
+.public-review-products-panel {
   display: flex;
-  justify-content: space-between;
-  align-items: end;
+  flex-direction: column;
   gap: 16px;
 }
 
-.public-review-product-heading strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 20px;
+.public-review-products-panel .detail-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.public-review-product-heading p {
-  margin: 0;
-  max-width: 420px;
-  color: var(--text-subtle);
-  text-align: right;
+.public-review-result-search-field span {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0369a1;
 }
 
 .public-review-lookup-form {
@@ -172,6 +169,19 @@
   margin: 0;
 }
 
+.public-review-result-search-field {
+  display: flex;
+  flex: 1;
+  max-width: 420px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.public-review-result-search-field .public-review-input {
+  height: 40px;
+  font-size: 14px;
+}
+
 .public-review-empty-state {
   text-align: center;
 }
@@ -205,6 +215,34 @@
 
 .public-review-table-purchase {
   table-layout: fixed;
+}
+
+.public-review-table .review-col-product {
+  width: 14%;
+}
+
+.public-review-table .review-col-option {
+  width: 9%;
+}
+
+.public-review-table .review-col-review-type {
+  width: 8%;
+}
+
+.public-review-table .review-col-order {
+  width: 9%;
+}
+
+.public-review-table .review-col-name {
+  width: 7%;
+}
+
+.public-review-table .review-col-purchase-account {
+  width: 11%;
+}
+
+.public-review-table .review-col-photo {
+  width: 12%;
 }
 
 .public-review-col-assign {
@@ -465,16 +503,14 @@
 
 @media (max-width: 960px) {
   .public-review-header,
-  .public-review-product-heading,
   .public-review-lookup-form,
   .public-review-access-note {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .public-review-product-heading p {
+  .public-review-result-search-field {
     max-width: none;
-    text-align: left;
   }
 
   .public-review-header h1 {
@@ -490,6 +526,10 @@
 @media (max-width: 768px) {
   .public-review-page {
     padding: 24px 14px 40px;
+  }
+
+  .public-review-products-panel .detail-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .public-review-shell {

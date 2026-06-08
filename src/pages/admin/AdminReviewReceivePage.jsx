@@ -114,8 +114,23 @@ function isMultiProductBundleRow(product) {
   return Boolean(product?.isMultiProductBundle);
 }
 
-function formatMultiProductCell(product, value) {
-  return isMultiProductBundleRow(product) ? "다중품목" : value;
+const UNREGISTERED_PRODUCT_ITEM_TEXT = "품목 미등록";
+
+function hasRegisteredBundleItem(product) {
+  if (!isMultiProductBundleRow(product)) {
+    return true;
+  }
+
+  return Array.isArray(product?.bundleVisibleItems) && product.bundleVisibleItems.length > 0;
+}
+
+function formatProductItemCell(product, value, emptyText = "-") {
+  if (!hasRegisteredBundleItem(product)) {
+    return UNREGISTERED_PRODUCT_ITEM_TEXT;
+  }
+
+  const text = String(value ?? "").trim();
+  return text ? value : emptyText;
 }
 
 function formatProductLinkPreview(value) {
@@ -153,8 +168,12 @@ function renderProductLinkCopy(value) {
   return <ProductLinkCopy value={value} displayValue={formatProductLinkPreview(value)} />;
 }
 
-function renderMultiProductLinkCell(product, value) {
-  return isMultiProductBundleRow(product) ? "다중품목" : renderProductLinkCopy(value);
+function renderProductItemLinkCell(product, value) {
+  if (!hasRegisteredBundleItem(product)) {
+    return UNREGISTERED_PRODUCT_ITEM_TEXT;
+  }
+
+  return renderProductLinkCopy(value);
 }
 
 function renderClampedCell(value) {
@@ -242,8 +261,9 @@ function buildReviewReceiveBundleRows(products = []) {
 
   return Array.from(groups.values()).map((items) => {
     const sortedItems = [...items].sort((left, right) => Number(left.id) - Number(right.id));
-    const representative = sortedItems[0];
     const visibleItems = sortedItems.filter((item) => !isBundleShellProduct(item));
+    const representative = sortedItems[0];
+    const firstVisibleItem = visibleItems[0] ?? null;
 
     if (sortedItems.length === 1 && !isBundleShellProduct(representative)) {
       return {
@@ -257,12 +277,14 @@ function buildReviewReceiveBundleRows(products = []) {
 
     return {
       ...representative,
-      title: "다중품목",
-      product_name: "다중품목",
-      option_name: "다중품목",
-      review_type: "다중품목",
-      description: "다중품목",
-      product_link: "다중품목",
+      title: firstVisibleItem?.title ?? representative.title,
+      product_name: firstVisibleItem?.product_name ?? null,
+      option_name: firstVisibleItem?.option_name ?? null,
+      review_type: firstVisibleItem?.review_type ?? null,
+      description: firstVisibleItem?.description ?? null,
+      product_link: firstVisibleItem?.product_link ?? null,
+      planned_depositor_name: firstVisibleItem?.planned_depositor_name ?? representative.planned_depositor_name,
+      deposit_GB: firstVisibleItem?.deposit_GB ?? representative.deposit_GB,
       submissions: visibleItems.flatMap((item) => item.submissions ?? []),
       bundleItems: sortedItems,
       bundleVisibleItems: visibleItems,
@@ -494,6 +516,10 @@ function createEmptyReviewReceiveProductFilters() {
 }
 
 function getReviewReceiveProductFilterValue(product, columnKey) {
+  if (!hasRegisteredBundleItem(product) && columnKey !== "registered_date" && columnKey !== "company_name" && columnKey !== "manager_id") {
+    return UNREGISTERED_PRODUCT_ITEM_TEXT;
+  }
+
   if (columnKey === "product_fee_deposit_GB") {
     return getProductDepositGbPartLabels(product.deposit_GB).productFee;
   }
@@ -1344,13 +1370,13 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       <td className="review-receive-row-number-cell">{productIndex + 1}</td>
                       <td>{renderClampedCell(formatDisplayDate(product.product_date ?? product.created_at))}</td>
                       <td>{renderNoWrapFitCell(product.company_name)}</td>
-                      <td>{renderClampedCell(formatMultiProductCell(product, product.product_name ?? "-"))}</td>
-                      <td>{renderClampedCell(formatMultiProductCell(product, product.option_name ?? "-"))}</td>
-                      <td>{renderClampedCell(formatMultiProductCell(product, product.review_type ?? "-"))}</td>
-                      <td>{renderNoWrapFitCell(formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee))}</td>
-                      <td>{renderNoWrapFitCell(formatMultiProductCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee))}</td>
-                      <td className="review-receive-summary-cell">{renderClampedCell(formatMultiProductCell(product, getReviewReceiveSubmissionSummary(product)))}</td>
-                      <td>{renderMultiProductLinkCell(product, product.product_link)}</td>
+                      <td>{renderClampedCell(formatProductItemCell(product, product.product_name))}</td>
+                      <td>{renderClampedCell(formatProductItemCell(product, product.option_name))}</td>
+                      <td>{renderClampedCell(formatProductItemCell(product, product.review_type))}</td>
+                      <td>{renderNoWrapFitCell(formatProductItemCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee))}</td>
+                      <td>{renderNoWrapFitCell(formatProductItemCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee))}</td>
+                      <td className="review-receive-summary-cell">{renderClampedCell(getReviewReceiveSubmissionSummary(product))}</td>
+                      <td>{renderProductItemLinkCell(product, product.product_link)}</td>
                       <td>{renderNoWrapFitCell(product.manager_id)}</td>
                       <td className="review-receive-actions-cell">
                         <div className="review-receive-row-actions">
@@ -1369,6 +1395,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                           </button>
                           {activeActionProductId === product.id && (
                             <div className="review-receive-row-action-menu" onClick={(event) => event.stopPropagation()}>
+                              <button type="button" onClick={() => handleCopyPublicUrl(product)}>
+                                URL 복사하기
+                              </button>
                               {isMultiProductBundle ? (
                                 <button
                                   type="button"
@@ -1381,9 +1410,6 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                                 </button>
                               ) : (
                                 <>
-                                  <button type="button" onClick={() => handleCopyPublicUrl(product)}>
-                                    URL 생성하기
-                                  </button>
                                   <button type="button" onClick={() => handleCopyReviewVerifiedRows(product)}>
                                     리뷰작성복사
                                   </button>

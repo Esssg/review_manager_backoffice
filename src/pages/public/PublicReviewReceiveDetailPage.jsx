@@ -6,7 +6,7 @@ import PublicReviewReceiveSection from "../../components/public/PublicReviewRece
 import {
   commitPublicReviewReceivePhotoUpload,
   fetchPublicReviewReceiveEvidencePhotos,
-  fetchPublicReviewReceiveProduct,
+  fetchPublicReviewReceiveProductBundle,
   fetchPublicReviewReceiveSubmissions,
   preparePublicReviewReceivePhotoUpload,
   rollbackPublicReviewReceivePhotoUpload
@@ -19,6 +19,7 @@ const PUBLIC_LOOKUP_OPTIONS = [
   { value: "assign_name", label: "배정명" },
   { value: "account_holder", label: "예금주" }
 ];
+const UNREGISTERED_PRODUCT_ITEM_TEXT = "품목 미등록";
 
 function getLookupValueStorageKey(productId) {
   return `review_receive_public_name:${productId}`;
@@ -70,6 +71,21 @@ function getLookupTypePlaceholder(lookupType) {
   return `${getLookupTypeLabel(lookupType)}을 입력해주세요`;
 }
 
+function formatPublicDisplayDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const inputValue = typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : "";
+  const date = inputValue ? new Date(`${inputValue}T00:00:00`) : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleDateString("ko-KR");
+}
+
 function getPublicPlannedDepositorName(product) {
   const storedPlannedDepositorName = String(product?.planned_depositor_name ?? "").trim();
   const generatedPlannedDepositorName = formatPlannedDepositorName(product?.product_date, product?.company_name);
@@ -108,6 +124,55 @@ function getPublicDepositorNames(product) {
         reviewFeeDepositorName: plannedDepositorName
       };
   }
+}
+
+function isPublicProductItemEmptyShell(product) {
+  return [
+    product?.title,
+    product?.product_name,
+    product?.option_name,
+    product?.review_type,
+    product?.description,
+    product?.planned_depositor_name
+  ].every((value) => !String(value ?? "").trim());
+}
+
+function getPublicProductDisplayValue(product, field, emptyText = "-") {
+  if (!product || isPublicProductItemEmptyShell(product)) {
+    return UNREGISTERED_PRODUCT_ITEM_TEXT;
+  }
+
+  const value = String(product[field] ?? "").trim();
+  return value || emptyText;
+}
+
+function normalizePublicSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s./\\|_-]+/g, "");
+}
+
+function getPublicRowSearchText(row) {
+  return [
+    row.product_name,
+    row.option_name,
+    row.review_type,
+    row.order_number,
+    row.buyer_name,
+    row.recipient_name,
+    row.purchase_account
+  ].join(" ");
+}
+
+function filterPublicReviewRows(rows, searchQuery) {
+  const searchText = normalizePublicSearchText(searchQuery);
+
+  if (!searchText) {
+    return rows;
+  }
+
+  return rows.filter((row) => normalizePublicSearchText(getPublicRowSearchText(row)).includes(searchText));
 }
 
 function hasPhotoDraftChanges(draft) {
@@ -211,7 +276,9 @@ export default function PublicReviewReceiveDetailPage() {
   const [activeLookupType, setActiveLookupType] = useState(() => readStoredLookupType(productId));
   const [lookupVersion, setLookupVersion] = useState(() => (readStoredAssignName(productId) ? 1 : 0));
   const [product, setProduct] = useState(null);
+  const [bundleProducts, setBundleProducts] = useState([]);
   const [rows, setRows] = useState([]);
+  const [rowSearchQuery, setRowSearchQuery] = useState("");
   const [photoDrafts, setPhotoDrafts] = useState({});
   const [isProductLoading, setIsProductLoading] = useState(true);
   const [isRowsLoading, setIsRowsLoading] = useState(false);
@@ -274,7 +341,9 @@ export default function PublicReviewReceiveDetailPage() {
     setActiveLookupType(storedLookupType);
     setLookupVersion(storedName ? 1 : 0);
     setProduct(null);
+    setBundleProducts([]);
     setRows([]);
+    setRowSearchQuery("");
     setLookupErrorMessage("");
     setFormErrorMessage("");
     setPhotoStatusMessage("");
@@ -289,20 +358,22 @@ export default function PublicReviewReceiveDetailPage() {
       setIsProductLoading(true);
       setProductErrorMessage("");
 
-      const { data, error } = await fetchPublicReviewReceiveProduct(productId);
+      const { data, error } = await fetchPublicReviewReceiveProductBundle(productId);
 
       if (!isMounted) {
         return;
       }
 
-      if (error || !data) {
+      if (error || !data?.product) {
         setProduct(null);
+        setBundleProducts([]);
         setProductErrorMessage("존재하지 않거나 공개 접근할 수 없는 상품입니다.");
         setIsProductLoading(false);
         return;
       }
 
-      setProduct(data);
+      setProduct(data.product);
+      setBundleProducts(data.products ?? [data.product]);
       setIsProductLoading(false);
     };
 
@@ -327,8 +398,10 @@ export default function PublicReviewReceiveDetailPage() {
       setIsRowsLoading(true);
       setLookupErrorMessage("");
 
+      const searchableProducts = bundleProducts.length > 0 ? bundleProducts : [product];
+      const searchableProductIds = searchableProducts.map((item) => item?.id).filter((id) => id != null);
       const { data: submissionData, error: submissionsError } = await fetchPublicReviewReceiveSubmissions(
-        productId,
+        searchableProductIds,
         activeLookupType,
         activeName
       );
@@ -368,19 +441,28 @@ export default function PublicReviewReceiveDetailPage() {
       }, {});
 
       const currentDrafts = photoDraftsRef.current;
+      const productMap = new Map(searchableProducts.map((item) => [Number(item.id), item]));
       const lockedDraftRowIds = [];
       const nextRows = sortReviewReceiveRowsByCreatedAt(
         (submissionData ?? []).map((item) => {
+          const rowProduct = productMap.get(Number(item.product_id)) ?? null;
           const serverPhotos = photoMap[item.id] ?? [];
           const rowDraftKey = String(item.id);
           const draft = currentDrafts[rowDraftKey];
+          const rowWithProduct = {
+            ...item,
+            product: rowProduct,
+            product_name: getPublicProductDisplayValue(rowProduct, "product_name"),
+            option_name: getPublicProductDisplayValue(rowProduct, "option_name"),
+            review_type: getPublicProductDisplayValue(rowProduct, "review_type")
+          };
 
           if (item.is_review_verified && draft) {
             lockedDraftRowIds.push(rowDraftKey);
-            return buildRenderableRow(item, serverPhotos, null);
+            return buildRenderableRow(rowWithProduct, serverPhotos, null);
           }
 
-          return buildRenderableRow(item, serverPhotos, draft ?? null);
+          return buildRenderableRow(rowWithProduct, serverPhotos, draft ?? null);
         })
       );
 
@@ -417,7 +499,7 @@ export default function PublicReviewReceiveDetailPage() {
     return () => {
       isMounted = false;
     };
-  }, [activeLookupType, activeName, lookupVersion, product, productId]);
+  }, [activeLookupType, activeName, bundleProducts, lookupVersion, product]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -435,6 +517,7 @@ export default function PublicReviewReceiveDetailPage() {
     setFormErrorMessage("");
     setLookupErrorMessage("");
     setPhotoStatusMessage("");
+    setRowSearchQuery("");
     setActiveName(trimmedName);
     setActiveLookupType(lookupType);
     setLookupName(trimmedName);
@@ -575,7 +658,7 @@ export default function PublicReviewReceiveDetailPage() {
       try {
         if ((nextDraft.newPhotos ?? []).length > 0) {
           const { data: prepareData, error: prepareError } = await preparePublicReviewReceivePhotoUpload({
-            productId: Number(productId),
+            productId: Number(photoEditor.row.product_id),
             submissionId: Number(photoEditor.row.id),
             assignName: photoEditor.row.assign_name,
             files: nextDraft.newPhotos.map((photo) => ({
@@ -616,7 +699,7 @@ export default function PublicReviewReceiveDetailPage() {
         }));
 
         const { data: commitData, error: commitError } = await commitPublicReviewReceivePhotoUpload({
-          productId: Number(productId),
+          productId: Number(photoEditor.row.product_id),
           submissionId: Number(photoEditor.row.id),
           assignName: photoEditor.row.assign_name,
           removedImageUrls: photoEditor.row.serverPhotos ?? [],
@@ -655,7 +738,7 @@ export default function PublicReviewReceiveDetailPage() {
       } catch (error) {
         if (uploadedFiles.length > 0) {
           await rollbackPublicReviewReceivePhotoUpload({
-            productId: Number(productId),
+            productId: Number(photoEditor.row.product_id),
             submissionId: Number(photoEditor.row.id),
             assignName: photoEditor.row.assign_name,
             objectKeys: uploadedFiles.map((item) => item.objectKey)
@@ -673,9 +756,10 @@ export default function PublicReviewReceiveDetailPage() {
     persistPhotoChanges();
   };
 
-  const lookupTypeLabel = getLookupTypeLabel(lookupType);
   const activeLookupTypeLabel = getLookupTypeLabel(activeLookupType);
   const publicDepositorNames = getPublicDepositorNames(product);
+  const filteredRows = filterPublicReviewRows(rows, rowSearchQuery);
+  const hasRowSearchQuery = rowSearchQuery.trim() !== "";
 
   return (
     <div className="public-review-page">
@@ -688,11 +772,15 @@ export default function PublicReviewReceiveDetailPage() {
         </header>
 
         {!isProductLoading && !productErrorMessage && product && (
-          <section className="dashboard-panel" aria-label="리뷰받기 상품 정보">
+          <section className="dashboard-panel public-review-products-panel" aria-label="리뷰받기 상품 정보">
             <div className="detail-summary-grid">
               <div className="detail-summary-item">
-                <span className="detail-summary-label">품명</span>
-                <strong>{product.product_name ?? "-"}</strong>
+                <span className="detail-summary-label">구매일자</span>
+                <strong>{formatPublicDisplayDate(product.product_date)}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-label">업체명</span>
+                <strong>{product.company_name || "-"}</strong>
               </div>
               <div className="detail-summary-item">
                 <span className="detail-summary-label">제품비 입금자명</span>
@@ -769,13 +857,25 @@ export default function PublicReviewReceiveDetailPage() {
             {!isRowsLoading && !lookupErrorMessage && rows.length > 0 && (
               <>
                 <div className="public-review-access-note">
-                  <span className="status-badge">{`${rows.length}건 조회됨`}</span>
+                  <span className="status-badge">
+                    {hasRowSearchQuery ? `${filteredRows.length}/${rows.length}건 조회됨` : `${rows.length}건 조회됨`}
+                  </span>
+                  <label className="public-review-result-search-field">
+                    <span>결과 검색</span>
+                    <input
+                      type="search"
+                      className="public-review-input"
+                      value={rowSearchQuery}
+                      onChange={(event) => setRowSearchQuery(event.target.value)}
+                      placeholder="품명, 주문번호, 구매자 검색"
+                    />
+                  </label>
                 </div>
                 {photoStatusMessage && <p className="login-message">{photoStatusMessage}</p>}
                 <PublicReviewReceiveSection
                   sectionKey="purchase"
                   title="구매내역"
-                  rows={rows}
+                  rows={filteredRows}
                   onOpenPhotoViewer={openPhotoViewer}
                   onOpenPhotoManager={openPhotoManager}
                 />

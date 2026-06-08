@@ -243,8 +243,8 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `admins.can_verify_deposit`는 `submissions.is_deposit_verified`, `deposited_at`, `actual_depositor_name`을 수정하는 입금완료 처리 권한입니다. `aram2525`, `kimhanbi77`은 false, 그 외 계정은 true로 관리합니다.
 - `products`에서는 `deposit_name`, `review_fee`가 제거됐고, `company_name`, `option_name`, `review_type`, `planned_depositor_name`이 관리됩니다.
 - `products.product_date`는 리뷰받기 목록의 등록일 표시와 상품 추가/수정 입력에 사용합니다. 추가 마이그레이션은 기존 데이터를 `created_at`의 날짜값으로 채웁니다.
-- `products.deposit_GB`는 리뷰받기 상품의 제품비/리뷰비 입금구분 조합에 사용합니다. 관리자 `/admin/review-receive/*` 화면에서는 `제품비 입금구분`, `리뷰비 입금구분`으로 나누어 표시합니다. 구매자용 `/review-receive/specific/:productId` 공개 화면에서는 이 값을 기준으로 `제품비 입금자명`, `리뷰비 입금자명`을 계산해 표시합니다.
-- `products.bundle_id`는 리뷰받기 화면에서 여러 `products` row를 같은 묶음으로 보여주기 위한 값입니다. 기존 단일 상품은 `bundle_id = id`이며, 같은 번들에 두 번째 이후 품목을 추가할 때는 첫 품목의 `bundle_id`를 그대로 사용합니다. 리뷰받기 외 상품전체보기, 내보내기, 사진내려받기, 파일 업로드 등은 기본적으로 개별 `products` row 기준을 유지합니다.
+- `products.deposit_GB`는 리뷰받기 상품의 제품비/리뷰비 입금구분 조합에 사용합니다. 관리자 `/admin/review-receive/*` 화면에서는 `제품비 입금구분`, `리뷰비 입금구분`으로 나누어 표시합니다. 구매자용 `/review-receive/specific/:productId` 공개 화면에서는 각 품목의 이 값을 기준으로 `제품비 입금자명`, `리뷰비 입금자명`을 계산해 표시합니다.
+- `products.bundle_id`는 리뷰받기 화면에서 여러 `products` row를 같은 묶음으로 보여주기 위한 값입니다. 기존 단일 상품은 `bundle_id = id`이며, 같은 번들에 두 번째 이후 품목을 추가할 때는 첫 품목의 `bundle_id`를 그대로 사용합니다. 관리자 리뷰받기 목록의 공개 URL은 묶음 상품별 1개만 복사하고, 구매자용 공개 화면은 URL 상품과 같은 `bundle_id`의 품목과 submissions를 함께 조회합니다. 리뷰받기 외 상품전체보기, 내보내기, 사진내려받기, 파일 업로드 등은 기본적으로 개별 `products` row 기준을 유지합니다.
 - `products.product_link`는 상품 링크 저장용 컬럼입니다. 리뷰받기 상품/리뷰어 일괄 입력과 상품/품목 저장 시 `description` 안에 `http://` 또는 `https://`로 시작하는 줄이 있으면 이 컬럼으로 분리하고, `description`에는 링크가 아닌 설명만 저장합니다.
 - `submissions`에는 `assign_name`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name`, `review_fee`가 추가됐습니다.
 - `admin_menu_permissions`는 관리자별 메뉴 노출 권한을 관리하며, 현재 `2sssg` 계정에 `대시보드`, `상품`, `리뷰받기`, `상품전체보기`, `내보내기`, `파일 업로드` 권한 6건이 들어 있습니다.

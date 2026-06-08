@@ -1552,18 +1552,6 @@ export default function AdminReviewReceiveDetailPage() {
     setIsDeletingProductItem(false);
   };
 
-  const handleCopyProductItemPublicUrl = async (item) => {
-    const publicPath = `/review-receive/specific/${item.id}`;
-    const url = typeof window === "undefined" ? publicPath : `${window.location.origin}${publicPath}`;
-
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast("품목 공개 URL을 클립보드에 복사했습니다.", "success");
-    } catch {
-      showToast("클립보드 복사에 실패했습니다. 브라우저 권한을 확인해주세요.", "error");
-    }
-  };
-
   const openRowEditor = (rowId) => {
     setEditingRowId(rowId);
     setRows((prev) =>
@@ -3282,9 +3270,6 @@ export default function AdminReviewReceiveDetailPage() {
                       <p>{`${itemRows.length}개 제출 데이터 / 상품 ID ${item.id}`}</p>
                     </div>
                     <div className="review-receive-product-item-actions">
-                      <button type="button" className="admin-secondary-button" onClick={() => handleCopyProductItemPublicUrl(item)}>
-                        URL 복사
-                      </button>
                       <button type="button" className="admin-secondary-button" onClick={() => openEditProductItemModal(item)}>
                         정보 입력/수정
                       </button>

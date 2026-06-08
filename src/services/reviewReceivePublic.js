@@ -1,9 +1,9 @@
 import { supabase } from "../lib/supabase";
 
 const PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT =
-  "id,title,product_name,option_name,review_type,description,planned_depositor_name,product_date,company_name,\"deposit_GB\"";
+  "id,title,product_name,option_name,review_type,description,planned_depositor_name,product_date,company_name,\"deposit_GB\",bundle_id";
 const PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT =
-  "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
+  "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
 const REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION = "review-receive-photo-sync";
 const PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP = {
   assign_name: "assign_name",
@@ -58,14 +58,66 @@ export async function fetchPublicReviewReceiveProduct(productId) {
     .maybeSingle();
 }
 
-export async function fetchPublicReviewReceiveSubmissions(productId, lookupType, lookupValue) {
+export async function fetchPublicReviewReceiveProductBundle(productId) {
+  const productResult = await fetchPublicReviewReceiveProduct(productId);
+
+  if (productResult.error || !productResult.data) {
+    return {
+      data: null,
+      error: productResult.error
+    };
+  }
+
+  const bundleId = productResult.data.bundle_id ?? productResult.data.id;
+
+  if (!bundleId) {
+    return {
+      data: {
+        product: productResult.data,
+        products: [productResult.data]
+      },
+      error: null
+    };
+  }
+
+  const bundleResult = await supabase
+    .from("products")
+    .select(PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT)
+    .eq("bundle_id", bundleId)
+    .order("id", { ascending: true });
+
+  if (bundleResult.error) {
+    return {
+      data: null,
+      error: bundleResult.error
+    };
+  }
+
+  return {
+    data: {
+      product: productResult.data,
+      products: bundleResult.data?.length ? bundleResult.data : [productResult.data]
+    },
+    error: null
+  };
+}
+
+export async function fetchPublicReviewReceiveSubmissions(productIds, lookupType, lookupValue) {
   const lookupField = PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP[lookupType] ?? "assign_name";
+  const ids = (Array.isArray(productIds) ? productIds : [productIds])
+    .map((productId) => Number(productId))
+    .filter((productId) => Number.isFinite(productId));
+
+  if (ids.length === 0) {
+    return { data: [], error: null };
+  }
 
   return supabase
     .from("submissions")
     .select(PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT)
-    .eq("product_id", productId)
+    .in("product_id", ids)
     .eq(lookupField, lookupValue)
+    .order("product_id", { ascending: true })
     .order("created_at", { ascending: true });
 }
 
