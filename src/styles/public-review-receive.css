@@ -64,13 +64,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.public-review-result-search-field span {
-  display: block;
-  font-size: 12px;
-  font-weight: 800;
-  color: #0369a1;
-}
-
 .public-review-lookup-form {
   display: flex;
   gap: 12px;
@@ -156,30 +149,6 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-.public-review-access-note {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--text-subtle);
-}
-
-.public-review-access-note p {
-  margin: 0;
-}
-
-.public-review-result-search-field {
-  display: flex;
-  flex: 1;
-  max-width: 420px;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.public-review-result-search-field .public-review-input {
-  height: 40px;
-  font-size: 14px;
 }
 
 .public-review-empty-state {
@@ -503,14 +472,9 @@
 
 @media (max-width: 960px) {
   .public-review-header,
-  .public-review-lookup-form,
-  .public-review-access-note {
+  .public-review-lookup-form {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .public-review-result-search-field {
-    max-width: none;
   }
 
   .public-review-header h1 {

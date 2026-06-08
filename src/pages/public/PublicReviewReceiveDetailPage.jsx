@@ -146,35 +146,6 @@ function getPublicProductDisplayValue(product, field, emptyText = "-") {
   return value || emptyText;
 }
 
-function normalizePublicSearchText(value) {
-  return String(value ?? "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s./\\|_-]+/g, "");
-}
-
-function getPublicRowSearchText(row) {
-  return [
-    row.product_name,
-    row.option_name,
-    row.review_type,
-    row.order_number,
-    row.buyer_name,
-    row.recipient_name,
-    row.purchase_account
-  ].join(" ");
-}
-
-function filterPublicReviewRows(rows, searchQuery) {
-  const searchText = normalizePublicSearchText(searchQuery);
-
-  if (!searchText) {
-    return rows;
-  }
-
-  return rows.filter((row) => normalizePublicSearchText(getPublicRowSearchText(row)).includes(searchText));
-}
-
 function hasPhotoDraftChanges(draft) {
   return Boolean((draft?.newPhotos?.length ?? 0) > 0);
 }
@@ -278,7 +249,6 @@ export default function PublicReviewReceiveDetailPage() {
   const [product, setProduct] = useState(null);
   const [bundleProducts, setBundleProducts] = useState([]);
   const [rows, setRows] = useState([]);
-  const [rowSearchQuery, setRowSearchQuery] = useState("");
   const [photoDrafts, setPhotoDrafts] = useState({});
   const [isProductLoading, setIsProductLoading] = useState(true);
   const [isRowsLoading, setIsRowsLoading] = useState(false);
@@ -343,7 +313,6 @@ export default function PublicReviewReceiveDetailPage() {
     setProduct(null);
     setBundleProducts([]);
     setRows([]);
-    setRowSearchQuery("");
     setLookupErrorMessage("");
     setFormErrorMessage("");
     setPhotoStatusMessage("");
@@ -517,7 +486,6 @@ export default function PublicReviewReceiveDetailPage() {
     setFormErrorMessage("");
     setLookupErrorMessage("");
     setPhotoStatusMessage("");
-    setRowSearchQuery("");
     setActiveName(trimmedName);
     setActiveLookupType(lookupType);
     setLookupName(trimmedName);
@@ -758,8 +726,6 @@ export default function PublicReviewReceiveDetailPage() {
 
   const activeLookupTypeLabel = getLookupTypeLabel(activeLookupType);
   const publicDepositorNames = getPublicDepositorNames(product);
-  const filteredRows = filterPublicReviewRows(rows, rowSearchQuery);
-  const hasRowSearchQuery = rowSearchQuery.trim() !== "";
 
   return (
     <div className="public-review-page">
@@ -856,26 +822,11 @@ export default function PublicReviewReceiveDetailPage() {
             )}
             {!isRowsLoading && !lookupErrorMessage && rows.length > 0 && (
               <>
-                <div className="public-review-access-note">
-                  <span className="status-badge">
-                    {hasRowSearchQuery ? `${filteredRows.length}/${rows.length}건 조회됨` : `${rows.length}건 조회됨`}
-                  </span>
-                  <label className="public-review-result-search-field">
-                    <span>결과 검색</span>
-                    <input
-                      type="search"
-                      className="public-review-input"
-                      value={rowSearchQuery}
-                      onChange={(event) => setRowSearchQuery(event.target.value)}
-                      placeholder="품명, 주문번호, 구매자 검색"
-                    />
-                  </label>
-                </div>
                 {photoStatusMessage && <p className="login-message">{photoStatusMessage}</p>}
                 <PublicReviewReceiveSection
                   sectionKey="purchase"
                   title="구매내역"
-                  rows={filteredRows}
+                  rows={rows}
                   onOpenPhotoViewer={openPhotoViewer}
                   onOpenPhotoManager={openPhotoManager}
                 />
