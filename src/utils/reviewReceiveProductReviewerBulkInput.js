@@ -149,7 +149,10 @@ function parseReviewerCells(cells, lineNumber) {
     cells[16],
     cells[17]
   ];
-  const parsed = parsePurchaseBulkInput(purchaseCells.join("\t"), { allowAssignName: true })[0];
+  const parsed = parsePurchaseBulkInput(purchaseCells.join("\t"), {
+    allowAssignName: true,
+    preferPurchaseAccountColumn: true
+  })[0];
 
   return {
     clientId: `${lineNumber}-${parsed.order_number || "row"}`,

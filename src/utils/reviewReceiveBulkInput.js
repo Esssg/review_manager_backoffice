@@ -69,9 +69,10 @@ function splitPurchaseLine(line) {
   return line.split("/").map((part) => part.trim());
 }
 
-function parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPartial) {
+function parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPartial, options = {}) {
+  const { preferPurchaseAccountColumn = false } = options;
   const fieldCount = valueParts.length;
-  const hasPurchaseAccount = !isLikelyContactField(valueParts[3]);
+  const hasPurchaseAccount = preferPurchaseAccountColumn || !isLikelyContactField(valueParts[3]);
   const accountStartIndex = hasPurchaseAccount ? 6 : 5;
   const minimumFieldCount = hasPurchaseAccount ? 11 : 10;
   const hasReviewFee = parseAmount(valueParts[fieldCount - 1]) != null && parseAmount(valueParts[fieldCount - 2]) != null;
@@ -167,14 +168,16 @@ function parseOptionalSeparatedAccountFields(bankName, bankAccount, accountHolde
 }
 
 function parsePurchaseLineParts(parts, lineNumber, options = {}) {
-  const { allowAssignName = false, allowPartial = false } = options;
+  const { allowAssignName = false, allowPartial = false, preferPurchaseAccountColumn = false } = options;
   const startsWithOrderNumber = /^\d+$/.test(parts[0] ?? "");
   const hasAssignName = allowAssignName && !startsWithOrderNumber;
   const assignName = hasAssignName ? parts[0] : "";
   const valueParts = hasAssignName ? parts.slice(1) : parts;
   const fieldCount = valueParts.length;
   const flexibleSeparatedParts =
-    fieldCount > 10 ? parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPartial) : null;
+    fieldCount > 10
+      ? parseFlexibleSeparatedPurchaseLineParts(valueParts, lineNumber, allowPartial, { preferPurchaseAccountColumn })
+      : null;
 
   if (flexibleSeparatedParts) {
     const {
@@ -242,9 +245,9 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
   const hasFixedTrailingReviewFee =
     parseAmount(valueParts[fieldCount - 1]) != null &&
     parseAmount(valueParts[fieldCount - 2]) != null &&
-    ((fieldCount === 8 && isLikelyContactField(valueParts[3])) ||
+    ((fieldCount === 8 && !preferPurchaseAccountColumn && isLikelyContactField(valueParts[3])) ||
       (fieldCount === 9 && !isLikelyContactField(valueParts[3])) ||
-      (fieldCount === 10 && isLikelyContactField(valueParts[3])));
+      (fieldCount === 10 && !preferPurchaseAccountColumn && isLikelyContactField(valueParts[3])));
   const normalizedValueParts = hasFixedTrailingReviewFee ? valueParts.slice(0, -1) : valueParts;
   const normalizedFieldCount = normalizedValueParts.length;
   const reviewFee = hasFixedTrailingReviewFee ? parseAmount(valueParts[fieldCount - 1]) : null;
@@ -343,7 +346,7 @@ function parsePurchaseLineParts(parts, lineNumber, options = {}) {
 }
 
 export function parsePurchaseBulkInput(rawText, options = {}) {
-  const { allowAssignName = false } = options;
+  const { allowAssignName = false, preferPurchaseAccountColumn = false } = options;
   const lines = normalizeLines(rawText);
 
   if (lines.length === 0) {
@@ -354,7 +357,7 @@ export function parsePurchaseBulkInput(rawText, options = {}) {
     const entry = parsePurchaseLineParts(
       splitPurchaseLine(line),
       index + 1,
-      { allowAssignName, allowPartial: false }
+      { allowAssignName, allowPartial: false, preferPurchaseAccountColumn }
     );
 
     return {

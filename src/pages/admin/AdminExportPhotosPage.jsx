@@ -140,13 +140,12 @@ function buildPhotoZipPath(target, extension, index) {
     "product"
   )}`;
   const submissionLabel = sanitizeZipPathSegment(
-    [target.submission.assign_name, target.submission.buyer_name, target.submission.order_number]
+    [target.submission.buyer_name, target.submission.recipient_name, target.submission.order_number]
       .filter(Boolean)
       .join("_"),
     `submission_${target.submission.id}`
   );
-  const photoType = sanitizeZipPathSegment(target.photo.photo_type, "photo");
-  const filename = `${String(index + 1).padStart(4, "0")}_${submissionLabel}_${photoType}_${target.photo.id}.${extension}`;
+  const filename = `${String(index + 1).padStart(4, "0")}_${submissionLabel}.${extension}`;
 
   return `${productFolder}/${filename}`;
 }
