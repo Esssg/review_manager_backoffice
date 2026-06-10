@@ -218,6 +218,7 @@ function buildOverviewRowFromSubmission(productMap, productId, submission, fallb
     bank_account: submission?.bank_account ?? fallbackRow?.bank_account ?? null,
     account_holder: submission?.account_holder ?? fallbackRow?.account_holder ?? null,
     amount: submission?.amount ?? fallbackRow?.amount ?? null,
+    review_fee: submission?.review_fee ?? fallbackRow?.review_fee ?? null,
     is_purchase_verified: submission?.is_purchase_verified ?? fallbackRow?.is_purchase_verified ?? false,
     is_review_verified: submission?.is_review_verified ?? fallbackRow?.is_review_verified ?? false,
     is_deposit_verified: submission?.is_deposit_verified ?? fallbackRow?.is_deposit_verified ?? false,
