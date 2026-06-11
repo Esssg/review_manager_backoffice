@@ -49,7 +49,7 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
 
   const primaryResult = await supabase
     .from("evidence_photos")
-    .select("submission_id,image_url")
+    .select("id,submission_id,image_url")
     .eq("photo_type", photoType)
     .in("submission_id", submissionIds);
 
@@ -63,7 +63,7 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
   if (shouldFallbackPhotoTable) {
     const fallbackResult = await supabase
       .from("evidence_photo")
-      .select("submission_id,image_url")
+      .select("id,submission_id,image_url")
       .eq("photo_type", photoType)
       .in("submission_id", submissionIds);
     photos = fallbackResult.data ?? [];

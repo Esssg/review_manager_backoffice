@@ -223,10 +223,18 @@
   object-fit: contain;
 }
 
-.photo-modal-close {
+.photo-modal-actions {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 1;
+}
+
+.photo-modal-close,
+.photo-modal-delete {
   border: none;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.2);
@@ -235,6 +243,18 @@
   font-weight: 700;
   padding: 6px 10px;
   cursor: pointer;
+}
+
+.photo-modal-delete {
+  background: rgba(254, 202, 202, 0.95);
+  color: #991b1b;
+}
+
+.photo-modal-close:disabled,
+.photo-modal-delete:disabled,
+.photo-modal-arrow:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .photo-modal-arrow {

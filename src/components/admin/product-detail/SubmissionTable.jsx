@@ -1,3 +1,5 @@
+import { getPhotoId, getPhotoUrl } from "../../../utils/photoItems";
+
 export default function SubmissionTable({
   activeTab,
   emptyText,
@@ -50,16 +52,20 @@ export default function SubmissionTable({
                     {rowPhotos.length === 0 ? (
                       <span>제출전</span>
                     ) : (
-                      rowPhotos.map((url, index) => (
-                        <button
-                          key={`${row.id}-${url}`}
-                          type="button"
-                          className="photo-thumb-button"
-                          onClick={() => onOpenPhotoViewer(rowPhotos, index)}
-                        >
-                          <img src={url} alt={`증빙 이미지 ${index + 1}`} className="photo-thumb-image" />
-                        </button>
-                      ))
+                      rowPhotos.map((photo, index) => {
+                        const url = getPhotoUrl(photo);
+
+                        return (
+                          <button
+                            key={`${row.id}-${getPhotoId(photo) ?? url}-${index}`}
+                            type="button"
+                            className="photo-thumb-button"
+                            onClick={() => onOpenPhotoViewer(rowPhotos, index)}
+                          >
+                            <img src={url} alt={`증빙 이미지 ${index + 1}`} className="photo-thumb-image" />
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </td>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { STEP_NUMBER_BY_TAB } from "../constants/admin";
+import { deleteEvidencePhoto } from "../services/evidencePhotos";
 import {
   createSubmission,
   deleteEvidenceRowsIfExists,
@@ -14,6 +15,7 @@ import {
   updateSubmissionVerified
 } from "../services/productDetail";
 import { sortApplicationsByConfirmedAndCreatedAt } from "../utils/applicationRows";
+import { getPhotoId, removePhotoById } from "../utils/photoItems";
 import { parseSubmissionText } from "../utils/submissionParser";
 
 export function useAdminProductDetail({ adminId, productId }) {
@@ -117,7 +119,7 @@ export function useAdminProductDetail({ adminId, productId }) {
           hasEvidencePhotoTable = nextHasEvidencePhotoTable;
           photoMap = (photos ?? []).reduce((acc, photo) => {
             if (!acc[photo.submission_id]) acc[photo.submission_id] = [];
-            acc[photo.submission_id].push(photo.image_url);
+            acc[photo.submission_id].push(photo);
             return acc;
           }, {});
         }
@@ -186,6 +188,52 @@ export function useAdminProductDetail({ adminId, productId }) {
     } catch (error) {
       setErrorMessage(error?.message ?? "삭제 중 오류가 발생했습니다.");
     }
+  };
+
+  const handleDeletePhoto = async (photo) => {
+    const photoId = getPhotoId(photo);
+
+    if (!photoId) {
+      setErrorMessage("삭제할 사진을 찾지 못했습니다.");
+      return false;
+    }
+
+    setErrorMessage("");
+
+    const { data, error } = await deleteEvidencePhoto(photoId);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return false;
+    }
+
+    if (!data) {
+      setErrorMessage("이미 삭제되었거나 접근할 수 없는 사진입니다.");
+      return false;
+    }
+
+    setRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        photos: removePhotoById(row.photos, photoId)
+      }))
+    );
+
+    setPhotoViewer((prev) => {
+      const nextPhotos = removePhotoById(prev.photos, photoId);
+
+      if (nextPhotos.length === 0) {
+        return { isOpen: false, photos: [], activeIndex: 0 };
+      }
+
+      return {
+        ...prev,
+        photos: nextPhotos,
+        activeIndex: Math.min(prev.activeIndex, nextPhotos.length - 1)
+      };
+    });
+
+    return true;
   };
 
   const handleStepEnabledChange = async (checked) => {
@@ -337,6 +385,7 @@ export function useAdminProductDetail({ adminId, productId }) {
     handleAddSubmission,
     handleApplicationConfirmChange,
     handleDeleteSubmission,
+    handleDeletePhoto,
     handleStepEnabledChange,
     handleSubmissionVerifyChange,
     openPhotoViewer,

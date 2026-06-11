@@ -139,7 +139,7 @@ export async function fetchReviewReceiveEvidencePhotos(submissionIds) {
 
   return supabase
     .from("evidence_photos")
-    .select("submission_id,image_url")
+    .select("id,submission_id,image_url")
     .eq("photo_type", "review")
     .in("submission_id", submissionIds);
 }

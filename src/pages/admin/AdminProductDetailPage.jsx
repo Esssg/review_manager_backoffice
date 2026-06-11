@@ -15,6 +15,8 @@ export default function AdminProductDetailPage() {
   const { productId } = useParams();
   const [deleteTargetSubmissionId, setDeleteTargetSubmissionId] = useState(null);
   const [isDeletingSubmission, setIsDeletingSubmission] = useState(false);
+  const [deleteTargetPhoto, setDeleteTargetPhoto] = useState(null);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   const {
     activeTab,
     addSubmissionMessage,
@@ -22,6 +24,7 @@ export default function AdminProductDetailPage() {
     errorMessage,
     handleAddSubmission,
     handleApplicationConfirmChange,
+    handleDeletePhoto,
     handleDeleteSubmission,
     handleStepEnabledChange,
     handleSubmissionVerifyChange,
@@ -62,6 +65,28 @@ export default function AdminProductDetailPage() {
     await handleDeleteSubmission(deleteTargetSubmissionId);
     setDeleteTargetSubmissionId(null);
     setIsDeletingSubmission(false);
+  };
+  const openDeletePhotoDialog = (photo) => {
+    setDeleteTargetPhoto(photo);
+  };
+  const closeDeletePhotoDialog = () => {
+    if (isDeletingPhoto) {
+      return;
+    }
+
+    setDeleteTargetPhoto(null);
+  };
+  const confirmDeletePhoto = async () => {
+    if (!deleteTargetPhoto) {
+      return;
+    }
+
+    setIsDeletingPhoto(true);
+    const didDelete = await handleDeletePhoto(deleteTargetPhoto);
+    if (didDelete) {
+      setDeleteTargetPhoto(null);
+    }
+    setIsDeletingPhoto(false);
   };
 
   return (
@@ -142,7 +167,14 @@ export default function AdminProductDetailPage() {
         )}
       </section>
 
-      <PhotoViewerModal photoViewer={photoViewer} onClose={closePhotoViewer} onNext={showNextPhoto} onPrev={showPrevPhoto} />
+      <PhotoViewerModal
+        photoViewer={photoViewer}
+        onClose={closePhotoViewer}
+        onNext={showNextPhoto}
+        onPrev={showPrevPhoto}
+        onRequestDelete={openDeletePhotoDialog}
+        isDeleting={isDeletingPhoto}
+      />
       <AppAlertDialog
         isOpen={Boolean(deleteTargetSubmissionId)}
         variant="danger"
@@ -158,6 +190,22 @@ export default function AdminProductDetailPage() {
         ariaLabel="제출 항목 삭제 확인"
       >
         <p>연결된 증빙 사진 데이터가 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+      </AppAlertDialog>
+      <AppAlertDialog
+        isOpen={Boolean(deleteTargetPhoto)}
+        variant="danger"
+        badgeLabel="사진 삭제"
+        title="이 사진을 삭제할까요?"
+        cancelLabel="취소"
+        confirmLabel="삭제하기"
+        busyConfirmLabel="삭제 중..."
+        isBusy={isDeletingPhoto}
+        onCancel={closeDeletePhotoDialog}
+        onConfirm={confirmDeletePhoto}
+        confirmButtonClassName="admin-danger-button"
+        ariaLabel="증빙 사진 삭제 확인"
+      >
+        <p>확대 화면과 목록에서 해당 증빙 사진이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
       </AppAlertDialog>
     </>
   );

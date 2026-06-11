@@ -5,7 +5,7 @@ const PRODUCT_OVERVIEW_PRODUCTS_SELECT =
   "id,manager_id,title,product_name,deposit_date,description,product_link,is_real_shipping,company_name,option_name,review_type,planned_depositor_name,deposit_GB,created_at";
 const PRODUCT_OVERVIEW_SUBMISSIONS_SELECT =
   "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_purchase_verified,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
-const PRODUCT_OVERVIEW_EVIDENCE_PHOTOS_SELECT = "submission_id,image_url";
+const PRODUCT_OVERVIEW_EVIDENCE_PHOTOS_SELECT = "id,submission_id,image_url";
 
 export async function fetchAdminProductOverview(adminId, options = {}) {
   const scope = await resolveAdminManagerScope(adminId, options);

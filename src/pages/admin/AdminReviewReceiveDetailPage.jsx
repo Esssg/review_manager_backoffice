@@ -22,6 +22,7 @@ import {
   deleteAdminReviewReceiveProduct,
   updateAdminReviewReceiveProduct
 } from "../../services/adminProducts";
+import { deleteEvidencePhoto } from "../../services/evidencePhotos";
 import {
   createReviewReceiveSubmission,
   deleteReviewReceiveSubmission,
@@ -55,6 +56,7 @@ import {
   parseProductReviewerBulkInput
 } from "../../utils/reviewReceiveProductReviewerBulkInput";
 import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
+import { getPhotoId, getPhotoUrl, removePhotoById } from "../../utils/photoItems";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
@@ -379,7 +381,7 @@ function buildReviewReceiveDetailExportRows(rows, options = {}) {
       예금주: accountFields.accountHolder,
       금액: row.amount ?? "",
       리뷰비: row.review_fee ?? "",
-      사진: Array.isArray(row.photos) ? row.photos.join("\n") : "",
+      사진: Array.isArray(row.photos) ? row.photos.map(getPhotoUrl).filter(Boolean).join("\n") : "",
       "입금자명(예정)": resolvedPlannedDepositorName ?? "",
       리뷰완료: formatBooleanExportValue(Boolean(row.is_review_verified)),
       입금완료: formatBooleanExportValue(Boolean(row.is_deposit_verified))
@@ -728,6 +730,8 @@ export default function AdminReviewReceiveDetailPage() {
     photos: [],
     activeIndex: 0
   });
+  const [deleteTargetPhoto, setDeleteTargetPhoto] = useState(null);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   const [isProductItemModalOpen, setIsProductItemModalOpen] = useState(false);
   const [editingProductItem, setEditingProductItem] = useState(null);
   const [productItemForm, setProductItemForm] = useState(() => createProductItemForm());
@@ -788,7 +792,7 @@ export default function AdminReviewReceiveDetailPage() {
 
       const photoMap = (photoData ?? []).reduce((acc, photo) => {
         if (!acc[photo.submission_id]) acc[photo.submission_id] = [];
-        acc[photo.submission_id].push(photo.image_url);
+        acc[photo.submission_id].push(photo);
         return acc;
       }, {});
 
@@ -2351,6 +2355,67 @@ export default function AdminReviewReceiveDetailPage() {
     }));
   };
 
+  const openDeletePhotoDialog = (photo) => {
+    setDeleteTargetPhoto(photo);
+  };
+
+  const closeDeletePhotoDialog = () => {
+    if (isDeletingPhoto) {
+      return;
+    }
+
+    setDeleteTargetPhoto(null);
+  };
+
+  const handleDeletePhoto = async () => {
+    const photoId = getPhotoId(deleteTargetPhoto);
+
+    if (!photoId) {
+      showToast("삭제할 사진을 찾지 못했습니다.", "error");
+      return;
+    }
+
+    setIsDeletingPhoto(true);
+    const { data, error } = await deleteEvidencePhoto(photoId);
+
+    if (error) {
+      showToast(error.message, "error");
+      setIsDeletingPhoto(false);
+      return;
+    }
+
+    if (!data) {
+      showToast("이미 삭제되었거나 접근할 수 없는 사진입니다.", "error");
+      setIsDeletingPhoto(false);
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        photos: removePhotoById(row.photos, photoId)
+      }))
+    );
+
+    setPhotoViewer((prev) => {
+      const nextPhotos = removePhotoById(prev.photos, photoId);
+
+      if (nextPhotos.length === 0) {
+        return { isOpen: false, photos: [], activeIndex: 0 };
+      }
+
+      return {
+        ...prev,
+        photos: nextPhotos,
+        activeIndex: Math.min(prev.activeIndex, nextPhotos.length - 1)
+      };
+    });
+
+    showToast("사진을 삭제했습니다.", "success");
+    setDeleteTargetPhoto(null);
+    setIsDeletingPhoto(false);
+  };
+
   const visibleBundleProducts = bundleProducts.filter((item) => !isProductItemEmptyShell(item));
   const bundleProductMap = new Map(visibleBundleProducts.map((item) => [Number(item.id), item]));
   const getProductForRow = (row) => bundleProductMap.get(Number(row?.product_id)) ?? null;
@@ -2911,16 +2976,20 @@ export default function AdminReviewReceiveDetailPage() {
                       <td>
                         <div className="photo-link-list">
                           {row.photos?.length ? (
-                            row.photos.map((url, photoIndex) => (
-                              <button
-                                key={`${row.id}-${url}`}
-                                type="button"
-                                className="photo-thumb-button"
-                                onClick={() => openPhotoViewer(row.photos, photoIndex)}
-                              >
-                                <img src={url} alt={`증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
-                              </button>
-                            ))
+                            row.photos.map((photo, photoIndex) => {
+                              const url = getPhotoUrl(photo);
+
+                              return (
+                                <button
+                                  key={`${row.id}-${getPhotoId(photo) ?? url}-${photoIndex}`}
+                                  type="button"
+                                  className="photo-thumb-button"
+                                  onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                                >
+                                  <img src={url} alt={`증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
+                                </button>
+                              );
+                            })
                           ) : (
                             <span>제출 전</span>
                           )}
@@ -3824,17 +3893,21 @@ export default function AdminReviewReceiveDetailPage() {
                         <p>{`${row.contact || "-"} / ${row.address || "-"}`}</p>
                         <p>{`사진 ${row.photos?.length ?? 0}장 / ${formatAccountInfo(row)} / ${row.amount ?? "-"}`}</p>
                         <div className="photo-link-list review-receive-preview-photo-list">
-                          {row.photos.map((url, photoIndex) => (
-                            <button
-                              key={`${row.id}-${url}-${photoIndex}`}
-                              type="button"
-                              className="photo-thumb-button"
-                              onClick={() => openPhotoViewer(row.photos, photoIndex)}
-                              aria-label={`처리 대상 증빙 이미지 ${photoIndex + 1} 열기`}
-                            >
-                              <img src={url} alt={`처리 대상 증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
-                            </button>
-                          ))}
+                          {row.photos.map((photo, photoIndex) => {
+                            const url = getPhotoUrl(photo);
+
+                            return (
+                              <button
+                                key={`${row.id}-${getPhotoId(photo) ?? url}-${photoIndex}`}
+                                type="button"
+                                className="photo-thumb-button"
+                                onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                                aria-label={`처리 대상 증빙 이미지 ${photoIndex + 1} 열기`}
+                              >
+                                <img src={url} alt={`처리 대상 증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -4359,7 +4432,31 @@ export default function AdminReviewReceiveDetailPage() {
         </p>
       </AppAlertDialog>
 
-      <PhotoViewerModal photoViewer={photoViewer} onClose={closePhotoViewer} onNext={showNextPhoto} onPrev={showPrevPhoto} />
+      <PhotoViewerModal
+        photoViewer={photoViewer}
+        onClose={closePhotoViewer}
+        onNext={showNextPhoto}
+        onPrev={showPrevPhoto}
+        onRequestDelete={openDeletePhotoDialog}
+        isDeleting={isDeletingPhoto}
+      />
+
+      <AppAlertDialog
+        isOpen={Boolean(deleteTargetPhoto)}
+        variant="danger"
+        badgeLabel="사진 삭제"
+        title="이 사진을 삭제할까요?"
+        cancelLabel="취소"
+        confirmLabel="삭제하기"
+        busyConfirmLabel="삭제 중..."
+        isBusy={isDeletingPhoto}
+        onCancel={closeDeletePhotoDialog}
+        onConfirm={handleDeletePhoto}
+        confirmButtonClassName="admin-danger-button"
+        ariaLabel="리뷰받기 상세 증빙 사진 삭제 확인"
+      >
+        <p>확대 화면과 목록에서 해당 증빙 사진이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+      </AppAlertDialog>
 
       <AppToast toast={toast} />
     </>

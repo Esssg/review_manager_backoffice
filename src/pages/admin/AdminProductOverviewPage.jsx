@@ -12,6 +12,7 @@ import {
   ADMIN_STORAGE_KEY,
   PRODUCT_OVERVIEW_STATUS_TABS
 } from "../../constants/admin";
+import { deleteEvidencePhoto } from "../../services/evidencePhotos";
 import { deleteAdminProductOverviewSubmissions, fetchAdminProductOverview } from "../../services/productOverview";
 import {
   createReviewReceiveSubmission,
@@ -35,6 +36,7 @@ import {
   splitProductOverviewRows
 } from "../../utils/productOverviewRows";
 import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
+import { getPhotoId, getPhotoUrl, removePhotoById } from "../../utils/photoItems";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
   formatMissingFieldLabels,
@@ -68,7 +70,7 @@ function formatExcelCellValue(row, column) {
   }
 
   if (column.type === "photo") {
-    return Array.isArray(value) && value.length > 0 ? value.join("\n") : "";
+    return Array.isArray(value) && value.length > 0 ? value.map(getPhotoUrl).filter(Boolean).join("\n") : "";
   }
 
   return value ?? "";
@@ -132,7 +134,7 @@ function buildReviewPhotoMap(photoRows) {
       acc[photo.submission_id] = [];
     }
 
-    acc[photo.submission_id].push(photo.image_url);
+    acc[photo.submission_id].push(photo);
     return acc;
   }, {});
 }
@@ -166,20 +168,24 @@ function renderOverviewPhotoCell(row, onOpenPhotoViewer) {
 
   return (
     <div className="photo-link-list">
-      {rowPhotos.map((url, index) => (
-        <button
-          key={`${row.submission_id}-${url}-${index}`}
-          type="button"
-          className="photo-thumb-button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenPhotoViewer(rowPhotos, index);
-          }}
-          aria-label={`리뷰 사진 ${index + 1} 열기`}
-        >
-          <img src={url} alt={`리뷰 사진 ${index + 1}`} className="photo-thumb-image" />
-        </button>
-      ))}
+      {rowPhotos.map((photo, index) => {
+        const url = getPhotoUrl(photo);
+
+        return (
+          <button
+            key={`${row.submission_id}-${getPhotoId(photo) ?? url}-${index}`}
+            type="button"
+            className="photo-thumb-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenPhotoViewer(rowPhotos, index);
+            }}
+            aria-label={`리뷰 사진 ${index + 1} 열기`}
+          >
+            <img src={url} alt={`리뷰 사진 ${index + 1}`} className="photo-thumb-image" />
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -494,6 +500,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     photos: [],
     activeIndex: 0
   });
+  const [deleteTargetPhoto, setDeleteTargetPhoto] = useState(null);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   const [purchaseBulkScope, setPurchaseBulkScope] = useState("all");
   const [isPurchaseBulkModalOpen, setIsPurchaseBulkModalOpen] = useState(false);
   const [purchaseBulkAssignName, setPurchaseBulkAssignName] = useState("");
@@ -731,6 +739,67 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       ...prev,
       activeIndex: prev.activeIndex === prev.photos.length - 1 ? 0 : prev.activeIndex + 1
     }));
+  };
+
+  const openDeletePhotoDialog = (photo) => {
+    setDeleteTargetPhoto(photo);
+  };
+
+  const closeDeletePhotoDialog = () => {
+    if (isDeletingPhoto) {
+      return;
+    }
+
+    setDeleteTargetPhoto(null);
+  };
+
+  const handleDeletePhoto = async () => {
+    const photoId = getPhotoId(deleteTargetPhoto);
+
+    if (!photoId) {
+      showToast("삭제할 사진을 찾지 못했습니다.", "error");
+      return;
+    }
+
+    setIsDeletingPhoto(true);
+    const { data, error } = await deleteEvidencePhoto(photoId);
+
+    if (error) {
+      showToast(error.message, "error");
+      setIsDeletingPhoto(false);
+      return;
+    }
+
+    if (!data) {
+      showToast("이미 삭제되었거나 접근할 수 없는 사진입니다.", "error");
+      setIsDeletingPhoto(false);
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        review_photos: removePhotoById(row.review_photos, photoId)
+      }))
+    );
+
+    setPhotoViewer((prev) => {
+      const nextPhotos = removePhotoById(prev.photos, photoId);
+
+      if (nextPhotos.length === 0) {
+        return { isOpen: false, photos: [], activeIndex: 0 };
+      }
+
+      return {
+        ...prev,
+        photos: nextPhotos,
+        activeIndex: Math.min(prev.activeIndex, nextPhotos.length - 1)
+      };
+    });
+
+    showToast("사진을 삭제했습니다.", "success");
+    setDeleteTargetPhoto(null);
+    setIsDeletingPhoto(false);
   };
 
   const setPurchaseBulkFeedback = (message, type = "info") => {
@@ -2322,7 +2391,31 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         </p>
       </AppAlertDialog>
 
-      <PhotoViewerModal photoViewer={photoViewer} onClose={closePhotoViewer} onNext={showNextPhoto} onPrev={showPrevPhoto} />
+      <PhotoViewerModal
+        photoViewer={photoViewer}
+        onClose={closePhotoViewer}
+        onNext={showNextPhoto}
+        onPrev={showPrevPhoto}
+        onRequestDelete={openDeletePhotoDialog}
+        isDeleting={isDeletingPhoto}
+      />
+
+      <AppAlertDialog
+        isOpen={Boolean(deleteTargetPhoto)}
+        variant="danger"
+        badgeLabel="사진 삭제"
+        title="이 사진을 삭제할까요?"
+        cancelLabel="취소"
+        confirmLabel="삭제하기"
+        busyConfirmLabel="삭제 중..."
+        isBusy={isDeletingPhoto}
+        onCancel={closeDeletePhotoDialog}
+        onConfirm={handleDeletePhoto}
+        confirmButtonClassName="admin-danger-button"
+        ariaLabel="상품전체보기 증빙 사진 삭제 확인"
+      >
+        <p>확대 화면과 목록에서 해당 증빙 사진이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+      </AppAlertDialog>
 
       <AppToast toast={toast} />
     </>
