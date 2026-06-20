@@ -1,7 +1,7 @@
 # Review Manager Backoffice 프로젝트 분석
 
 작성일: 2026-04-23  
-최종 갱신일: 2026-06-04
+최종 갱신일: 2026-06-20
 
 ## 1. 프로젝트 개요
 
@@ -39,7 +39,7 @@
 - 스타일링: 전역 CSS 중심
 - 환경변수: Vite env + `dotenv`
 
-현재는 테스트 프레임워크, 상태 관리 라이브러리, 서버 API 레이어 없이 비교적 단순한 프런트 단독 구조입니다.
+현재는 별도 테스트 프레임워크와 상태 관리 라이브러리, 서버 API 레이어 없이 비교적 단순한 프런트 단독 구조입니다. 공통 Supabase 페이지 조회 유틸은 Node 내장 테스트 러너로 회귀 검증합니다.
 
 ## 3. 현재 디렉터리 구조
 
@@ -126,6 +126,7 @@ src/
     exportData.js         내보내기용 products/submissions 등 조회
     exportPhotos.js       사진내려받기용 products/submissions/evidence_photos 조회
     fileUpload.js         파일 업로드 products 생성 및 submissions 주문번호 기준 저장
+    paginatedQuery.js     Supabase 고유 키 커서 전체 조회, IN 조건 분할, 제한 동시 실행
   utils/
     applicationRows.js    신청자 정렬 유틸
     dashboardMetrics.js   대시보드 날짜/상태/집계/Top N/최근 활동 유틸
@@ -159,6 +160,9 @@ src/
 scripts/
   check-supabase.mjs      Supabase 연결 확인 스크립트
 
+tests/
+  paginatedQuery.test.js  1,000행 제한·분할 조회·커서 누락 방지 회귀 테스트
+
 supabase/
   functions/
     review-receive-photo-sync/
@@ -183,6 +187,8 @@ SUPABASE_SETUP.md         Supabase 연동 절차 문서
 - `상품전체보기` 화면은 별도 페이지 + 조회 서비스 + 행 변환 유틸로 분리돼 있습니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 Supabase Edge Function `review-receive-photo-sync`를 통해 presigned URL 발급 후 S3 업로드, `evidence_photos` 저장/삭제를 수행합니다.
+- 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
+- 리뷰받기 목록은 품목을 먼저 `bundle_id` 단위로 묶은 뒤 번들 전체 submission으로 완료현황과 진행/완료 상태를 계산합니다.
 
 ## 4. 실행 방식
 
@@ -270,6 +276,7 @@ Node 스크립트용 대체 키도 지원합니다.
 1. `localStorage`에서 관리자 ID를 읽고, 페이지 진입/이동 때마다 `admins.include_company_data_include` 기준으로 회사 데이터 포함 상태를 초기화합니다.
 2. `resolveAdminManagerScope`로 본인 또는 회사 단위 `managerIds` 범위를 결정합니다.
 3. `src/services/dashboardMetrics.js`가 `products`, `submissions`, `applications`, `evidence_photos`를 필요한 컬럼만 조회합니다.
+   각 테이블은 1,000행 제한에 잘리지 않도록 고유 키 커서로 끝까지 조회하고, 연관 ID 조건은 100개 단위로 분할합니다.
 4. 회사 데이터 포함이 켜져 있고 회사명이 있으면 같은 회사의 `admins` 목록도 조회합니다.
 5. `src/utils/dashboardMetrics.js`가 오늘/누적 KPI, 알림 조건, 기간별 추이, 상위 상품, 최근 활동, 회사 멤버 비교 데이터를 순수 함수로 집계합니다.
 6. `src/hooks/useAdminDashboard.js`가 로딩/오류/새로고침/회사 데이터 포함 토글 상태를 관리하고, `src/components/admin/dashboard/*` 컴포넌트가 각 섹션을 렌더링합니다.
@@ -343,10 +350,16 @@ Node 스크립트용 대체 키도 지원합니다.
 - 스타일은 `base`, `login`, `admin-shell`, `admin-dashboard`, `admin-product-detail`로 나뉘었지만 CSS Modules나 CSS-in-JS처럼 완전한 범위 격리는 아닙니다.
 - 클래스 이름 충돌 위험은 낮아졌지만, 여전히 전역 선택자 관리 규율이 중요합니다.
 
-### 4) 테스트 기반이 약함
+### 4) 테스트 기반이 제한적임
 
-- 현재 별도 테스트 코드가 없습니다.
-- 변경 후 안정성 확인이 빌드와 수동 확인에 많이 의존합니다.
+- 공통 페이지 조회 유틸은 Node 내장 테스트로 1,000행 초과와 분할 조회를 검증합니다.
+- 화면과 도메인 규칙 전반은 여전히 빌드와 수동 확인 의존도가 높습니다.
+
+### 5) 대량 목록은 정확성을 위해 전체 분할 조회함
+
+- 상품전체보기, 대시보드, 내보내기처럼 전체 집계와 클라이언트 필터가 필요한 화면은 현재 대상 데이터를 커서 기반으로 끝까지 조회합니다.
+- 데이터 누락은 방지하지만 데이터가 수만 건 이상으로 증가하면 초기 요청 수와 브라우저 메모리 사용량이 커질 수 있습니다.
+- 다음 성능 단계에서는 화면 필터를 DB 쿼리 계약으로 이동하고, 목록은 서버 페이지네이션, 대시보드는 DB 집계, 전체 내보내기는 사용자 실행 시 분할 조회하는 구조로 전환해야 합니다.
 
 ## 10. 운영/보안 관점 리스크
 

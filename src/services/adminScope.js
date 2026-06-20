@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { fetchAllRows } from "./paginatedQuery";
 
 const ADMIN_SCOPE_SELECT = "login_id,company";
 
@@ -45,11 +46,14 @@ export async function resolveAdminManagerScope(adminId, options = {}) {
     };
   }
 
-  const companyAdminsResult = await supabase
-    .from("admins")
-    .select("login_id")
-    .eq("company", companyName)
-    .order("login_id", { ascending: true });
+  const companyAdminsResult = await fetchAllRows(
+    () =>
+      supabase
+        .from("admins")
+        .select("login_id")
+        .eq("company", companyName),
+    { cursorColumn: "login_id" }
+  );
 
   if (companyAdminsResult.error) {
     return {

@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const PRODUCT_META_SELECT = "id,title,product_name,description,product_link,manager_id";
 const SUBMISSION_LIST_SELECT =
@@ -12,7 +13,9 @@ export async function fetchProductMeta(productId, adminId) {
       .eq("id", productId)
       .eq("manager_id", adminId)
       .maybeSingle(),
-    supabase.from("product_steps").select("step_number").eq("product_id", productId)
+    fetchAllRows(() =>
+      supabase.from("product_steps").select("id,step_number").eq("product_id", productId)
+    )
   ]);
 
   return {
@@ -22,20 +25,33 @@ export async function fetchProductMeta(productId, adminId) {
 }
 
 export async function fetchApplications(productId) {
-  return supabase
-    .from("applications")
-    .select("id,applicant_name,is_confirmed,created_at")
-    .eq("product_id", productId)
-    .order("is_confirmed", { ascending: false })
-    .order("created_at", { ascending: true });
+  const result = await fetchAllRows(() =>
+    supabase
+      .from("applications")
+      .select("id,applicant_name,is_confirmed,created_at")
+      .eq("product_id", productId)
+  );
+
+  if (result.data) {
+    result.data.sort((left, right) => compareByCreatedAtThenId(left, right));
+  }
+
+  return result;
 }
 
 export async function fetchSubmissions(productId) {
-  return supabase
-    .from("submissions")
-    .select(SUBMISSION_LIST_SELECT)
-    .eq("product_id", productId)
-    .order("created_at", { ascending: true });
+  const result = await fetchAllRows(() =>
+    supabase
+      .from("submissions")
+      .select(SUBMISSION_LIST_SELECT)
+      .eq("product_id", productId)
+  );
+
+  if (result.data) {
+    result.data.sort((left, right) => compareByCreatedAtThenId(left, right));
+  }
+
+  return result;
 }
 
 export async function fetchEvidencePhotos(submissionIds, photoType) {
@@ -47,11 +63,13 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
     return { photos, photosError, hasEvidencePhotoTable };
   }
 
-  const primaryResult = await supabase
-    .from("evidence_photos")
-    .select("id,submission_id,image_url")
-    .eq("photo_type", photoType)
-    .in("submission_id", submissionIds);
+  const primaryResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+    supabase
+      .from("evidence_photos")
+      .select("id,submission_id,image_url")
+      .eq("photo_type", photoType)
+      .in("submission_id", submissionIdChunk)
+  );
 
   photos = primaryResult.data ?? [];
   photosError = primaryResult.error;
@@ -61,11 +79,13 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
     (photosError?.code === "42P01" || photosError?.message?.includes("evidence_photos"));
 
   if (shouldFallbackPhotoTable) {
-    const fallbackResult = await supabase
-      .from("evidence_photo")
-      .select("id,submission_id,image_url")
-      .eq("photo_type", photoType)
-      .in("submission_id", submissionIds);
+    const fallbackResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+      supabase
+        .from("evidence_photo")
+        .select("id,submission_id,image_url")
+        .eq("photo_type", photoType)
+        .in("submission_id", submissionIdChunk)
+    );
     photos = fallbackResult.data ?? [];
     photosError = fallbackResult.error;
   }

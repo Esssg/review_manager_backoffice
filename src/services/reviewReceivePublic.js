@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT =
   "id,title,product_name,option_name,review_type,description,planned_depositor_name,product_date,company_name,\"deposit_GB\",bundle_id";
@@ -80,11 +81,12 @@ export async function fetchPublicReviewReceiveProductBundle(productId) {
     };
   }
 
-  const bundleResult = await supabase
-    .from("products")
-    .select(PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT)
-    .eq("bundle_id", bundleId)
-    .order("id", { ascending: true });
+  const bundleResult = await fetchAllRows(() =>
+    supabase
+      .from("products")
+      .select(PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT)
+      .eq("bundle_id", bundleId)
+  );
 
   if (bundleResult.error) {
     return {
@@ -112,13 +114,22 @@ export async function fetchPublicReviewReceiveSubmissions(productIds, lookupType
     return { data: [], error: null };
   }
 
-  return supabase
-    .from("submissions")
-    .select(PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT)
-    .in("product_id", ids)
-    .eq(lookupField, lookupValue)
-    .order("product_id", { ascending: true })
-    .order("created_at", { ascending: true });
+  const result = await fetchAllRowsInChunks(ids, (productIdChunk) =>
+    supabase
+      .from("submissions")
+      .select(PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT)
+      .in("product_id", productIdChunk)
+      .eq(lookupField, lookupValue)
+  );
+
+  if (result.data) {
+    result.data.sort((left, right) => {
+      const productComparison = Number(left.product_id) - Number(right.product_id);
+      return productComparison || compareByCreatedAtThenId(left, right);
+    });
+  }
+
+  return result;
 }
 
 export async function fetchPublicReviewReceiveEvidencePhotos(submissionIds) {
@@ -126,11 +137,13 @@ export async function fetchPublicReviewReceiveEvidencePhotos(submissionIds) {
     return { data: [], error: null };
   }
 
-  return supabase
-    .from("evidence_photos")
-    .select("submission_id,image_url")
-    .eq("photo_type", "review")
-    .in("submission_id", submissionIds);
+  return fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+    supabase
+      .from("evidence_photos")
+      .select("id,submission_id,image_url")
+      .eq("photo_type", "review")
+      .in("submission_id", submissionIdChunk)
+  );
 }
 
 export async function preparePublicReviewReceivePhotoUpload(payload) {

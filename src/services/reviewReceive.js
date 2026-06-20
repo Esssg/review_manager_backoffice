@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
+import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const REVIEW_RECEIVE_PRODUCT_SELECT =
   "id,title,product_name,description,product_link,company_name,option_name,review_type,planned_depositor_name,manager_id,product_date,created_at,bundle_id";
@@ -36,12 +37,13 @@ async function fetchBundleProducts(product, managerIds) {
     };
   }
 
-  return supabase
-    .from("products")
-    .select(REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB)
-    .eq("bundle_id", bundleId)
-    .in("manager_id", managerIds)
-    .order("id", { ascending: true });
+  return fetchAllRows(() =>
+    supabase
+      .from("products")
+      .select(REVIEW_RECEIVE_PRODUCT_SELECT_WITH_DEPOSIT_GB)
+      .eq("bundle_id", bundleId)
+      .in("manager_id", managerIds)
+  );
 }
 
 export async function fetchReviewReceiveDetail(productId, adminId) {
@@ -114,11 +116,16 @@ export async function fetchReviewReceiveDetail(productId, adminId) {
   }
 
   const productIds = (productsResult.data?.length ? productsResult.data : [productResult.data]).map((product) => product.id);
-  const submissionsResult = await supabase
-    .from("submissions")
-    .select(REVIEW_RECEIVE_SUBMISSIONS_SELECT)
-    .in("product_id", productIds)
-    .order("created_at", { ascending: true });
+  const submissionsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+    supabase
+      .from("submissions")
+      .select(REVIEW_RECEIVE_SUBMISSIONS_SELECT)
+      .in("product_id", productIdChunk)
+  );
+
+  if (submissionsResult.data) {
+    submissionsResult.data.sort((left, right) => compareByCreatedAtThenId(left, right));
+  }
 
   return {
     scope,
@@ -137,11 +144,13 @@ export async function fetchReviewReceiveEvidencePhotos(submissionIds) {
     return { data: [], error: null };
   }
 
-  return supabase
-    .from("evidence_photos")
-    .select("id,submission_id,image_url")
-    .eq("photo_type", "review")
-    .in("submission_id", submissionIds);
+  return fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+    supabase
+      .from("evidence_photos")
+      .select("id,submission_id,image_url")
+      .eq("photo_type", "review")
+      .in("submission_id", submissionIdChunk)
+  );
 }
 
 export async function createReviewReceiveSubmission(payload) {

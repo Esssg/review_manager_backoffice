@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
+import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const EXPORT_PRODUCTS_SELECT =
   "id,manager_id,product_date,title,description,product_link,product_name,deposit_date,company_name,option_name,review_type,planned_depositor_name,created_at";
@@ -75,52 +76,54 @@ export async function fetchAdminExportData(adminId, options = {}) {
     return buildEmptyExportResult(scope);
   }
 
-  const productsResult = await supabase
-    .from("products")
-    .select(EXPORT_PRODUCTS_SELECT)
-    .in("manager_id", scope.managerIds)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: true });
+  const productsResult = await fetchAllRows(() =>
+    supabase
+      .from("products")
+      .select(EXPORT_PRODUCTS_SELECT)
+      .in("manager_id", scope.managerIds)
+  );
 
   if (productsResult.error) {
     return buildEmptyExportResult(scope, productsResult.error);
   }
 
   const products = productsResult.data ?? [];
+  products.sort((left, right) => compareByCreatedAtThenId(left, right, false, true));
   const productIds = products.map((product) => product.id);
 
   if (productIds.length === 0) {
     return buildEmptyExportResult(scope);
   }
 
-  let submissionsQuery = supabase
-    .from("submissions")
-    .select(EXPORT_SUBMISSIONS_SELECT)
-    .in("product_id", productIds)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
+  const submissionsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) => {
+    const query = supabase
+      .from("submissions")
+      .select(EXPORT_SUBMISSIONS_SELECT)
+      .in("product_id", productIdChunk);
 
-  submissionsQuery = applySubmissionFilters(submissionsQuery, {
-    dateFilter,
-    productId,
-    depositOnly
+    return applySubmissionFilters(query, {
+      dateFilter,
+      productId,
+      depositOnly
+    });
   });
-
-  const submissionsResult = await submissionsQuery;
 
   if (submissionsResult.error) {
     return buildEmptyExportResult(scope, submissionsResult.error);
   }
 
   const submissions = submissionsResult.data ?? [];
+  submissions.sort((left, right) => compareByCreatedAtThenId(left, right));
   const submissionIds = submissions.map((submission) => submission.id);
   let evidencePhotos = [];
 
   if (submissionIds.length > 0) {
-    const evidencePhotosResult = await supabase
-      .from("evidence_photos")
-      .select(EXPORT_EVIDENCE_PHOTOS_SELECT)
-      .in("submission_id", submissionIds);
+    const evidencePhotosResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+      supabase
+        .from("evidence_photos")
+        .select(EXPORT_EVIDENCE_PHOTOS_SELECT)
+        .in("submission_id", submissionIdChunk)
+    );
 
     if (evidencePhotosResult.error) {
       return {
@@ -139,12 +142,12 @@ export async function fetchAdminExportData(adminId, options = {}) {
   let applications = [];
 
   if (includeApplications) {
-    const applicationsResult = await supabase
-      .from("applications")
-      .select(EXPORT_APPLICATIONS_SELECT)
-      .in("product_id", productIds)
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true });
+    const applicationsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+      supabase
+        .from("applications")
+        .select(EXPORT_APPLICATIONS_SELECT)
+        .in("product_id", productIdChunk)
+    );
 
     if (applicationsResult.error) {
       return {
@@ -158,6 +161,7 @@ export async function fetchAdminExportData(adminId, options = {}) {
     }
 
     applications = applicationsResult.data ?? [];
+    applications.sort((left, right) => compareByCreatedAtThenId(left, right));
   }
 
   return {

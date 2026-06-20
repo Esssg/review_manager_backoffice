@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
+import { chunkValues, compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE =
@@ -16,9 +17,6 @@ const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_FALLBACKS = [
 ];
 const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT =
   "id,product_id,is_review_verified,is_deposit_verified,review_fee,created_at";
-const SUBMISSION_STATUS_PRODUCT_ID_CHUNK_SIZE = 100;
-const SUBMISSION_STATUS_PAGE_SIZE = 1000;
-
 function isMissingReviewReceiveProductColumn(error) {
   const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
   return message.includes("product_date") || message.includes("deposit_GB") || message.includes("bundle_id");
@@ -41,62 +39,61 @@ function buildMissingProductColumnError(error) {
 }
 
 async function fetchReviewReceiveProductRows(scope, selectColumns) {
-  let query = supabase.from("products").select(selectColumns).in("manager_id", scope.managerIds);
+  const result = await fetchAllRows(() =>
+    supabase.from("products").select(selectColumns).in("manager_id", scope.managerIds)
+  );
 
-  if (selectColumns.includes("product_date")) {
-    query = query.order("product_date", { ascending: false });
+  if (result.data) {
+    result.data.sort((left, right) => {
+      if (selectColumns.includes("product_date")) {
+        const dateComparison = String(right.product_date ?? "").localeCompare(String(left.product_date ?? ""));
+        if (dateComparison !== 0) return dateComparison;
+      }
+
+      return Number(right.id) - Number(left.id);
+    });
   }
 
-  return query.order("id", { ascending: false });
+  return result;
 }
 
 async function fetchReviewReceiveSubmissionStatusRows(productIds) {
-  const rows = [];
+  const result = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+    supabase
+      .from("submissions")
+      .select(ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT)
+      .in("product_id", productIdChunk)
+  );
 
-  for (let index = 0; index < productIds.length; index += SUBMISSION_STATUS_PRODUCT_ID_CHUNK_SIZE) {
-    const productIdChunk = productIds.slice(index, index + SUBMISSION_STATUS_PRODUCT_ID_CHUNK_SIZE);
-    let pageStart = 0;
-
-    while (true) {
-      const pageEnd = pageStart + SUBMISSION_STATUS_PAGE_SIZE - 1;
-      const result = await supabase
-        .from("submissions")
-        .select(ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT)
-        .in("product_id", productIdChunk)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true })
-        .range(pageStart, pageEnd);
-
-      if (result.error) {
-        return {
-          data: null,
-          error: result.error
-        };
-      }
-
-      const pageRows = result.data ?? [];
-      rows.push(...pageRows);
-
-      if (pageRows.length < SUBMISSION_STATUS_PAGE_SIZE) {
-        break;
-      }
-
-      pageStart += SUBMISSION_STATUS_PAGE_SIZE;
-    }
+  if (result.data) {
+    result.data.sort((left, right) => compareByCreatedAtThenId(left, right));
   }
 
-  return {
-    data: rows,
-    error: null
-  };
+  return result;
+}
+
+async function deleteRowsInChunks(tableName, columnName, values) {
+  for (const chunk of chunkValues(values)) {
+    const { error } = await supabase.from(tableName).delete().in(columnName, chunk);
+    if (error) return error;
+  }
+
+  return null;
 }
 
 export async function fetchAdminProducts(adminId) {
-  return supabase
-    .from("products")
-    .select(ADMIN_PRODUCTS_SELECT)
-    .eq("manager_id", adminId)
-    .order("id", { ascending: false });
+  const result = await fetchAllRows(() =>
+    supabase
+      .from("products")
+      .select(ADMIN_PRODUCTS_SELECT)
+      .eq("manager_id", adminId)
+  );
+
+  if (result.data) {
+    result.data.sort((left, right) => Number(right.id) - Number(left.id));
+  }
+
+  return result;
 }
 
 export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
@@ -255,10 +252,12 @@ export async function deleteAdminReviewReceiveProduct(productId, adminId, option
     };
   }
 
-  const { data: submissions, error: submissionsError } = await supabase
-    .from("submissions")
-    .select("id")
-    .eq("product_id", productId);
+  const { data: submissions, error: submissionsError } = await fetchAllRows(() =>
+    supabase
+      .from("submissions")
+      .select("id")
+      .eq("product_id", productId)
+  );
 
   if (submissionsError) {
     return {
@@ -270,7 +269,7 @@ export async function deleteAdminReviewReceiveProduct(productId, adminId, option
   const submissionIds = (submissions ?? []).map((submission) => submission.id);
 
   if (submissionIds.length > 0) {
-    const { error: photosError } = await supabase.from("evidence_photos").delete().in("submission_id", submissionIds);
+    const photosError = await deleteRowsInChunks("evidence_photos", "submission_id", submissionIds);
 
     if (photosError) {
       return {
@@ -322,11 +321,13 @@ export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, o
     };
   }
 
-  const { data: products, error: productsError } = await supabase
-    .from("products")
-    .select("id")
-    .eq("bundle_id", bundleId)
-    .in("manager_id", scope.managerIds);
+  const { data: products, error: productsError } = await fetchAllRows(() =>
+    supabase
+      .from("products")
+      .select("id")
+      .eq("bundle_id", bundleId)
+      .in("manager_id", scope.managerIds)
+  );
 
   if (productsError) {
     return {
@@ -344,10 +345,12 @@ export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, o
     };
   }
 
-  const { data: submissions, error: submissionsError } = await supabase
-    .from("submissions")
-    .select("id")
-    .in("product_id", productIds);
+  const { data: submissions, error: submissionsError } = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+    supabase
+      .from("submissions")
+      .select("id")
+      .in("product_id", productIdChunk)
+  );
 
   if (submissionsError) {
     return {
@@ -359,7 +362,7 @@ export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, o
   const submissionIds = (submissions ?? []).map((submission) => submission.id);
 
   if (submissionIds.length > 0) {
-    const { error: photosError } = await supabase.from("evidence_photos").delete().in("submission_id", submissionIds);
+    const photosError = await deleteRowsInChunks("evidence_photos", "submission_id", submissionIds);
 
     if (photosError) {
       return {
@@ -372,7 +375,7 @@ export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, o
   const relatedTables = ["submissions", "applications", "product_steps"];
 
   for (const tableName of relatedTables) {
-    const { error } = await supabase.from(tableName).delete().in("product_id", productIds);
+    const error = await deleteRowsInChunks(tableName, "product_id", productIds);
 
     if (error) {
       return {
@@ -382,11 +385,20 @@ export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, o
     }
   }
 
-  const { error: deleteError } = await supabase
-    .from("products")
-    .delete()
-    .in("id", productIds)
-    .in("manager_id", scope.managerIds);
+  let deleteError = null;
+
+  for (const productIdChunk of chunkValues(productIds)) {
+    const { error } = await supabase
+      .from("products")
+      .delete()
+      .in("id", productIdChunk)
+      .in("manager_id", scope.managerIds);
+
+    if (error) {
+      deleteError = error;
+      break;
+    }
+  }
 
   return {
     error: deleteError,

@@ -4,8 +4,9 @@ import {
   isAdminCapabilitiesColumnError,
   normalizeAdminCapabilities
 } from "../utils/adminCapabilities";
+import { fetchAllRows } from "./paginatedQuery";
 
-const ADMIN_MENU_PERMISSIONS_SELECT = "admin_id,menu_number,menu_label";
+const ADMIN_MENU_PERMISSIONS_SELECT = "id,admin_id,menu_number,menu_label";
 const ADMIN_CAPABILITIES_SELECT = "login_id,include_company_data_include,can_verify_deposit";
 
 export async function validateAdminCredentials(loginId, password) {
@@ -18,11 +19,18 @@ export async function validateAdminCredentials(loginId, password) {
 }
 
 export async function fetchAdminMenuPermissions(adminId) {
-  return supabase
-    .from("admin_menu_permissions")
-    .select(ADMIN_MENU_PERMISSIONS_SELECT)
-    .eq("admin_id", adminId)
-    .order("menu_number", { ascending: true });
+  const result = await fetchAllRows(() =>
+    supabase
+      .from("admin_menu_permissions")
+      .select(ADMIN_MENU_PERMISSIONS_SELECT)
+      .eq("admin_id", adminId)
+  );
+
+  if (result.data) {
+    result.data.sort((left, right) => left.menu_number - right.menu_number);
+  }
+
+  return result;
 }
 
 export async function fetchAdminCapabilities(adminId) {

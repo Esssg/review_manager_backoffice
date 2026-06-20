@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
+import { fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const DASHBOARD_PRODUCTS_SELECT =
   "id,manager_id,title,product_name,review_type,company_name,option_name,is_real_shipping,created_at";
@@ -34,10 +35,12 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
     return buildEmptyResult(scope);
   }
 
-  const productsResult = await supabase
-    .from("products")
-    .select(DASHBOARD_PRODUCTS_SELECT)
-    .in("manager_id", scope.managerIds);
+  const productsResult = await fetchAllRows(() =>
+    supabase
+      .from("products")
+      .select(DASHBOARD_PRODUCTS_SELECT)
+      .in("manager_id", scope.managerIds)
+  );
 
   if (productsResult.error) {
     return {
@@ -62,10 +65,12 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
   let evidencePhotosError = null;
 
   if (productIds.length > 0) {
-    const submissionsResult = await supabase
-      .from("submissions")
-      .select(DASHBOARD_SUBMISSIONS_SELECT)
-      .in("product_id", productIds);
+    const submissionsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+      supabase
+        .from("submissions")
+        .select(DASHBOARD_SUBMISSIONS_SELECT)
+        .in("product_id", productIdChunk)
+    );
 
     if (submissionsResult.error) {
       submissionsError = submissionsResult.error;
@@ -73,10 +78,12 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
       submissions = submissionsResult.data ?? [];
     }
 
-    const applicationsResult = await supabase
-      .from("applications")
-      .select(DASHBOARD_APPLICATIONS_SELECT)
-      .in("product_id", productIds);
+    const applicationsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+      supabase
+        .from("applications")
+        .select(DASHBOARD_APPLICATIONS_SELECT)
+        .in("product_id", productIdChunk)
+    );
 
     if (applicationsResult.error) {
       applicationsError = applicationsResult.error;
@@ -87,10 +94,12 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
     const submissionIds = submissions.map((submission) => submission.id);
 
     if (submissionIds.length > 0) {
-      const evidencePhotosResult = await supabase
-        .from("evidence_photos")
-        .select(DASHBOARD_EVIDENCE_PHOTOS_SELECT)
-        .in("submission_id", submissionIds);
+      const evidencePhotosResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+        supabase
+          .from("evidence_photos")
+          .select(DASHBOARD_EVIDENCE_PHOTOS_SELECT)
+          .in("submission_id", submissionIdChunk)
+      );
 
       if (evidencePhotosResult.error) {
         evidencePhotosError = evidencePhotosResult.error;
@@ -104,11 +113,14 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
   let companyMembersError = null;
 
   if (includeCompanyData && scope.companyName) {
-    const companyMembersResult = await supabase
-      .from("admins")
-      .select(DASHBOARD_COMPANY_MEMBERS_SELECT)
-      .eq("company", scope.companyName)
-      .order("login_id", { ascending: true });
+    const companyMembersResult = await fetchAllRows(
+      () =>
+        supabase
+          .from("admins")
+          .select(DASHBOARD_COMPANY_MEMBERS_SELECT)
+          .eq("company", scope.companyName),
+      { cursorColumn: "login_id" }
+    );
 
     if (companyMembersResult.error) {
       companyMembersError = companyMembersResult.error;

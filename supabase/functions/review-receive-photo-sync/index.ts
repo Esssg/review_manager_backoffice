@@ -16,6 +16,7 @@ const corsHeaders = {
 const PHOTO_TYPE = "review";
 const MAX_FILE_COUNT = 10;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const SUPABASE_PAGE_SIZE = 1000;
 
 type PrepareAction = {
   action: "prepare";
@@ -205,18 +206,43 @@ async function listCurrentPhotoUrls(
   supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>,
   submissionId: number
 ) {
-  const { data, error } = await supabaseAdmin
-    .from("evidence_photos")
-    .select("image_url")
-    .eq("submission_id", submissionId)
-    .eq("photo_type", PHOTO_TYPE)
-    .order("created_at", { ascending: true });
+  const photos: Array<{ id: number; image_url: string }> = [];
+  let lastPhotoId: number | null = null;
 
-  if (error) {
-    throw new Error(error.message);
+  while (true) {
+    let query = supabaseAdmin
+      .from("evidence_photos")
+      .select("id,image_url")
+      .eq("submission_id", submissionId)
+      .eq("photo_type", PHOTO_TYPE)
+      .order("id", { ascending: true })
+      .limit(SUPABASE_PAGE_SIZE);
+
+    if (lastPhotoId != null) {
+      query = query.gt("id", lastPhotoId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const pageRows = data ?? [];
+
+    if (pageRows.length === 0) {
+      break;
+    }
+
+    photos.push(...pageRows);
+    lastPhotoId = pageRows.at(-1)?.id ?? null;
+
+    if (lastPhotoId == null) {
+      throw new Error("증빙 사진 전체 조회를 계속할 커서가 없습니다.");
+    }
   }
 
-  return (data ?? []).map((item) => item.image_url);
+  return photos.map((item) => item.image_url);
 }
 
 async function handlePrepareAction(body: PrepareAction) {

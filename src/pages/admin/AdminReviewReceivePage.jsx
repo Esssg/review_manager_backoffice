@@ -808,15 +808,15 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       : "현재 계정에 회사 정보가 없어 내 계정 데이터만 표시합니다."
     : "현재 로그인한 계정의 데이터만 표시합니다.";
 
-  const viewFilteredProducts = products.filter((product) => {
+  const bundledProducts = buildReviewReceiveBundleRows(products);
+  const viewFilteredProducts = bundledProducts.filter((product) => {
     if (viewMode === "all") {
       return true;
     }
 
     return getReviewReceiveProductStatus(product) === viewMode;
   });
-  const bundledProducts = buildReviewReceiveBundleRows(viewFilteredProducts);
-  const filteredProducts = filterReviewReceiveProducts(bundledProducts, productFilters);
+  const filteredProducts = filterReviewReceiveProducts(viewFilteredProducts, productFilters);
   const hasActiveProductFilters = hasActiveReviewReceiveProductFilters(productFilters);
 
   const statusSummaryText =
