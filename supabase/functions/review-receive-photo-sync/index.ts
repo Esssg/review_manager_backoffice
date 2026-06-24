@@ -17,6 +17,22 @@ const PHOTO_TYPE = "review";
 const MAX_FILE_COUNT = 10;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const SUPABASE_PAGE_SIZE = 1000;
+const ERROR_CODES = {
+  PREPARE_REQUEST_INVALID: "00011",
+  PREPARE_ACCESS_DENIED: "00012",
+  PREPARE_LOCKED: "00013",
+  PREPARE_SERVER_FAILURE: "00014",
+  COMMIT_REQUEST_INVALID: "00031",
+  COMMIT_ACCESS_DENIED: "00032",
+  COMMIT_LOCKED: "00033",
+  COMMIT_CURRENT_PHOTOS_FAILED: "00034",
+  COMMIT_INSERT_FAILED: "00035",
+  COMMIT_DELETE_FAILED: "00036",
+  COMMIT_SERVER_FAILURE: "00038",
+  ROLLBACK_REQUEST_OR_ACCESS_FAILED: "00041",
+  ROLLBACK_DELETE_FAILED: "00042",
+  UNKNOWN_SERVER_FAILURE: "00090"
+} as const;
 
 type PrepareAction = {
   action: "prepare";
@@ -52,6 +68,18 @@ type RollbackAction = {
 
 type RequestBody = PrepareAction | CommitAction | RollbackAction;
 
+class PhotoSyncError extends Error {
+  code: string;
+  status: number;
+
+  constructor(code: string, message: string, status = 500) {
+    super(message);
+    this.name = "PhotoSyncError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -59,25 +87,29 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function badRequest(message: string, status = 400) {
-  return json({ error: message }, status);
+function errorResponse(code: string, message: string, status = 400) {
+  return json({ code, error: message }, status);
 }
 
-function getRequiredEnv(name: string) {
+function badRequest(message: string, status = 400, code = ERROR_CODES.PREPARE_REQUEST_INVALID) {
+  return errorResponse(code, message, status);
+}
+
+function getRequiredEnv(name: string, code = ERROR_CODES.UNKNOWN_SERVER_FAILURE) {
   const value = Deno.env.get(name);
 
   if (!value) {
-    throw new Error(`${name} 시크릿이 설정되지 않았습니다.`);
+    throw new PhotoSyncError(code, `${name} 시크릿이 설정되지 않았습니다.`);
   }
 
   return value;
 }
 
-function getS3Config() {
-  const region = getRequiredEnv("AWS_S3_REGION");
-  const bucket = getRequiredEnv("AWS_S3_BUCKET");
-  const accessKeyId = getRequiredEnv("AWS_S3_ACCESS_KEY_ID");
-  const secretAccessKey = getRequiredEnv("AWS_S3_SECRET_ACCESS_KEY");
+function getS3Config(errorCode = ERROR_CODES.PREPARE_SERVER_FAILURE) {
+  const region = getRequiredEnv("AWS_S3_REGION", errorCode);
+  const bucket = getRequiredEnv("AWS_S3_BUCKET", errorCode);
+  const accessKeyId = getRequiredEnv("AWS_S3_ACCESS_KEY_ID", errorCode);
+  const secretAccessKey = getRequiredEnv("AWS_S3_SECRET_ACCESS_KEY", errorCode);
   const uploadPrefix = (Deno.env.get("AWS_S3_UPLOAD_PREFIX") ?? "review-receive").replace(/^\/+|\/+$/g, "");
   const publicBaseUrl =
     (Deno.env.get("AWS_S3_PUBLIC_BASE_URL") ?? `https://${bucket}.s3.${region}.amazonaws.com`).replace(/\/+$/g, "");
@@ -142,8 +174,8 @@ function extractObjectKeyFromImageUrl(publicBaseUrl: string, imageUrl: string) {
   }
 }
 
-function createSupabaseAdminClient() {
-  return createClient(getRequiredEnv("SUPABASE_URL"), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"));
+function createSupabaseAdminClient(errorCode = ERROR_CODES.UNKNOWN_SERVER_FAILURE) {
+  return createClient(getRequiredEnv("SUPABASE_URL", errorCode), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY", errorCode));
 }
 
 function createS3Client(config: ReturnType<typeof getS3Config>) {
@@ -166,7 +198,8 @@ async function loadSubmissionForPublicAccess(
     productId: number;
     submissionId: number;
     assignName: string;
-  }
+  },
+  errorCode = ERROR_CODES.UNKNOWN_SERVER_FAILURE
 ) {
   const { data, error } = await supabaseAdmin
     .from("submissions")
@@ -177,7 +210,7 @@ async function loadSubmissionForPublicAccess(
     .maybeSingle();
 
   if (error) {
-    throw new Error(error.message);
+    throw new PhotoSyncError(errorCode, error.message);
   }
 
   if (!data) {
@@ -204,7 +237,8 @@ async function deleteS3Objects(s3Client: S3Client, bucket: string, objectKeys: s
 
 async function listCurrentPhotoUrls(
   supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>,
-  submissionId: number
+  submissionId: number,
+  errorCode = ERROR_CODES.COMMIT_CURRENT_PHOTOS_FAILED
 ) {
   const photos: Array<{ id: number; image_url: string }> = [];
   let lastPhotoId: number | null = null;
@@ -225,7 +259,7 @@ async function listCurrentPhotoUrls(
     const { data, error } = await query;
 
     if (error) {
-      throw new Error(error.message);
+      throw new PhotoSyncError(errorCode, error.message);
     }
 
     const pageRows = data ?? [];
@@ -238,7 +272,7 @@ async function listCurrentPhotoUrls(
     lastPhotoId = pageRows.at(-1)?.id ?? null;
 
     if (lastPhotoId == null) {
-      throw new Error("증빙 사진 전체 조회를 계속할 커서가 없습니다.");
+      throw new PhotoSyncError(errorCode, "증빙 사진 전체 조회를 계속할 커서가 없습니다.");
     }
   }
 
@@ -247,48 +281,57 @@ async function listCurrentPhotoUrls(
 
 async function handlePrepareAction(body: PrepareAction) {
   if (!Array.isArray(body.files) || body.files.length === 0) {
-    return badRequest("업로드할 파일 정보가 없습니다.");
+    return badRequest("업로드할 파일 정보가 없습니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
   }
 
   if (body.files.length > MAX_FILE_COUNT) {
-    return badRequest(`한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`);
+    return badRequest(`한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`, 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
   }
 
-  const supabaseAdmin = createSupabaseAdminClient();
-  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body);
+  const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.PREPARE_SERVER_FAILURE);
+  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body, ERROR_CODES.PREPARE_SERVER_FAILURE);
 
   if (!submission) {
-    return badRequest("사진 업로드 권한이 없는 제출입니다.", 403);
+    return badRequest("사진 업로드 권한이 없는 제출입니다.", 403, ERROR_CODES.PREPARE_ACCESS_DENIED);
   }
 
   if (submission.is_review_verified) {
-    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409);
+    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409, ERROR_CODES.PREPARE_LOCKED);
   }
 
-  const s3Config = getS3Config();
+  const s3Config = getS3Config(ERROR_CODES.PREPARE_SERVER_FAILURE);
   const s3Client = createS3Client(s3Config);
 
   const uploads = [];
 
   for (const file of body.files) {
     if (!file.contentType?.startsWith("image/")) {
-      return badRequest("이미지 파일만 업로드할 수 있습니다.");
+      return badRequest("이미지 파일만 업로드할 수 있습니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
     }
 
     if (!Number.isFinite(file.size) || file.size <= 0 || file.size > MAX_FILE_SIZE_BYTES) {
-      return badRequest(`이미지 파일은 10MB 이하만 업로드할 수 있습니다.`);
+      return badRequest(`이미지 파일은 10MB 이하만 업로드할 수 있습니다.`, 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
     }
 
     const objectKey = buildObjectKey(s3Config.uploadPrefix, body.productId, body.submissionId, file.fileName);
-    const uploadUrl = await getSignedUrl(
-      s3Client,
-      new PutObjectCommand({
-        Bucket: s3Config.bucket,
-        Key: objectKey,
-        ContentType: file.contentType
-      }),
-      { expiresIn: 60 * 5 }
-    );
+    let uploadUrl = "";
+
+    try {
+      uploadUrl = await getSignedUrl(
+        s3Client,
+        new PutObjectCommand({
+          Bucket: s3Config.bucket,
+          Key: objectKey,
+          ContentType: file.contentType
+        }),
+        { expiresIn: 60 * 5 }
+      );
+    } catch (error) {
+      throw new PhotoSyncError(
+        ERROR_CODES.PREPARE_SERVER_FAILURE,
+        error instanceof Error ? error.message : "S3 업로드 URL 발급에 실패했습니다."
+      );
+    }
 
     uploads.push({
       objectKey,
@@ -302,22 +345,26 @@ async function handlePrepareAction(body: PrepareAction) {
 
 async function handleCommitAction(body: CommitAction) {
   if (!Array.isArray(body.removedImageUrls) || !Array.isArray(body.uploadedFiles)) {
-    return badRequest("사진 저장 요청 형식이 올바르지 않습니다.");
+    return badRequest("사진 저장 요청 형식이 올바르지 않습니다.", 400, ERROR_CODES.COMMIT_REQUEST_INVALID);
   }
 
-  const supabaseAdmin = createSupabaseAdminClient();
-  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body);
+  const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.COMMIT_SERVER_FAILURE);
+  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body, ERROR_CODES.COMMIT_SERVER_FAILURE);
 
   if (!submission) {
-    return badRequest("사진 저장 권한이 없는 제출입니다.", 403);
+    return badRequest("사진 저장 권한이 없는 제출입니다.", 403, ERROR_CODES.COMMIT_ACCESS_DENIED);
   }
 
   if (submission.is_review_verified) {
-    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409);
+    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409, ERROR_CODES.COMMIT_LOCKED);
   }
 
-  const s3Config = getS3Config();
-  const currentPhotos = await listCurrentPhotoUrls(supabaseAdmin, body.submissionId);
+  const s3Config = getS3Config(ERROR_CODES.COMMIT_SERVER_FAILURE);
+  const currentPhotos = await listCurrentPhotoUrls(
+    supabaseAdmin,
+    body.submissionId,
+    ERROR_CODES.COMMIT_CURRENT_PHOTOS_FAILED
+  );
   const currentPhotoSet = new Set(currentPhotos);
   const removableImageUrls = body.removedImageUrls.filter((imageUrl) => currentPhotoSet.has(imageUrl));
   const removableObjectKeys = removableImageUrls
@@ -334,7 +381,7 @@ async function handleCommitAction(body: CommitAction) {
   const uploadedImageUrls = validUploadedFiles.map((file) => file.imageUrl);
 
   if (validUploadedFiles.length > MAX_FILE_COUNT) {
-    return badRequest(`한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`);
+    return badRequest(`한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`, 400, ERROR_CODES.COMMIT_REQUEST_INVALID);
   }
 
   try {
@@ -348,7 +395,7 @@ async function handleCommitAction(body: CommitAction) {
       );
 
       if (error) {
-        throw new Error(error.message);
+        throw new PhotoSyncError(ERROR_CODES.COMMIT_INSERT_FAILED, error.message);
       }
     }
 
@@ -361,7 +408,7 @@ async function handleCommitAction(body: CommitAction) {
         .in("image_url", removableImageUrls);
 
       if (error) {
-        throw new Error(error.message);
+        throw new PhotoSyncError(ERROR_CODES.COMMIT_DELETE_FAILED, error.message);
       }
     }
   } catch (error) {
@@ -392,21 +439,28 @@ async function handleCommitAction(body: CommitAction) {
 
 async function handleRollbackAction(body: RollbackAction) {
   if (!Array.isArray(body.objectKeys)) {
-    return badRequest("롤백 요청 형식이 올바르지 않습니다.");
+    return badRequest("롤백 요청 형식이 올바르지 않습니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
   }
 
-  const supabaseAdmin = createSupabaseAdminClient();
-  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body);
+  const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.ROLLBACK_DELETE_FAILED);
+  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body, ERROR_CODES.ROLLBACK_DELETE_FAILED);
 
   if (!submission) {
-    return badRequest("롤백 권한이 없는 제출입니다.", 403);
+    return badRequest("롤백 권한이 없는 제출입니다.", 403, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
   }
 
-  const s3Config = getS3Config();
+  const s3Config = getS3Config(ERROR_CODES.ROLLBACK_DELETE_FAILED);
   const s3Client = createS3Client(s3Config);
   const rollbackKeys = (body.objectKeys ?? []).filter((key) => key.startsWith(`${s3Config.uploadPrefix}/`));
 
-  await deleteS3Objects(s3Client, s3Config.bucket, rollbackKeys);
+  try {
+    await deleteS3Objects(s3Client, s3Config.bucket, rollbackKeys);
+  } catch (error) {
+    throw new PhotoSyncError(
+      ERROR_CODES.ROLLBACK_DELETE_FAILED,
+      error instanceof Error ? error.message : "임시 업로드 파일을 삭제하지 못했습니다."
+    );
+  }
 
   return json({ deletedCount: rollbackKeys.length });
 }
@@ -419,22 +473,29 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
-    return badRequest("POST 요청만 지원합니다.", 405);
+    return badRequest("POST 요청만 지원합니다.", 405, ERROR_CODES.PREPARE_REQUEST_INVALID);
   }
 
   try {
     const body = (await req.json()) as RequestBody;
 
     if (!body?.action) {
-      return badRequest("action 값이 필요합니다.");
+      return badRequest("action 값이 필요합니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
     }
 
+    const requestInvalidCode =
+      body.action === "commit"
+        ? ERROR_CODES.COMMIT_REQUEST_INVALID
+        : body.action === "rollback"
+          ? ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED
+          : ERROR_CODES.PREPARE_REQUEST_INVALID;
+
     if (!Number.isFinite(body.productId) || !Number.isFinite(body.submissionId)) {
-      return badRequest("productId와 submissionId는 숫자여야 합니다.");
+      return badRequest("productId와 submissionId는 숫자여야 합니다.", 400, requestInvalidCode);
     }
 
     if (!body.assignName?.trim()) {
-      return badRequest("assignName 값이 필요합니다.");
+      return badRequest("assignName 값이 필요합니다.", 400, requestInvalidCode);
     }
 
     if (body.action === "prepare") {
@@ -449,8 +510,16 @@ Deno.serve(async (req) => {
       return await handleRollbackAction(body);
     }
 
-    return badRequest("지원하지 않는 action 입니다.");
+    return badRequest("지원하지 않는 action 입니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
   } catch (error) {
-    return badRequest(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.", 500);
+    if (error instanceof PhotoSyncError) {
+      return errorResponse(error.code, error.message, error.status);
+    }
+
+    return errorResponse(
+      ERROR_CODES.UNKNOWN_SERVER_FAILURE,
+      error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.",
+      500
+    );
   }
 });

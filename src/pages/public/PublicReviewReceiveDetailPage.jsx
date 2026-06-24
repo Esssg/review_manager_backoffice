@@ -20,6 +20,38 @@ const PUBLIC_LOOKUP_OPTIONS = [
   { value: "account_holder", label: "예금주" }
 ];
 const UNREGISTERED_PRODUCT_ITEM_TEXT = "품목 미등록";
+const PUBLIC_PHOTO_UPLOAD_MAX_FILE_COUNT = 10;
+const PUBLIC_PHOTO_UPLOAD_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const PUBLIC_PHOTO_UPLOAD_ERROR_MESSAGES = {
+  "00001": "이미지 파일만 업로드할 수 있습니다.",
+  "00002": "비어 있거나 읽을 수 없는 이미지 파일입니다.",
+  "00003": "이미지 파일은 10MB 이하만 업로드할 수 있습니다.",
+  "00004": "사진은 한 번에 최대 10장까지만 업로드할 수 있습니다.",
+  "00005": "사진 미리보기를 만들지 못했습니다.",
+  "00010": "사진 업로드 준비 요청이 네트워크 문제로 실패했습니다.",
+  "00011": "사진 업로드 준비 요청 형식이 올바르지 않습니다.",
+  "00012": "사진 업로드 권한을 확인하지 못했습니다.",
+  "00013": "관리자가 리뷰완료 처리한 행은 수정할 수 없습니다.",
+  "00014": "사진 업로드 준비 중 서버 설정 또는 저장소 연결 문제가 발생했습니다.",
+  "00015": "사진 업로드 준비 응답이 올바르지 않습니다.",
+  "00020": "사진 파일을 저장소로 전송하지 못했습니다.",
+  "00021": "사진 저장소가 업로드 요청을 거부했습니다.",
+  "00022": "사진 업로드 요청이 중단되었습니다.",
+  "00030": "사진 정보 저장 요청이 네트워크 문제로 실패했습니다.",
+  "00031": "사진 정보 저장 요청 형식이 올바르지 않습니다.",
+  "00032": "사진 정보 저장 권한을 확인하지 못했습니다.",
+  "00033": "관리자가 리뷰완료 처리한 행은 저장할 수 없습니다.",
+  "00034": "기존 사진 정보를 확인하지 못했습니다.",
+  "00035": "새 사진 정보를 DB에 저장하지 못했습니다.",
+  "00036": "기존 사진 정보를 DB에서 삭제하지 못했습니다.",
+  "00037": "사진 정보 저장 응답이 올바르지 않습니다.",
+  "00038": "사진 정보 저장 중 서버 문제가 발생했습니다.",
+  "00040": "임시 업로드 파일 정리 요청이 네트워크 문제로 실패했습니다.",
+  "00041": "임시 업로드 파일 정리 권한을 확인하지 못했습니다.",
+  "00042": "임시 업로드 파일을 저장소에서 삭제하지 못했습니다.",
+  "00043": "업로드 실패 후 임시 파일 정리에 실패했습니다.",
+  "00090": "사진 저장 중 알 수 없는 오류가 발생했습니다."
+};
 
 function getLookupValueStorageKey(productId) {
   return `review_receive_public_name:${productId}`;
@@ -217,6 +249,138 @@ function buildSavedPhotoDraft(editorState) {
   };
 }
 
+function getPhotoUploadErrorMessage(code, fallbackMessage = "") {
+  return PUBLIC_PHOTO_UPLOAD_ERROR_MESSAGES[code] || fallbackMessage || PUBLIC_PHOTO_UPLOAD_ERROR_MESSAGES["00090"];
+}
+
+function createPhotoUploadError(code, options = {}) {
+  const error = new Error(options.message || getPhotoUploadErrorMessage(code));
+
+  error.code = code;
+  error.stage = options.stage || "";
+  error.status = options.status ?? null;
+  error.fileIndex = options.fileIndex ?? null;
+  error.fileName = options.fileName || "";
+  error.fileSize = options.fileSize ?? null;
+  error.originalErrorName = options.originalErrorName || "";
+  error.originalMessage = options.originalMessage || "";
+  error.debugMessage = options.debugMessage || "";
+  error.isPublicPhotoUploadError = true;
+
+  return error;
+}
+
+function normalizePhotoUploadError(error, fallbackCode, options = {}) {
+  if (error?.code) {
+    return createPhotoUploadError(error.code, {
+      ...options,
+      message: error.message || options.message,
+      stage: error.stage || options.stage,
+      status: error.status ?? options.status,
+      fileIndex: error.fileIndex ?? options.fileIndex,
+      fileName: error.fileName || options.fileName,
+      fileSize: error.fileSize ?? options.fileSize,
+      originalErrorName: error.originalErrorName || error.name || options.originalErrorName,
+      originalMessage: error.originalMessage || error.message || options.originalMessage,
+      debugMessage: error.debugMessage || options.debugMessage
+    });
+  }
+
+  return createPhotoUploadError(fallbackCode, {
+    ...options,
+    message: options.message || error?.message || getPhotoUploadErrorMessage(fallbackCode),
+    originalErrorName: error?.name || options.originalErrorName || "",
+    originalMessage: error?.message || options.originalMessage || ""
+  });
+}
+
+function formatPhotoUploadError(error) {
+  const normalizedError = error?.isPublicPhotoUploadError ? error : normalizePhotoUploadError(error, "00090");
+  const rollbackSuffix = normalizedError.rollbackCode ? ` 추가 정리 오류코드: ${normalizedError.rollbackCode}` : "";
+
+  return `[${normalizedError.code}] ${normalizedError.message}${rollbackSuffix}`;
+}
+
+function getPhotoFileDebugInfo(file, fileIndex) {
+  return {
+    fileIndex,
+    fileName: file?.name || "",
+    fileSize: file?.size ?? null,
+    contentType: file?.type || ""
+  };
+}
+
+function validateSelectedPhotoFiles(fileList, existingFileCount = 0) {
+  const selectedFiles = Array.from(fileList ?? []);
+
+  if (selectedFiles.length === 0) {
+    return {
+      files: [],
+      error: null
+    };
+  }
+
+  const nextFileCount = existingFileCount + selectedFiles.length;
+
+  if (nextFileCount > PUBLIC_PHOTO_UPLOAD_MAX_FILE_COUNT) {
+    return {
+      files: [],
+      error: createPhotoUploadError("00004", {
+        stage: "select",
+        debugMessage: `selected=${selectedFiles.length}, existing=${existingFileCount}`
+      })
+    };
+  }
+
+  for (let index = 0; index < selectedFiles.length; index += 1) {
+    const file = selectedFiles[index];
+    const fileDebugInfo = getPhotoFileDebugInfo(file, index + 1);
+
+    if (!file?.type?.startsWith("image/")) {
+      return {
+        files: [],
+        error: createPhotoUploadError("00001", {
+          stage: "select",
+          ...fileDebugInfo
+        })
+      };
+    }
+
+    if (!Number.isFinite(file.size) || file.size <= 0) {
+      return {
+        files: [],
+        error: createPhotoUploadError("00002", {
+          stage: "select",
+          ...fileDebugInfo
+        })
+      };
+    }
+
+    if (file.size > PUBLIC_PHOTO_UPLOAD_MAX_FILE_SIZE_BYTES) {
+      return {
+        files: [],
+        error: createPhotoUploadError("00003", {
+          stage: "select",
+          ...fileDebugInfo
+        })
+      };
+    }
+  }
+
+  return {
+    files: selectedFiles,
+    error: null
+  };
+}
+
+async function readUploadErrorBody(response) {
+  try {
+    return await response.clone().text();
+  } catch {
+    return "";
+  }
+}
+
 function createPreviewPhoto(file) {
   return {
     id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -225,17 +389,39 @@ function createPreviewPhoto(file) {
   };
 }
 
-async function uploadFileToPresignedUrl(uploadUrl, file) {
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream"
-    },
-    body: file
-  });
+async function uploadFileToPresignedUrl(uploadUrl, file, fileIndex) {
+  let response = null;
+
+  try {
+    response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream"
+      },
+      body: file
+    });
+  } catch (error) {
+    const fileDebugInfo = getPhotoFileDebugInfo(file, fileIndex);
+    const isAborted = error?.name === "AbortError";
+
+    throw createPhotoUploadError(isAborted ? "00022" : "00020", {
+      stage: "upload",
+      ...fileDebugInfo,
+      originalErrorName: error?.name || "",
+      originalMessage: error?.message || "",
+      debugMessage: error?.message || ""
+    });
+  }
 
   if (!response.ok) {
-    throw new Error("S3 업로드에 실패했습니다.");
+    const errorBody = await readUploadErrorBody(response);
+
+    throw createPhotoUploadError("00021", {
+      stage: "upload",
+      status: response.status,
+      ...getPhotoFileDebugInfo(file, fileIndex),
+      debugMessage: errorBody
+    });
   }
 }
 
@@ -541,19 +727,42 @@ export default function PublicReviewReceiveDetailPage() {
       return;
     }
 
-    const selectedFiles = Array.from(fileList ?? []).filter((file) => file.type.startsWith("image/"));
+    const { files: selectedFiles, error } = validateSelectedPhotoFiles(fileList, photoEditor.newPhotos.length);
 
-    if (selectedFiles.length === 0) {
+    if (error) {
+      console.warn("Public review photo selection failed", error);
       setPhotoEditor((prev) => ({
         ...prev,
-        feedbackMessage: "이미지 파일만 추가할 수 있습니다."
+        feedbackMessage: formatPhotoUploadError(error)
+      }));
+      return;
+    }
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    let previewPhotos = [];
+
+    try {
+      previewPhotos = selectedFiles.map(createPreviewPhoto);
+    } catch (error) {
+      const normalizedError = normalizePhotoUploadError(error, "00005", {
+        stage: "preview",
+        message: getPhotoUploadErrorMessage("00005")
+      });
+
+      console.warn("Public review photo preview failed", normalizedError);
+      setPhotoEditor((prev) => ({
+        ...prev,
+        feedbackMessage: formatPhotoUploadError(normalizedError)
       }));
       return;
     }
 
     setPhotoEditor((prev) => ({
       ...prev,
-      newPhotos: [...prev.newPhotos, ...selectedFiles.map(createPreviewPhoto)],
+      newPhotos: [...prev.newPhotos, ...previewPhotos],
       feedbackMessage: `${selectedFiles.length}장의 이미지를 초안에 추가했습니다.`
     }));
   };
@@ -603,6 +812,7 @@ export default function PublicReviewReceiveDetailPage() {
     }
 
     const nextDraft = buildSavedPhotoDraft(photoEditor);
+
     if (nextDraft.newPhotos.length === 0) {
       setPhotoEditor((prev) => ({
         ...prev,
@@ -611,8 +821,21 @@ export default function PublicReviewReceiveDetailPage() {
       return;
     }
 
+    const draftValidation = validateSelectedPhotoFiles(
+      nextDraft.newPhotos.map((photo) => photo.file),
+      0
+    );
+
+    if (draftValidation.error) {
+      console.warn("Public review photo draft validation failed", draftValidation.error);
+      setPhotoEditor((prev) => ({
+        ...prev,
+        feedbackMessage: formatPhotoUploadError(draftValidation.error)
+      }));
+      return;
+    }
+
     const rowIdKey = String(photoEditor.row.id);
-    const hasChanges = hasPhotoDraftChanges(nextDraft);
 
     const persistPhotoChanges = async () => {
       setPhotoEditor((prev) => ({
@@ -641,7 +864,10 @@ export default function PublicReviewReceiveDetailPage() {
           }
 
           if (!prepareData?.uploads || prepareData.uploads.length !== nextDraft.newPhotos.length) {
-            throw new Error("업로드 준비 정보를 받지 못했습니다.");
+            throw createPhotoUploadError("00015", {
+              stage: "prepare",
+              debugMessage: `expected=${nextDraft.newPhotos.length}, received=${prepareData?.uploads?.length ?? "none"}`
+            });
           }
 
           setPhotoEditor((prev) => ({
@@ -653,7 +879,7 @@ export default function PublicReviewReceiveDetailPage() {
             const uploadTarget = prepareData.uploads[index];
             const draftPhoto = nextDraft.newPhotos[index];
 
-            await uploadFileToPresignedUrl(uploadTarget.uploadUrl, draftPhoto.file);
+            await uploadFileToPresignedUrl(uploadTarget.uploadUrl, draftPhoto.file, index + 1);
             uploadedFiles.push({
               objectKey: uploadTarget.objectKey,
               imageUrl: uploadTarget.imageUrl
@@ -679,7 +905,10 @@ export default function PublicReviewReceiveDetailPage() {
         }
 
         if (!commitData?.photos) {
-          throw new Error("저장 결과를 받지 못했습니다.");
+          throw createPhotoUploadError("00037", {
+            stage: "commit",
+            debugMessage: "commitData.photos is missing"
+          });
         }
 
         cleanupPhotoDraft(nextDraft);
@@ -704,19 +933,51 @@ export default function PublicReviewReceiveDetailPage() {
         setPhotoStatusMessage(`순번 ${photoEditor.rowNumber ?? "-"} 행의 사진 변경사항을 저장했습니다.`);
         setPhotoEditor(createEmptyPhotoEditor());
       } catch (error) {
+        const normalizedError = normalizePhotoUploadError(error, "00090", {
+          stage: "save",
+          message: error?.message || getPhotoUploadErrorMessage("00090")
+        });
+
         if (uploadedFiles.length > 0) {
-          await rollbackPublicReviewReceivePhotoUpload({
-            productId: Number(photoEditor.row.product_id),
-            submissionId: Number(photoEditor.row.id),
-            assignName: photoEditor.row.assign_name,
-            objectKeys: uploadedFiles.map((item) => item.objectKey)
-          });
+          try {
+            const { error: rollbackError } = await rollbackPublicReviewReceivePhotoUpload({
+              productId: Number(photoEditor.row.product_id),
+              submissionId: Number(photoEditor.row.id),
+              assignName: photoEditor.row.assign_name,
+              objectKeys: uploadedFiles.map((item) => item.objectKey)
+            });
+
+            if (rollbackError) {
+              throw rollbackError;
+            }
+          } catch (rollbackError) {
+            const normalizedRollbackError = normalizePhotoUploadError(rollbackError, "00043", {
+              stage: "rollback",
+              message: getPhotoUploadErrorMessage("00043")
+            });
+
+            normalizedError.rollbackCode = normalizedRollbackError.code;
+            console.error("Public review photo rollback failed", normalizedRollbackError);
+          }
         }
+
+        console.error("Public review photo upload failed", {
+          code: normalizedError.code,
+          stage: normalizedError.stage,
+          status: normalizedError.status,
+          fileIndex: normalizedError.fileIndex,
+          fileName: normalizedError.fileName,
+          fileSize: normalizedError.fileSize,
+          originalErrorName: normalizedError.originalErrorName,
+          originalMessage: normalizedError.originalMessage,
+          debugMessage: normalizedError.debugMessage,
+          rollbackCode: normalizedError.rollbackCode || ""
+        });
 
         setPhotoEditor((prev) => ({
           ...prev,
           isSaving: false,
-          feedbackMessage: error?.message || "사진 저장에 실패했습니다."
+          feedbackMessage: formatPhotoUploadError(normalizedError)
         }));
       }
     };

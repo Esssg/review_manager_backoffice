@@ -306,6 +306,13 @@ function createInitialProductReviewerBulkState() {
   };
 }
 
+function getProductReviewerBulkDepositForm(productForm) {
+  return {
+    productFeeDepositGb: productForm.productFeeDepositGb,
+    reviewFeeDepositGb: productForm.reviewFeeDepositGb
+  };
+}
+
 const PRODUCT_REVIEWER_REVIEWER_FIELDS = [
   { key: "assign_name", label: "배정", minWidth: 96 },
   { key: "order_number", label: "주문번호", minWidth: 132 },
@@ -507,12 +514,71 @@ const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS = [
 const REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO = 10;
 const REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO = 5;
 const REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT = REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 3;
+const REVIEW_RECEIVE_PRODUCT_FILTERS_STORAGE_KEY = "review_manager_review_receive_product_filters";
 
 function createEmptyReviewReceiveProductFilters() {
   return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.reduce((filters, column) => {
     filters[column.key] = column.type === "dateRange" ? { start: "", end: "" } : "";
     return filters;
   }, {});
+}
+
+function getReviewReceiveProductFiltersStorageKey(adminId) {
+  return `${REVIEW_RECEIVE_PRODUCT_FILTERS_STORAGE_KEY}:${adminId ?? "anonymous"}`;
+}
+
+function normalizeStoredReviewReceiveProductFilters(storedFilters) {
+  const emptyFilters = createEmptyReviewReceiveProductFilters();
+
+  if (!storedFilters || typeof storedFilters !== "object" || Array.isArray(storedFilters)) {
+    return emptyFilters;
+  }
+
+  return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.reduce((filters, column) => {
+    const storedValue = storedFilters[column.key];
+
+    if (column.type === "dateRange") {
+      filters[column.key] =
+        storedValue && typeof storedValue === "object" && !Array.isArray(storedValue)
+          ? {
+              start: typeof storedValue.start === "string" ? storedValue.start : "",
+              end: typeof storedValue.end === "string" ? storedValue.end : ""
+            }
+          : emptyFilters[column.key];
+      return filters;
+    }
+
+    filters[column.key] = typeof storedValue === "string" ? storedValue : emptyFilters[column.key];
+    return filters;
+  }, {});
+}
+
+function readStoredReviewReceiveProductFilters(adminId) {
+  if (typeof window === "undefined") {
+    return createEmptyReviewReceiveProductFilters();
+  }
+
+  try {
+    const storedValue = window.sessionStorage.getItem(getReviewReceiveProductFiltersStorageKey(adminId));
+    return normalizeStoredReviewReceiveProductFilters(storedValue ? JSON.parse(storedValue) : null);
+  } catch {
+    return createEmptyReviewReceiveProductFilters();
+  }
+}
+
+function writeStoredReviewReceiveProductFilters(adminId, filters) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      getReviewReceiveProductFiltersStorageKey(adminId),
+      JSON.stringify(normalizeStoredReviewReceiveProductFilters(filters))
+    );
+  } catch {
+    // sessionStorage can be unavailable in restricted browser contexts.
+  }
 }
 
 function getReviewReceiveProductFilterValue(product, columnKey) {
@@ -707,7 +773,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     capabilitiesErrorMessage
   } = useAdminIncludeCompanyData(adminId);
   const [products, setProducts] = useState([]);
-  const [productFilters, setProductFilters] = useState(createEmptyReviewReceiveProductFilters);
+  const [productFilters, setProductFilters] = useState(() => readStoredReviewReceiveProductFilters(adminId));
   const [openProductFilterKey, setOpenProductFilterKey] = useState("");
   const [scopeInfo, setScopeInfo] = useState({
     companyName: null,
@@ -775,6 +841,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     loadProducts();
   }, [adminId, capabilitiesErrorMessage, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities]);
+
+  useEffect(() => {
+    writeStoredReviewReceiveProductFilters(adminId, productFilters);
+  }, [adminId, productFilters]);
 
   useEffect(() => {
     if (!openProductFilterKey) {
@@ -952,6 +1022,27 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     }));
   };
 
+  const handleProductReviewerBulkDepositChange = (event) => {
+    const { name, value } = event.target;
+
+    setProductReviewerBulk((prev) => ({
+      ...prev,
+      productForm: {
+        ...prev.productForm,
+        [name]: value
+      },
+      productGroups: prev.productGroups.map((group) => ({
+        ...group,
+        productForm: {
+          ...group.productForm,
+          [name]: value
+        }
+      })),
+      message: "",
+      messageType: "info"
+    }));
+  };
+
   const handleProductReviewerBulkRowChange = (clientId, field, value) => {
     setProductReviewerBulk((prev) => ({
       ...prev,
@@ -1027,6 +1118,25 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         productGroups.length > 1
           ? "리뷰어 정보를 칸별로 수정한 뒤 완료하기를 누르면 품목별로 나눠 등록합니다."
           : "리뷰어 정보를 칸별로 수정한 뒤 완료하기를 눌러주세요.",
+      messageType: "info"
+    }));
+  };
+
+  const handleProductReviewerBulkReviewersNext = () => {
+    const productGroups = getProductReviewerBulkGroups(productReviewerBulk);
+
+    if (getProductReviewerBulkReviewerCount(productGroups) === 0) {
+      setProductReviewerBulkMessage("등록할 리뷰어 행이 없습니다.", "error");
+      return;
+    }
+
+    setProductReviewerBulk((prev) => ({
+      ...prev,
+      step: "deposit",
+      message:
+        productGroups.length > 1
+          ? "선택한 입금구분을 모든 품목에 동일하게 적용합니다."
+          : "선택한 입금구분을 이 품목에 적용합니다.",
       messageType: "info"
     }));
   };
@@ -1504,7 +1614,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       ? isProductReviewerBulkMultiProduct
                         ? "붙여넣은 행에서 나뉜 품목 정보를 확인합니다."
                         : "첫 행에서 읽은 상품 정보를 확인하고 필요한 값을 수정합니다."
-                      : "등록될 리뷰어 정보를 칸별로 확인하고 수정합니다."}
+                      : productReviewerBulk.step === "reviewers"
+                        ? "등록될 리뷰어 정보를 칸별로 확인하고 수정합니다."
+                        : "제품비와 리뷰비 입금구분을 선택합니다."}
                 </p>
               </div>
               <button
@@ -1701,6 +1813,21 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         onChange={handleProductReviewerBulkProductChange}
                       />
                     </div>
+                  </div>
+                  )}
+                  {productReviewerBulk.message && (
+                    <p className={`review-receive-bulk-message is-${productReviewerBulk.messageType}`}>
+                      {productReviewerBulk.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {productReviewerBulk.step === "deposit" && (
+              <div className="review-receive-modal-body review-receive-modal-body-single">
+                <div className="review-receive-review-batch-fields review-receive-product-reviewer-deposit-step">
+                  <div className="review-receive-review-batch-grid review-receive-create-product-grid">
                     <div className="detail-summary-item review-receive-create-product-field">
                       <label className="detail-summary-label" htmlFor="review-receive-bulk-product-fee-deposit-gb">
                         제품비 입금구분
@@ -1710,7 +1837,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         name="productFeeDepositGb"
                         className="table-cell-input"
                         value={productReviewerBulk.productForm.productFeeDepositGb}
-                        onChange={handleProductReviewerBulkProductChange}
+                        onChange={handleProductReviewerBulkDepositChange}
+                        disabled={isSavingProductReviewerBulk}
                       >
                         {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -1728,7 +1856,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         name="reviewFeeDepositGb"
                         className="table-cell-input"
                         value={productReviewerBulk.productForm.reviewFeeDepositGb}
-                        onChange={handleProductReviewerBulkProductChange}
+                        onChange={handleProductReviewerBulkDepositChange}
+                        disabled={isSavingProductReviewerBulk}
                       >
                         {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -1738,12 +1867,55 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       </select>
                     </div>
                   </div>
-                  )}
-                  {productReviewerBulk.message && (
-                    <p className={`review-receive-bulk-message is-${productReviewerBulk.messageType}`}>
-                      {productReviewerBulk.message}
-                    </p>
-                  )}
+
+                  <div className="review-receive-preview-panel">
+                    <div className="review-receive-preview-header">
+                      <h3>
+                        {isProductReviewerBulkMultiProduct
+                          ? `품목 ${productReviewerBulkGroupCount}개에 적용`
+                          : "입금구분 적용"}
+                      </h3>
+                      <p>
+                        제품비 {getProductReviewerBulkDepositForm(productReviewerBulk.productForm).productFeeDepositGb === PRODUCT_DEPOSIT_PARTY.COMPANY ? "업체입금" : "자체입금"} / 리뷰비{" "}
+                        {getProductReviewerBulkDepositForm(productReviewerBulk.productForm).reviewFeeDepositGb === PRODUCT_DEPOSIT_PARTY.COMPANY ? "없음" : "자체입금"}
+                      </p>
+                    </div>
+                    {isProductReviewerBulkMultiProduct && (
+                      <div className="review-receive-product-reviewer-table-scroll is-compact">
+                        <table className="review-receive-product-reviewer-table is-compact is-bulk-deposit-summary">
+                          <colgroup>
+                            <col className="col-index" />
+                            <col className="col-product-name" />
+                            <col className="col-option-name" />
+                            <col className="col-reviewer-count" />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>품목</th>
+                              <th>품명</th>
+                              <th>옵션</th>
+                              <th>리뷰어</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {productReviewerBulkGroups.map((group, index) => (
+                              <tr key={group.clientId}>
+                                <td>{index + 1}</td>
+                                <td>{group.productForm.productName || "-"}</td>
+                                <td>{group.productForm.optionName || "-"}</td>
+                                <td>{group.reviewers.length}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {productReviewerBulk.message && (
+                      <p className={`review-receive-bulk-message is-${productReviewerBulk.messageType}`}>
+                        {productReviewerBulk.message}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1756,7 +1928,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                       ? `품목 ${productReviewerBulkGroupCount}개 / 리뷰어 ${productReviewerBulkReviewerCount}명`
                       : `리뷰어 ${productReviewerBulk.reviewers.length}명`}
                   </h3>
-                  <p>각 칸을 수정할 수 있습니다. 완료하기를 누르면 상품과 리뷰어가 함께 등록됩니다.</p>
+                  <p>각 칸을 수정할 수 있습니다. 다음 단계에서 입금구분을 선택한 뒤 등록합니다.</p>
                 </div>
                 <div className="review-receive-product-reviewer-table-scroll">
                   <table className="review-receive-product-reviewer-table">
@@ -1855,7 +2027,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                   onClick={() =>
                     setProductReviewerBulk((prev) => ({
                       ...prev,
-                      step: prev.step === "reviewers" ? "product" : "input",
+                      step: prev.step === "deposit" ? "reviewers" : prev.step === "reviewers" ? "product" : "input",
                       message: "",
                       messageType: "info"
                     }))
@@ -1876,6 +2048,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                 </button>
               )}
               {productReviewerBulk.step === "reviewers" && (
+                <button type="button" className="admin-primary-button" onClick={handleProductReviewerBulkReviewersNext}>
+                  다음
+                </button>
+              )}
+              {productReviewerBulk.step === "deposit" && (
                 <button
                   type="button"
                   className="admin-primary-button"

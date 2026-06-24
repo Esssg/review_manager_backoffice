@@ -11,9 +11,34 @@ const PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP = {
   account_holder: "account_holder"
 };
 
-async function extractFunctionErrorMessage(response) {
+const PHOTO_SYNC_FALLBACK_ERROR_CODES = {
+  prepare: {
+    transport: "00010",
+    http: "00011",
+    unauthorized: "00012",
+    locked: "00013",
+    server: "00014"
+  },
+  commit: {
+    transport: "00030",
+    http: "00031",
+    unauthorized: "00032",
+    locked: "00033",
+    server: "00038"
+  },
+  rollback: {
+    transport: "00040",
+    http: "00041",
+    server: "00042"
+  }
+};
+
+async function extractFunctionErrorPayload(response) {
   if (!response) {
-    return "";
+    return {
+      code: "",
+      message: ""
+    };
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -21,33 +46,89 @@ async function extractFunctionErrorMessage(response) {
   try {
     if (contentType.includes("application/json")) {
       const payload = await response.clone().json();
-      return payload?.error || payload?.message || "";
+      return {
+        code: payload?.code || "",
+        message: payload?.error || payload?.message || ""
+      };
     }
 
     const text = await response.clone().text();
-    return text || "";
+    return {
+      code: "",
+      message: text || ""
+    };
   } catch {
-    return "";
+    return {
+      code: "",
+      message: ""
+    };
   }
 }
 
-async function invokeReviewReceivePhotoSync(payload) {
+function getFunctionErrorStatus(error, response) {
+  return response?.status ?? error?.context?.status ?? null;
+}
+
+function getFunctionFallbackErrorCode(action, error, response) {
+  const fallbackCodes = PHOTO_SYNC_FALLBACK_ERROR_CODES[action] ?? PHOTO_SYNC_FALLBACK_ERROR_CODES.prepare;
+  const status = getFunctionErrorStatus(error, response);
+
+  if (error?.name === "FunctionsFetchError" || error?.name === "FunctionsRelayError") {
+    return fallbackCodes.transport;
+  }
+
+  if (status === 403) {
+    return fallbackCodes.unauthorized ?? fallbackCodes.http;
+  }
+
+  if (status === 409) {
+    return fallbackCodes.locked ?? fallbackCodes.http;
+  }
+
+  if (status >= 500) {
+    return fallbackCodes.server ?? fallbackCodes.http;
+  }
+
+  return fallbackCodes.http;
+}
+
+function buildPhotoSyncFunctionError({ action, error, response, payload }) {
+  const code = payload.code || getFunctionFallbackErrorCode(action, error, response);
+  const status = getFunctionErrorStatus(error, response);
+  const message = payload.message || error?.message || "사진 저장 요청에 실패했습니다.";
+  const normalizedError = new Error(message);
+
+  normalizedError.code = code;
+  normalizedError.stage = action;
+  normalizedError.status = status;
+  normalizedError.originalErrorName = error?.name || "";
+  normalizedError.originalMessage = error?.message || "";
+
+  return normalizedError;
+}
+
+async function invokeReviewReceivePhotoSync(action, payload) {
   const result = await supabase.functions.invoke(REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION, {
-    body: payload
+    body: {
+      action,
+      ...payload
+    }
   });
 
   if (!result.error) {
     return result;
   }
 
-  const detailedMessage =
-    (await extractFunctionErrorMessage(result.response)) ||
-    result.error?.message ||
-    "사진 저장 요청에 실패했습니다.";
+  const payloadError = await extractFunctionErrorPayload(result.response);
 
   return {
     ...result,
-    error: new Error(detailedMessage)
+    error: buildPhotoSyncFunctionError({
+      action,
+      error: result.error,
+      response: result.response,
+      payload: payloadError
+    })
   };
 }
 
@@ -147,22 +228,13 @@ export async function fetchPublicReviewReceiveEvidencePhotos(submissionIds) {
 }
 
 export async function preparePublicReviewReceivePhotoUpload(payload) {
-  return invokeReviewReceivePhotoSync({
-    action: "prepare",
-    ...payload
-  });
+  return invokeReviewReceivePhotoSync("prepare", payload);
 }
 
 export async function commitPublicReviewReceivePhotoUpload(payload) {
-  return invokeReviewReceivePhotoSync({
-    action: "commit",
-    ...payload
-  });
+  return invokeReviewReceivePhotoSync("commit", payload);
 }
 
 export async function rollbackPublicReviewReceivePhotoUpload(payload) {
-  return invokeReviewReceivePhotoSync({
-    action: "rollback",
-    ...payload
-  });
+  return invokeReviewReceivePhotoSync("rollback", payload);
 }

@@ -1677,6 +1677,74 @@
   min-width: 1680px;
 }
 
+.review-receive-product-reviewer-table-scroll.is-compact {
+  overflow-x: hidden;
+}
+
+.review-receive-product-reviewer-table.is-compact {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.review-receive-product-reviewer-table.is-compact th,
+.review-receive-product-reviewer-table.is-compact td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.review-receive-product-reviewer-table.is-compact th:first-child,
+.review-receive-product-reviewer-table.is-compact td:first-child,
+.review-receive-product-reviewer-table.is-compact th:last-child,
+.review-receive-product-reviewer-table.is-compact td:last-child {
+  text-align: center;
+}
+
+.review-receive-product-reviewer-table.is-bulk-deposit-summary .col-index {
+  width: 72px;
+}
+
+.review-receive-product-reviewer-table.is-bulk-deposit-summary .col-product-name {
+  width: auto;
+}
+
+.review-receive-product-reviewer-table.is-bulk-deposit-summary .col-option-name {
+  width: 24%;
+}
+
+.review-receive-product-reviewer-table.is-bulk-deposit-summary .col-reviewer-count {
+  width: 84px;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-index {
+  width: 56px;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-product-date {
+  width: 130px;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-company-name {
+  width: 150px;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-product-name {
+  width: auto;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-option-name {
+  width: 140px;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-review-type {
+  width: 120px;
+}
+
+.review-receive-product-reviewer-table.is-detail-deposit-summary .col-reviewer-count {
+  width: 72px;
+}
+
 .review-receive-product-reviewer-table th,
 .review-receive-product-reviewer-table td {
   white-space: nowrap;
@@ -1900,6 +1968,18 @@
 
 .review-receive-review-batch-grid .detail-summary-item {
   gap: 8px;
+}
+
+.review-receive-product-reviewer-deposit-step .review-receive-create-product-grid {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.review-receive-product-reviewer-deposit-step .review-receive-preview-panel {
+  overflow: hidden;
+}
+
+.review-receive-product-reviewer-deposit-step .review-receive-product-reviewer-table-scroll {
+  margin-top: 12px;
 }
 
 .review-receive-review-list-panel {

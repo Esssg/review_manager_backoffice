@@ -128,6 +128,7 @@ export default function PublicPhotoUploadModal({
   const totalAfterSave = newPhotos.length;
   const isDropDisabled = !isDesktopDragEnabled || isLocked || isSaving;
   const canSubmitReplacement = newPhotos.length > 0;
+  const isFeedbackError = /^\[\d{5}\]/.test(feedbackMessage);
 
   const handleDragEnter = (event) => {
     if (isDropDisabled) {
@@ -249,7 +250,7 @@ export default function PublicPhotoUploadModal({
             </div>
           )}
 
-          {feedbackMessage && <p className="login-message">{feedbackMessage}</p>}
+          {feedbackMessage && <p className={isFeedbackError ? "login-error" : "login-message"}>{feedbackMessage}</p>}
 
           <div className="public-photo-modal-section">
             <div className="public-photo-modal-section-header">
