@@ -12,14 +12,7 @@ const PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP = {
 };
 
 const PHOTO_SYNC_FALLBACK_ERROR_CODES = {
-  prepare: {
-    transport: "00010",
-    http: "00011",
-    unauthorized: "00012",
-    locked: "00013",
-    server: "00014"
-  },
-  commit: {
+  sync: {
     transport: "00030",
     http: "00031",
     unauthorized: "00032",
@@ -109,10 +102,13 @@ function buildPhotoSyncFunctionError({ action, error, response, payload }) {
 
 async function invokeReviewReceivePhotoSync(action, payload) {
   const result = await supabase.functions.invoke(REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION, {
-    body: {
-      action,
-      ...payload
-    }
+    body:
+      payload instanceof FormData
+        ? payload
+        : {
+            action,
+            ...payload
+          }
   });
 
   if (!result.error) {
@@ -227,12 +223,20 @@ export async function fetchPublicReviewReceiveEvidencePhotos(submissionIds) {
   );
 }
 
-export async function preparePublicReviewReceivePhotoUpload(payload) {
-  return invokeReviewReceivePhotoSync("prepare", payload);
-}
+export async function syncPublicReviewReceivePhotoUpload(payload) {
+  const formData = new FormData();
 
-export async function commitPublicReviewReceivePhotoUpload(payload) {
-  return invokeReviewReceivePhotoSync("commit", payload);
+  formData.append("action", "sync");
+  formData.append("productId", String(payload.productId));
+  formData.append("submissionId", String(payload.submissionId));
+  formData.append("assignName", payload.assignName ?? "");
+  formData.append("removedImageUrls", JSON.stringify(payload.removedImageUrls ?? []));
+
+  for (const file of payload.files ?? []) {
+    formData.append("files", file, file.name);
+  }
+
+  return invokeReviewReceivePhotoSync("sync", formData);
 }
 
 export async function rollbackPublicReviewReceivePhotoUpload(payload) {

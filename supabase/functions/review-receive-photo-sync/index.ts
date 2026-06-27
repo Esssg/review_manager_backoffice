@@ -1,15 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import {
-  DeleteObjectsCommand,
-  PutObjectCommand,
-  S3Client
-} from "npm:@aws-sdk/client-s3@3";
-import { getSignedUrl } from "npm:@aws-sdk/s3-request-presigner@3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS"
+};
+
+const jsonHeaders = {
+  ...corsHeaders,
   "Content-Type": "application/json"
 };
 
@@ -17,45 +15,32 @@ const PHOTO_TYPE = "review";
 const MAX_FILE_COUNT = 10;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const SUPABASE_PAGE_SIZE = 1000;
+const DEFAULT_STORAGE_ROOT = "/mnt/rmb-images";
+const DEFAULT_PUBLIC_PATH_PREFIX = "/rmb-images";
+const DEFAULT_UPLOAD_PREFIX = "review-receive";
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+
 const ERROR_CODES = {
-  PREPARE_REQUEST_INVALID: "00011",
-  PREPARE_ACCESS_DENIED: "00012",
-  PREPARE_LOCKED: "00013",
-  PREPARE_SERVER_FAILURE: "00014",
-  COMMIT_REQUEST_INVALID: "00031",
-  COMMIT_ACCESS_DENIED: "00032",
-  COMMIT_LOCKED: "00033",
-  COMMIT_CURRENT_PHOTOS_FAILED: "00034",
-  COMMIT_INSERT_FAILED: "00035",
-  COMMIT_DELETE_FAILED: "00036",
-  COMMIT_SERVER_FAILURE: "00038",
+  SYNC_REQUEST_INVALID: "00011",
+  SYNC_ACCESS_DENIED: "00012",
+  SYNC_LOCKED: "00013",
+  SYNC_CURRENT_PHOTOS_FAILED: "00034",
+  SYNC_INSERT_FAILED: "00035",
+  SYNC_DELETE_FAILED: "00036",
+  SYNC_SERVER_FAILURE: "00038",
   ROLLBACK_REQUEST_OR_ACCESS_FAILED: "00041",
   ROLLBACK_DELETE_FAILED: "00042",
   UNKNOWN_SERVER_FAILURE: "00090"
 } as const;
 
-type PrepareAction = {
-  action: "prepare";
-  productId: number;
-  submissionId: number;
-  assignName: string;
-  files: Array<{
-    fileName: string;
-    contentType: string;
-    size: number;
-  }>;
-};
-
-type CommitAction = {
-  action: "commit";
+type SyncPayload = {
+  action: "sync";
   productId: number;
   submissionId: number;
   assignName: string;
   removedImageUrls: string[];
-  uploadedFiles: Array<{
-    objectKey: string;
-    imageUrl: string;
-  }>;
+  files: File[];
 };
 
 type RollbackAction = {
@@ -65,8 +50,6 @@ type RollbackAction = {
   assignName: string;
   objectKeys: string[];
 };
-
-type RequestBody = PrepareAction | CommitAction | RollbackAction;
 
 class PhotoSyncError extends Error {
   code: string;
@@ -83,7 +66,7 @@ class PhotoSyncError extends Error {
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: corsHeaders
+    headers: jsonHeaders
   });
 }
 
@@ -91,7 +74,7 @@ function errorResponse(code: string, message: string, status = 400) {
   return json({ code, error: message }, status);
 }
 
-function badRequest(message: string, status = 400, code = ERROR_CODES.PREPARE_REQUEST_INVALID) {
+function badRequest(message: string, status = 400, code = ERROR_CODES.SYNC_REQUEST_INVALID) {
   return errorResponse(code, message, status);
 }
 
@@ -105,30 +88,21 @@ function getRequiredEnv(name: string, code = ERROR_CODES.UNKNOWN_SERVER_FAILURE)
   return value;
 }
 
-function getS3Config(errorCode = ERROR_CODES.PREPARE_SERVER_FAILURE) {
-  const region = getRequiredEnv("AWS_S3_REGION", errorCode);
-  const bucket = getRequiredEnv("AWS_S3_BUCKET", errorCode);
-  const accessKeyId = getRequiredEnv("AWS_S3_ACCESS_KEY_ID", errorCode);
-  const secretAccessKey = getRequiredEnv("AWS_S3_SECRET_ACCESS_KEY", errorCode);
-  const uploadPrefix = (Deno.env.get("AWS_S3_UPLOAD_PREFIX") ?? "review-receive").replace(/^\/+|\/+$/g, "");
-  const publicBaseUrl =
-    (Deno.env.get("AWS_S3_PUBLIC_BASE_URL") ?? `https://${bucket}.s3.${region}.amazonaws.com`).replace(/\/+$/g, "");
-
+function getStorageConfig() {
   return {
-    region,
-    bucket,
-    accessKeyId,
-    secretAccessKey,
-    uploadPrefix,
-    publicBaseUrl
+    root: (Deno.env.get("NAS_IMAGE_ROOT") ?? DEFAULT_STORAGE_ROOT).replace(/\/+$/g, ""),
+    publicPathPrefix: `/${(Deno.env.get("NAS_PUBLIC_IMAGE_PREFIX") ?? DEFAULT_PUBLIC_PATH_PREFIX).replace(
+      /^\/+|\/+$/g,
+      ""
+    )}`,
+    uploadPrefix: (Deno.env.get("NAS_IMAGE_UPLOAD_PREFIX") ?? DEFAULT_UPLOAD_PREFIX).replace(/^\/+|\/+$/g, ""),
+    fileWriterUrl: Deno.env.get("FILE_WRITER_URL")?.replace(/\/+$/g, "") ?? "",
+    fileWriterToken: Deno.env.get("FILE_WRITER_TOKEN") ?? ""
   };
 }
 
-function encodeObjectKey(objectKey: string) {
-  return objectKey
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
+function createSupabaseAdminClient(errorCode = ERROR_CODES.UNKNOWN_SERVER_FAILURE) {
+  return createClient(getRequiredEnv("SUPABASE_URL", errorCode), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY", errorCode));
 }
 
 function sanitizeFileName(fileName: string) {
@@ -140,52 +114,135 @@ function sanitizeFileName(fileName: string) {
     .slice(0, 80) || "image";
 }
 
+function getFileExtension(fileName: string) {
+  return fileName.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function encodeObjectKey(objectKey: string) {
+  return objectKey
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
 function buildObjectKey(uploadPrefix: string, productId: number, submissionId: number, fileName: string) {
   return `${uploadPrefix}/${productId}/${submissionId}/${crypto.randomUUID()}-${sanitizeFileName(fileName)}`;
 }
 
-function buildPublicImageUrl(publicBaseUrl: string, objectKey: string) {
-  return `${publicBaseUrl}/${encodeObjectKey(objectKey)}`;
+function buildPublicImagePath(publicPathPrefix: string, objectKey: string) {
+  return `${publicPathPrefix}/${encodeObjectKey(objectKey)}`;
 }
 
-function extractObjectKeyFromImageUrl(publicBaseUrl: string, imageUrl: string) {
+function isSafeObjectKey(objectKey: string) {
+  if (!objectKey || objectKey.startsWith("/") || objectKey.includes("\\")) {
+    return false;
+  }
+
+  return objectKey.split("/").every((segment) => segment && segment !== "." && segment !== "..");
+}
+
+function getObjectFilePath(storageRoot: string, objectKey: string) {
+  if (!isSafeObjectKey(objectKey)) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "파일 경로가 올바르지 않습니다.", 400);
+  }
+
+  return `${storageRoot}/${objectKey}`;
+}
+
+function getParentDirectory(filePath: string) {
+  return filePath.split("/").slice(0, -1).join("/");
+}
+
+function extractObjectKeyFromImageUrl(publicPathPrefix: string, imageUrl: string) {
+  if (!imageUrl) {
+    return null;
+  }
+
   try {
-    const baseUrl = new URL(publicBaseUrl);
-    const targetUrl = new URL(imageUrl);
-
-    if (baseUrl.origin !== targetUrl.origin) {
-      return null;
+    if (imageUrl.startsWith(`${publicPathPrefix}/`)) {
+      return decodeURIComponent(imageUrl.slice(publicPathPrefix.length + 1));
     }
 
-    const normalizedBasePath = baseUrl.pathname.replace(/\/+$/g, "");
-    const targetPath = targetUrl.pathname;
+    const targetUrl = new URL(imageUrl, "http://local.invalid");
 
-    if (normalizedBasePath) {
-      if (!targetPath.startsWith(`${normalizedBasePath}/`)) {
-        return null;
-      }
-
-      return decodeURIComponent(targetPath.slice(normalizedBasePath.length + 1));
+    if (targetUrl.pathname.startsWith(`${publicPathPrefix}/`)) {
+      return decodeURIComponent(targetUrl.pathname.slice(publicPathPrefix.length + 1));
     }
 
-    return decodeURIComponent(targetPath.replace(/^\/+/, ""));
+    if (targetUrl.hostname.endsWith(".amazonaws.com")) {
+      return decodeURIComponent(targetUrl.pathname.replace(/^\/+/, ""));
+    }
   } catch {
     return null;
   }
+
+  return null;
 }
 
-function createSupabaseAdminClient(errorCode = ERROR_CODES.UNKNOWN_SERVER_FAILURE) {
-  return createClient(getRequiredEnv("SUPABASE_URL", errorCode), getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY", errorCode));
+function parseNumberField(formData: FormData, name: string) {
+  const value = Number(formData.get(name));
+  return Number.isFinite(value) ? value : null;
 }
 
-function createS3Client(config: ReturnType<typeof getS3Config>) {
-  return new S3Client({
-    region: config.region,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey
+function parseStringField(formData: FormData, name: string) {
+  const value = formData.get(name);
+  return typeof value === "string" ? value : "";
+}
+
+function parseJsonArrayField(formData: FormData, name: string) {
+  const rawValue = formData.get(name);
+
+  if (rawValue == null || rawValue === "") {
+    return [];
+  }
+
+  if (typeof rawValue !== "string") {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, `${name} 값이 올바르지 않습니다.`, 400);
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("not array");
     }
-  });
+
+    return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, `${name} 값이 올바르지 않습니다.`, 400);
+  }
+}
+
+function readSyncPayload(formData: FormData): SyncPayload {
+  const productId = parseNumberField(formData, "productId");
+  const submissionId = parseNumberField(formData, "submissionId");
+  const assignName = parseStringField(formData, "assignName");
+  const files = formData.getAll("files").filter((item): item is File => item instanceof File);
+
+  if (productId == null || submissionId == null) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "productId와 submissionId는 숫자여야 합니다.", 400);
+  }
+
+  if (!assignName.trim()) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "assignName 값이 필요합니다.", 400);
+  }
+
+  if (files.length > MAX_FILE_COUNT) {
+    throw new PhotoSyncError(
+      ERROR_CODES.SYNC_REQUEST_INVALID,
+      `한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`,
+      400
+    );
+  }
+
+  return {
+    action: "sync",
+    productId,
+    submissionId,
+    assignName,
+    removedImageUrls: parseJsonArrayField(formData, "removedImageUrls"),
+    files
+  };
 }
 
 async function loadSubmissionForPublicAccess(
@@ -220,25 +277,10 @@ async function loadSubmissionForPublicAccess(
   return data;
 }
 
-async function deleteS3Objects(s3Client: S3Client, bucket: string, objectKeys: string[]) {
-  if (objectKeys.length === 0) {
-    return;
-  }
-
-  await s3Client.send(
-    new DeleteObjectsCommand({
-      Bucket: bucket,
-      Delete: {
-        Objects: objectKeys.map((key) => ({ Key: key }))
-      }
-    })
-  );
-}
-
 async function listCurrentPhotoUrls(
   supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>,
   submissionId: number,
-  errorCode = ERROR_CODES.COMMIT_CURRENT_PHOTOS_FAILED
+  errorCode = ERROR_CODES.SYNC_CURRENT_PHOTOS_FAILED
 ) {
   const photos: Array<{ id: number; image_url: string }> = [];
   let lastPhotoId: number | null = null;
@@ -279,123 +321,190 @@ async function listCurrentPhotoUrls(
   return photos.map((item) => item.image_url);
 }
 
-async function handlePrepareAction(body: PrepareAction) {
-  if (!Array.isArray(body.files) || body.files.length === 0) {
-    return badRequest("업로드할 파일 정보가 없습니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
+function hasExpectedImageSignature(contentType: string, bytes: Uint8Array) {
+  if (contentType === "image/jpeg") {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   }
 
-  if (body.files.length > MAX_FILE_COUNT) {
-    return badRequest(`한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`, 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
+  if (contentType === "image/png") {
+    return (
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    );
   }
 
-  const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.PREPARE_SERVER_FAILURE);
-  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body, ERROR_CODES.PREPARE_SERVER_FAILURE);
-
-  if (!submission) {
-    return badRequest("사진 업로드 권한이 없는 제출입니다.", 403, ERROR_CODES.PREPARE_ACCESS_DENIED);
+  if (contentType === "image/gif") {
+    return (
+      bytes[0] === 0x47 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x38 &&
+      (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+      bytes[5] === 0x61
+    );
   }
 
-  if (submission.is_review_verified) {
-    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409, ERROR_CODES.PREPARE_LOCKED);
+  if (contentType === "image/webp") {
+    return (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    );
   }
 
-  const s3Config = getS3Config(ERROR_CODES.PREPARE_SERVER_FAILURE);
-  const s3Client = createS3Client(s3Config);
-
-  const uploads = [];
-
-  for (const file of body.files) {
-    if (!file.contentType?.startsWith("image/")) {
-      return badRequest("이미지 파일만 업로드할 수 있습니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
-    }
-
-    if (!Number.isFinite(file.size) || file.size <= 0 || file.size > MAX_FILE_SIZE_BYTES) {
-      return badRequest(`이미지 파일은 10MB 이하만 업로드할 수 있습니다.`, 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
-    }
-
-    const objectKey = buildObjectKey(s3Config.uploadPrefix, body.productId, body.submissionId, file.fileName);
-    let uploadUrl = "";
-
-    try {
-      uploadUrl = await getSignedUrl(
-        s3Client,
-        new PutObjectCommand({
-          Bucket: s3Config.bucket,
-          Key: objectKey,
-          ContentType: file.contentType
-        }),
-        { expiresIn: 60 * 5 }
-      );
-    } catch (error) {
-      throw new PhotoSyncError(
-        ERROR_CODES.PREPARE_SERVER_FAILURE,
-        error instanceof Error ? error.message : "S3 업로드 URL 발급에 실패했습니다."
-      );
-    }
-
-    uploads.push({
-      objectKey,
-      uploadUrl,
-      imageUrl: buildPublicImageUrl(s3Config.publicBaseUrl, objectKey)
-    });
-  }
-
-  return json({ uploads });
+  return false;
 }
 
-async function handleCommitAction(body: CommitAction) {
-  if (!Array.isArray(body.removedImageUrls) || !Array.isArray(body.uploadedFiles)) {
-    return badRequest("사진 저장 요청 형식이 올바르지 않습니다.", 400, ERROR_CODES.COMMIT_REQUEST_INVALID);
+async function validateAndReadImageFile(file: File) {
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "JPG, PNG, WebP, GIF 이미지만 업로드할 수 있습니다.", 400);
   }
 
-  const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.COMMIT_SERVER_FAILURE);
-  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, body, ERROR_CODES.COMMIT_SERVER_FAILURE);
+  if (!Number.isFinite(file.size) || file.size <= 0 || file.size > MAX_FILE_SIZE_BYTES) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "이미지 파일은 10MB 이하만 업로드할 수 있습니다.", 400);
+  }
+
+  const extension = getFileExtension(file.name);
+
+  if (!ALLOWED_EXTENSIONS.has(extension)) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "허용되지 않은 이미지 확장자입니다.", 400);
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  if (!hasExpectedImageSignature(file.type, bytes)) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "이미지 파일 형식이 올바르지 않습니다.", 400);
+  }
+
+  return bytes;
+}
+
+function getFileWriterHeaders(storageConfig: ReturnType<typeof getStorageConfig>, contentType = "application/json") {
+  const headers = new Headers({ "Content-Type": contentType });
+
+  if (storageConfig.fileWriterToken) {
+    headers.set("X-File-Writer-Token", storageConfig.fileWriterToken);
+  }
+
+  return headers;
+}
+
+async function writeImageFile(storageConfig: ReturnType<typeof getStorageConfig>, objectKey: string, bytes: Uint8Array) {
+  if (storageConfig.fileWriterUrl) {
+    const response = await fetch(`${storageConfig.fileWriterUrl}/objects/${encodeObjectKey(objectKey)}`, {
+      method: "PUT",
+      headers: getFileWriterHeaders(storageConfig, "application/octet-stream"),
+      body: bytes
+    });
+
+    if (!response.ok) {
+      throw new PhotoSyncError(ERROR_CODES.SYNC_SERVER_FAILURE, await response.text(), response.status);
+    }
+
+    return;
+  }
+
+  const storageRoot = storageConfig.root;
+  const filePath = getObjectFilePath(storageRoot, objectKey);
+  const tempFilePath = `${filePath}.tmp-${crypto.randomUUID()}`;
+
+  await Deno.mkdir(getParentDirectory(filePath), { recursive: true });
+  await Deno.writeFile(tempFilePath, bytes, { createNew: true });
+  await Deno.rename(tempFilePath, filePath);
+}
+
+async function deleteLocalObjects(storageConfig: ReturnType<typeof getStorageConfig>, objectKeys: string[]) {
+  const safeObjectKeys = objectKeys.filter((objectKey) => isSafeObjectKey(objectKey));
+
+  if (storageConfig.fileWriterUrl) {
+    const response = await fetch(`${storageConfig.fileWriterUrl}/delete`, {
+      method: "POST",
+      headers: getFileWriterHeaders(storageConfig),
+      body: JSON.stringify({ objectKeys: safeObjectKeys })
+    });
+
+    if (!response.ok) {
+      throw new PhotoSyncError(ERROR_CODES.SYNC_SERVER_FAILURE, await response.text(), response.status);
+    }
+
+    const result = await response.json();
+    return Number(result.deletedCount ?? 0);
+  }
+
+  const storageRoot = storageConfig.root;
+  let deletedCount = 0;
+
+  for (const objectKey of safeObjectKeys) {
+    try {
+      await Deno.remove(getObjectFilePath(storageRoot, objectKey));
+      deletedCount += 1;
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        throw error;
+      }
+    }
+  }
+
+  return deletedCount;
+}
+
+async function handleSyncAction(payload: SyncPayload) {
+  const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.SYNC_SERVER_FAILURE);
+  const submission = await loadSubmissionForPublicAccess(supabaseAdmin, payload, ERROR_CODES.SYNC_SERVER_FAILURE);
 
   if (!submission) {
-    return badRequest("사진 저장 권한이 없는 제출입니다.", 403, ERROR_CODES.COMMIT_ACCESS_DENIED);
+    return badRequest("사진 저장 권한이 없는 제출입니다.", 403, ERROR_CODES.SYNC_ACCESS_DENIED);
   }
 
   if (submission.is_review_verified) {
-    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409, ERROR_CODES.COMMIT_LOCKED);
+    return badRequest("리뷰완료 처리된 제출은 수정할 수 없습니다.", 409, ERROR_CODES.SYNC_LOCKED);
   }
 
-  const s3Config = getS3Config(ERROR_CODES.COMMIT_SERVER_FAILURE);
+  const storageConfig = getStorageConfig();
   const currentPhotos = await listCurrentPhotoUrls(
     supabaseAdmin,
-    body.submissionId,
-    ERROR_CODES.COMMIT_CURRENT_PHOTOS_FAILED
+    payload.submissionId,
+    ERROR_CODES.SYNC_CURRENT_PHOTOS_FAILED
   );
   const currentPhotoSet = new Set(currentPhotos);
-  const removableImageUrls = body.removedImageUrls.filter((imageUrl) => currentPhotoSet.has(imageUrl));
+  const removableImageUrls = payload.removedImageUrls.filter((imageUrl) => currentPhotoSet.has(imageUrl));
   const removableObjectKeys = removableImageUrls
-    .map((imageUrl) => extractObjectKeyFromImageUrl(s3Config.publicBaseUrl, imageUrl))
+    .map((imageUrl) => extractObjectKeyFromImageUrl(storageConfig.publicPathPrefix, imageUrl))
     .filter((value): value is string => Boolean(value));
-
-  const validUploadedFiles = body.uploadedFiles.filter((file) => {
-    if (!file?.objectKey || !file?.imageUrl) {
-      return false;
-    }
-
-    return file.imageUrl === buildPublicImageUrl(s3Config.publicBaseUrl, file.objectKey);
-  });
-  const uploadedImageUrls = validUploadedFiles.map((file) => file.imageUrl);
-
-  if (validUploadedFiles.length > MAX_FILE_COUNT) {
-    return badRequest(`한 번에 최대 ${MAX_FILE_COUNT}장까지만 업로드할 수 있습니다.`, 400, ERROR_CODES.COMMIT_REQUEST_INVALID);
-  }
+  const uploadedFiles: Array<{ objectKey: string; imageUrl: string }> = [];
 
   try {
-    if (validUploadedFiles.length > 0) {
+    for (const file of payload.files) {
+      const bytes = await validateAndReadImageFile(file);
+      const objectKey = buildObjectKey(storageConfig.uploadPrefix, payload.productId, payload.submissionId, file.name);
+      const imageUrl = buildPublicImagePath(storageConfig.publicPathPrefix, objectKey);
+
+      await writeImageFile(storageConfig, objectKey, bytes);
+      uploadedFiles.push({ objectKey, imageUrl });
+    }
+
+    if (uploadedFiles.length > 0) {
       const { error } = await supabaseAdmin.from("evidence_photos").insert(
-        validUploadedFiles.map((file) => ({
-          submission_id: body.submissionId,
+        uploadedFiles.map((file) => ({
+          submission_id: payload.submissionId,
           photo_type: PHOTO_TYPE,
           image_url: file.imageUrl
         }))
       );
 
       if (error) {
-        throw new PhotoSyncError(ERROR_CODES.COMMIT_INSERT_FAILED, error.message);
+        throw new PhotoSyncError(ERROR_CODES.SYNC_INSERT_FAILED, error.message);
       }
     }
 
@@ -403,38 +512,45 @@ async function handleCommitAction(body: CommitAction) {
       const { error } = await supabaseAdmin
         .from("evidence_photos")
         .delete()
-        .eq("submission_id", body.submissionId)
+        .eq("submission_id", payload.submissionId)
         .eq("photo_type", PHOTO_TYPE)
         .in("image_url", removableImageUrls);
 
       if (error) {
-        throw new PhotoSyncError(ERROR_CODES.COMMIT_DELETE_FAILED, error.message);
+        throw new PhotoSyncError(ERROR_CODES.SYNC_DELETE_FAILED, error.message);
       }
     }
   } catch (error) {
-    if (uploadedImageUrls.length > 0) {
+    if (uploadedFiles.length > 0) {
+      await deleteLocalObjects(storageConfig, uploadedFiles.map((file) => file.objectKey));
+
       await supabaseAdmin
         .from("evidence_photos")
         .delete()
-        .eq("submission_id", body.submissionId)
+        .eq("submission_id", payload.submissionId)
         .eq("photo_type", PHOTO_TYPE)
-        .in("image_url", uploadedImageUrls);
+        .in(
+          "image_url",
+          uploadedFiles.map((file) => file.imageUrl)
+        );
     }
 
     throw error;
   }
 
-  const s3Client = createS3Client(s3Config);
   const removedImageUrlSet = new Set(removableImageUrls);
-  const photos = [...currentPhotos.filter((imageUrl) => !removedImageUrlSet.has(imageUrl)), ...uploadedImageUrls];
+  const photos = [
+    ...currentPhotos.filter((imageUrl) => !removedImageUrlSet.has(imageUrl)),
+    ...uploadedFiles.map((file) => file.imageUrl)
+  ];
 
   try {
-    await deleteS3Objects(s3Client, s3Config.bucket, removableObjectKeys);
+    await deleteLocalObjects(storageConfig, removableObjectKeys);
   } catch (error) {
-    console.error("Failed to delete S3 objects after DB commit", error);
+    console.error("Failed to delete local image files after DB commit", error);
   }
 
-  return json({ photos });
+  return json({ photos, uploadedFiles });
 }
 
 async function handleRollbackAction(body: RollbackAction) {
@@ -449,20 +565,18 @@ async function handleRollbackAction(body: RollbackAction) {
     return badRequest("롤백 권한이 없는 제출입니다.", 403, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
   }
 
-  const s3Config = getS3Config(ERROR_CODES.ROLLBACK_DELETE_FAILED);
-  const s3Client = createS3Client(s3Config);
-  const rollbackKeys = (body.objectKeys ?? []).filter((key) => key.startsWith(`${s3Config.uploadPrefix}/`));
+  const storageConfig = getStorageConfig();
+  const rollbackKeys = (body.objectKeys ?? []).filter((key) => key.startsWith(`${storageConfig.uploadPrefix}/`));
 
   try {
-    await deleteS3Objects(s3Client, s3Config.bucket, rollbackKeys);
+    const deletedCount = await deleteLocalObjects(storageConfig, rollbackKeys);
+    return json({ deletedCount });
   } catch (error) {
     throw new PhotoSyncError(
       ERROR_CODES.ROLLBACK_DELETE_FAILED,
       error instanceof Error ? error.message : "임시 업로드 파일을 삭제하지 못했습니다."
     );
   }
-
-  return json({ deletedCount: rollbackKeys.length });
 }
 
 Deno.serve(async (req) => {
@@ -473,44 +587,42 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
-    return badRequest("POST 요청만 지원합니다.", 405, ERROR_CODES.PREPARE_REQUEST_INVALID);
+    return badRequest("POST 요청만 지원합니다.", 405, ERROR_CODES.SYNC_REQUEST_INVALID);
   }
 
   try {
-    const body = (await req.json()) as RequestBody;
+    const contentType = req.headers.get("content-type") ?? "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      const action = parseStringField(formData, "action");
+
+      if (action !== "sync") {
+        return badRequest("multipart 요청은 sync action만 지원합니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
+      }
+
+      return await handleSyncAction(readSyncPayload(formData));
+    }
+
+    const body = (await req.json()) as RollbackAction | { action?: string };
 
     if (!body?.action) {
-      return badRequest("action 값이 필요합니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
-    }
-
-    const requestInvalidCode =
-      body.action === "commit"
-        ? ERROR_CODES.COMMIT_REQUEST_INVALID
-        : body.action === "rollback"
-          ? ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED
-          : ERROR_CODES.PREPARE_REQUEST_INVALID;
-
-    if (!Number.isFinite(body.productId) || !Number.isFinite(body.submissionId)) {
-      return badRequest("productId와 submissionId는 숫자여야 합니다.", 400, requestInvalidCode);
-    }
-
-    if (!body.assignName?.trim()) {
-      return badRequest("assignName 값이 필요합니다.", 400, requestInvalidCode);
-    }
-
-    if (body.action === "prepare") {
-      return await handlePrepareAction(body);
-    }
-
-    if (body.action === "commit") {
-      return await handleCommitAction(body);
+      return badRequest("action 값이 필요합니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
     }
 
     if (body.action === "rollback") {
+      if (!Number.isFinite(body.productId) || !Number.isFinite(body.submissionId)) {
+        return badRequest("productId와 submissionId는 숫자여야 합니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
+      }
+
+      if (!body.assignName?.trim()) {
+        return badRequest("assignName 값이 필요합니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
+      }
+
       return await handleRollbackAction(body);
     }
 
-    return badRequest("지원하지 않는 action 입니다.", 400, ERROR_CODES.PREPARE_REQUEST_INVALID);
+    return badRequest("지원하지 않는 action 입니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
   } catch (error) {
     if (error instanceof PhotoSyncError) {
       return errorResponse(error.code, error.message, error.status);

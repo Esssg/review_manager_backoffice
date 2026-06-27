@@ -4,12 +4,10 @@ import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerM
 import PublicPhotoUploadModal from "../../components/public/PublicPhotoUploadModal";
 import PublicReviewReceiveSection from "../../components/public/PublicReviewReceiveSection";
 import {
-  commitPublicReviewReceivePhotoUpload,
   fetchPublicReviewReceiveEvidencePhotos,
   fetchPublicReviewReceiveProductBundle,
   fetchPublicReviewReceiveSubmissions,
-  preparePublicReviewReceivePhotoUpload,
-  rollbackPublicReviewReceivePhotoUpload
+  syncPublicReviewReceivePhotoUpload
 } from "../../services/reviewReceivePublic";
 import { formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import { sortReviewReceiveRowsByCreatedAt } from "../../utils/reviewReceiveRows";
@@ -28,12 +26,12 @@ const PUBLIC_PHOTO_UPLOAD_ERROR_MESSAGES = {
   "00003": "이미지 파일은 10MB 이하만 업로드할 수 있습니다.",
   "00004": "사진은 한 번에 최대 10장까지만 업로드할 수 있습니다.",
   "00005": "사진 미리보기를 만들지 못했습니다.",
-  "00010": "사진 업로드 준비 요청이 네트워크 문제로 실패했습니다.",
-  "00011": "사진 업로드 준비 요청 형식이 올바르지 않습니다.",
+  "00010": "사진 저장 요청이 네트워크 문제로 실패했습니다.",
+  "00011": "사진 저장 요청 형식이 올바르지 않습니다.",
   "00012": "사진 업로드 권한을 확인하지 못했습니다.",
   "00013": "관리자가 리뷰완료 처리한 행은 수정할 수 없습니다.",
-  "00014": "사진 업로드 준비 중 서버 설정 또는 저장소 연결 문제가 발생했습니다.",
-  "00015": "사진 업로드 준비 응답이 올바르지 않습니다.",
+  "00014": "사진 저장 중 서버 설정 또는 저장소 연결 문제가 발생했습니다.",
+  "00015": "사진 저장 응답이 올바르지 않습니다.",
   "00020": "사진 파일을 저장소로 전송하지 못했습니다.",
   "00021": "사진 저장소가 업로드 요청을 거부했습니다.",
   "00022": "사진 업로드 요청이 중단되었습니다.",
@@ -373,56 +371,12 @@ function validateSelectedPhotoFiles(fileList, existingFileCount = 0) {
   };
 }
 
-async function readUploadErrorBody(response) {
-  try {
-    return await response.clone().text();
-  } catch {
-    return "";
-  }
-}
-
 function createPreviewPhoto(file) {
   return {
     id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     file,
     previewUrl: window.URL.createObjectURL(file)
   };
-}
-
-async function uploadFileToPresignedUrl(uploadUrl, file, fileIndex) {
-  let response = null;
-
-  try {
-    response = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": file.type || "application/octet-stream"
-      },
-      body: file
-    });
-  } catch (error) {
-    const fileDebugInfo = getPhotoFileDebugInfo(file, fileIndex);
-    const isAborted = error?.name === "AbortError";
-
-    throw createPhotoUploadError(isAborted ? "00022" : "00020", {
-      stage: "upload",
-      ...fileDebugInfo,
-      originalErrorName: error?.name || "",
-      originalMessage: error?.message || "",
-      debugMessage: error?.message || ""
-    });
-  }
-
-  if (!response.ok) {
-    const errorBody = await readUploadErrorBody(response);
-
-    throw createPhotoUploadError("00021", {
-      stage: "upload",
-      status: response.status,
-      ...getPhotoFileDebugInfo(file, fileIndex),
-      debugMessage: errorBody
-    });
-  }
 }
 
 export default function PublicReviewReceiveDetailPage() {
@@ -841,73 +795,26 @@ export default function PublicReviewReceiveDetailPage() {
       setPhotoEditor((prev) => ({
         ...prev,
         isSaving: true,
-        feedbackMessage: "사진 업로드를 준비하는 중입니다."
+        feedbackMessage: "사진을 업로드하고 저장하는 중입니다."
       }));
 
-      const uploadedFiles = [];
-
       try {
-        if ((nextDraft.newPhotos ?? []).length > 0) {
-          const { data: prepareData, error: prepareError } = await preparePublicReviewReceivePhotoUpload({
-            productId: Number(photoEditor.row.product_id),
-            submissionId: Number(photoEditor.row.id),
-            assignName: photoEditor.row.assign_name,
-            files: nextDraft.newPhotos.map((photo) => ({
-              fileName: photo.file.name,
-              contentType: photo.file.type || "application/octet-stream",
-              size: photo.file.size
-            }))
-          });
-
-          if (prepareError) {
-            throw prepareError;
-          }
-
-          if (!prepareData?.uploads || prepareData.uploads.length !== nextDraft.newPhotos.length) {
-            throw createPhotoUploadError("00015", {
-              stage: "prepare",
-              debugMessage: `expected=${nextDraft.newPhotos.length}, received=${prepareData?.uploads?.length ?? "none"}`
-            });
-          }
-
-          setPhotoEditor((prev) => ({
-            ...prev,
-            feedbackMessage: "S3에 사진을 업로드하는 중입니다."
-          }));
-
-          for (let index = 0; index < prepareData.uploads.length; index += 1) {
-            const uploadTarget = prepareData.uploads[index];
-            const draftPhoto = nextDraft.newPhotos[index];
-
-            await uploadFileToPresignedUrl(uploadTarget.uploadUrl, draftPhoto.file, index + 1);
-            uploadedFiles.push({
-              objectKey: uploadTarget.objectKey,
-              imageUrl: uploadTarget.imageUrl
-            });
-          }
-        }
-
-        setPhotoEditor((prev) => ({
-          ...prev,
-          feedbackMessage: "DB에 사진 정보를 저장하는 중입니다."
-        }));
-
-        const { data: commitData, error: commitError } = await commitPublicReviewReceivePhotoUpload({
+        const { data: syncData, error: syncError } = await syncPublicReviewReceivePhotoUpload({
           productId: Number(photoEditor.row.product_id),
           submissionId: Number(photoEditor.row.id),
           assignName: photoEditor.row.assign_name,
           removedImageUrls: photoEditor.row.serverPhotos ?? [],
-          uploadedFiles
+          files: nextDraft.newPhotos.map((photo) => photo.file)
         });
 
-        if (commitError) {
-          throw commitError;
+        if (syncError) {
+          throw syncError;
         }
 
-        if (!commitData?.photos) {
+        if (!syncData?.photos) {
           throw createPhotoUploadError("00037", {
-            stage: "commit",
-            debugMessage: "commitData.photos is missing"
+            stage: "sync",
+            debugMessage: "syncData.photos is missing"
           });
         }
 
@@ -923,8 +830,8 @@ export default function PublicReviewReceiveDetailPage() {
             row.id === photoEditor.row.id
               ? {
                   ...row,
-                  serverPhotos: commitData.photos,
-                  photos: commitData.photos,
+                  serverPhotos: syncData.photos,
+                  photos: syncData.photos,
                   hasPendingPhotoChanges: false
                 }
               : row
@@ -937,29 +844,6 @@ export default function PublicReviewReceiveDetailPage() {
           stage: "save",
           message: error?.message || getPhotoUploadErrorMessage("00090")
         });
-
-        if (uploadedFiles.length > 0) {
-          try {
-            const { error: rollbackError } = await rollbackPublicReviewReceivePhotoUpload({
-              productId: Number(photoEditor.row.product_id),
-              submissionId: Number(photoEditor.row.id),
-              assignName: photoEditor.row.assign_name,
-              objectKeys: uploadedFiles.map((item) => item.objectKey)
-            });
-
-            if (rollbackError) {
-              throw rollbackError;
-            }
-          } catch (rollbackError) {
-            const normalizedRollbackError = normalizePhotoUploadError(rollbackError, "00043", {
-              stage: "rollback",
-              message: getPhotoUploadErrorMessage("00043")
-            });
-
-            normalizedError.rollbackCode = normalizedRollbackError.code;
-            console.error("Public review photo rollback failed", normalizedRollbackError);
-          }
-        }
 
         console.error("Public review photo upload failed", {
           code: normalizedError.code,
