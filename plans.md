@@ -294,22 +294,17 @@ location /rmb-images/ {
 - 모든 image_url 렌더링/fetch 지점에 URL normalize helper를 적용한다.
 - 손댈 곳이 많아질 수 있어 우선은 앱 서버 `/rmb-images/` proxy가 더 단순하다.
 
-### 3.4 앱 빌드/실행
+### 3.4 앱 Docker 빌드/실행
 
 앱 서버에서 수행:
 
 ```bash
-npm ci
-npm run build
+docker compose build
+docker compose up -d
+docker compose ps
 ```
 
-배포 방식은 앱 서버 환경에 맞춰 결정한다.
-
-가능한 방식:
-
-- Nginx/Caddy가 `dist/` static serving
-- Docker image로 build 후 static server
-- systemd로 Node static server
+`Dockerfile`의 build stage가 `npm ci`, `npm test`, `npm run build`를 실행하고, 최종 Nginx 이미지에는 정적 결과물만 포함한다. 기본 호스트 포트는 `8080`이고 `.env`의 `APP_PORT`로 변경할 수 있다.
 
 SPA rewrite가 필요하다.
 
@@ -322,6 +317,8 @@ location / {
     try_files $uri $uri/ /index.html;
 }
 ```
+
+현재 repo의 `nginx/default.conf`에 SPA fallback과 `/rmb-images/` 홈서버 proxy가 반영되어 있다.
 
 ### 3.5 브라우저 smoke test
 

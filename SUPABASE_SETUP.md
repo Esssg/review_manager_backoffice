@@ -1,14 +1,16 @@
 # Supabase 연동 및 공개 업로드 설정
 
-이 문서는 로컬 프런트 앱 연결과, 구매자용 리뷰받기 사진 업로드를 위한 Supabase Edge Function 설정 절차를 함께 정리합니다.
+이 문서는 프런트 앱의 self-hosted Supabase 연결과, 구매자용 리뷰받기 사진을 홈서버 NAS에 저장하는 Edge Function 구성을 정리합니다.
 
 ## 1) 의존성 설치
 
 ```bash
-npm install
+npm ci
 ```
 
 `supabase:check` 스크립트는 `dotenv`로 `.env`를 자동 로드합니다.
+
+운영 배포는 호스트에서 직접 빌드하지 않고 `docker compose build`를 사용합니다. Docker build stage가 `npm ci`, `npm test`, `npm run build`를 실행하고 최종 Nginx 이미지에는 `dist/`만 복사합니다.
 
 ## 2) 프런트 환경변수 설정
 
@@ -23,12 +25,20 @@ cp .env.example .env
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+현재 홈서버 공개 origin:
+
+```env
+VITE_SUPABASE_URL=https://sinabro-rmb.jinitlab.com
+```
+
 Node 스크립트 전용 키를 따로 쓰고 싶으면 아래도 설정할 수 있습니다.
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 
 `src/lib/supabase.ts`는 위 값을 사용해 앱 전체에서 재사용하는 Supabase 클라이언트를 생성합니다.
+
+Docker Compose의 호스트 포트는 `APP_PORT`로 바꿀 수 있으며 기본값은 `8080`입니다.
 
 ## 3) 기본 연결 확인
 
@@ -45,7 +55,7 @@ npm run supabase:check
 
 ## 4) 구매자용 사진 업로드 Edge Function
 
-구매자 공개 페이지 `/review-receive/specific/:productId`의 사진 저장은 브라우저가 직접 AWS 키를 가지지 않도록, Supabase Edge Function이 presigned URL을 발급하는 구조로 구현되어 있습니다.
+구매자 공개 페이지 `/review-receive/specific/:productId`는 `multipart/form-data`를 Supabase Edge Function에 전송합니다. Edge Function은 제출 권한과 이미지 형식을 검증하고, 홈서버 Docker network 내부의 `rmb-file-writer`를 통해 NAS 파일을 쓰고 삭제합니다.
 
 함수 위치:
 
@@ -53,36 +63,32 @@ npm run supabase:check
 
 함수 역할:
 
-1. `prepare`: 제출 권한 확인 후 S3 presigned PUT URL 발급
-2. `commit`: 업로드된 파일 URL을 `public.evidence_photos`에 저장하고 삭제 요청을 동기화
-3. `rollback`: 업로드 중간 실패 시 새로 올라간 S3 객체 정리
+1. `sync`: `productId`, `submissionId`, `assignName`으로 제출 권한 확인
+2. JPG/PNG/WebP/GIF, 파일당 10MB, 요청당 최대 10장 제한 검증
+3. `rmb-file-writer`에 파일 쓰기를 위임하고 `/rmb-images/review-receive/...` 상대 경로를 `public.evidence_photos`에 저장
+4. 제거 요청의 DB row와 NAS 파일 삭제
+5. 중간 실패 시 새 파일과 DB row를 정리하고, 필요하면 `rollback` action으로 추가 정리
 
 현재 함수는 구매자 공개 흐름을 지원해야 하므로 `verify_jwt: false`로 배포합니다. 대신 요청 본문의 `productId`, `submissionId`, `assignName` 조합으로 권한을 다시 확인하고, `is_review_verified = true` 인 제출은 수정하지 못하게 막습니다.
 
-## 5) Edge Function 시크릿 설정
+## 5) Edge Function 환경 설정
 
 `review-receive-photo-sync`가 동작하려면 Supabase 프로젝트에 아래 시크릿이 있어야 합니다.
 
-필수 시크릿:
+현재 홈서버 구성에서 사용하는 값:
 
-- `AWS_S3_REGION`
-- `AWS_S3_BUCKET`
-- `AWS_S3_ACCESS_KEY_ID`
-- `AWS_S3_SECRET_ACCESS_KEY`
-
-선택 시크릿:
-
-- `AWS_S3_UPLOAD_PREFIX`
-  - 기본값: `review-receive`
-- `AWS_S3_PUBLIC_BASE_URL`
-  - 미설정 시 기본값: `https://<bucket>.s3.<region>.amazonaws.com`
+- `FILE_WRITER_URL`: Docker network 내부 `rmb-file-writer` 주소
+- `FILE_WRITER_TOKEN`: file-writer 요청 검증 토큰
+- `NAS_IMAGE_UPLOAD_PREFIX`: 기본값 `review-receive`
+- `NAS_PUBLIC_IMAGE_PREFIX`: 기본값 `/rmb-images`
+- `NAS_IMAGE_ROOT`: file-writer를 사용하지 않는 fallback의 기본값 `/mnt/rmb-images`
 
 Supabase 기본 제공 시크릿:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-위 두 값은 Edge Function 런타임에서 자동 제공되므로 별도 중복 등록은 필요하지 않습니다.
+위 두 Supabase 값은 Edge Function 런타임에 제공되어야 합니다. `FILE_WRITER_TOKEN`과 service role key는 프런트 `.env`에 넣지 않습니다.
 
 ## 6) 배포 및 운영 체크
 
@@ -93,9 +99,28 @@ Supabase 기본 제공 시크릿:
 배포 후 확인할 사항:
 
 1. 함수가 배포되어 있어야 합니다.
-2. 위 AWS 시크릿이 프로젝트에 저장돼 있어야 합니다.
+2. `rmb-file-writer`가 홈서버 Docker network 안에서 실행 중이어야 합니다.
 3. 공개 페이지에서 사용하는 anon 권한이 `products`, `submissions`, `evidence_photos` 읽기를 허용해야 합니다.
-4. S3 버킷 CORS가 presigned PUT 업로드를 허용해야 합니다.
+4. `/rmb-images/`가 NAS 정적 파일 경로로 연결되어야 합니다.
+5. 앱 서버 Nginx가 `/rmb-images/`를 `https://sinabro-rmb.jinitlab.com/rmb-images/`로 프록시해야 합니다.
+6. 홈서버 외부 프록시의 요청 본문 제한이 10MB보다 커야 합니다.
+
+## 7) 앱 서버 Docker 실행
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+기본 LAN 접속 주소는 `http://192.168.20.30:8080`입니다. `compose.yaml`은 `.env`의 Vite 값을 build arg로 전달합니다. Vite 값이 바뀌면 이미지를 다시 빌드해야 합니다.
+
+Nginx 설정은 다음을 담당합니다.
+
+- React Router 경로를 `index.html`로 fallback
+- `/assets/` 장기 캐시
+- `/rmb-images/` 홈서버 이미지 프록시
+- `/healthz` 컨테이너 healthcheck
 
 운영 리스크:
 

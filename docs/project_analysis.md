@@ -166,7 +166,7 @@ tests/
 supabase/
   functions/
     review-receive-photo-sync/
-      index.ts            구매자용 사진 업로드 presigned URL/S3/DB 연동 함수
+      index.ts            구매자용 사진 NAS 업로드/File Writer/DB 연동 함수
 
 docs/
   guide_db.md             DB 스키마 및 샘플 데이터 문서
@@ -174,6 +174,9 @@ docs/
 
 AGENTS.md                 Codex 작업 규칙 문서
 SUPABASE_SETUP.md         Supabase 연동 절차 문서
+Dockerfile                Node build + Nginx 운영 이미지
+compose.yaml              앱 컨테이너 빌드/포트/재시작 설정
+nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 ```
 
 현재 구조의 핵심 특징은 아래와 같습니다.
@@ -186,17 +189,18 @@ SUPABASE_SETUP.md         Supabase 연동 절차 문서
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
 - `상품전체보기` 화면은 별도 페이지 + 조회 서비스 + 행 변환 유틸로 분리돼 있습니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
-- 실제 사진 저장은 Supabase Edge Function `review-receive-photo-sync`를 통해 presigned URL 발급 후 S3 업로드, `evidence_photos` 저장/삭제를 수행합니다.
+- 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
 - 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
 - 리뷰받기 목록은 품목을 먼저 `bundle_id` 단위로 묶은 뒤 번들 전체 submission으로 완료현황과 진행/완료 상태를 계산합니다.
 
 ## 4. 실행 방식
 
-`package.json` 기준으로 제공되는 스크립트는 아래 4개입니다.
+`package.json` 기준으로 제공되는 스크립트는 아래 5개입니다.
 
 - `npm run dev`: 개발 서버 실행
 - `npm run build`: 프로덕션 빌드
 - `npm run preview`: 빌드 결과 미리보기
+- `npm test`: Node 내장 테스트 실행
 - `npm run supabase:check`: Supabase 연결 확인
 
 프런트 환경변수는 `.env.example` 기준으로 아래 값이 필요합니다.
@@ -209,14 +213,9 @@ Node 스크립트용 대체 키도 지원합니다.
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 
-구매자용 사진 업로드까지 운영하려면 Supabase Edge Function 시크릿도 필요합니다.
+운영 앱은 `Dockerfile`의 multi-stage build로 생성하고 `compose.yaml`로 실행합니다. 기본 포트는 `8080`이며 `APP_PORT`로 변경할 수 있습니다. Nginx는 React Router fallback과 `/rmb-images/` 홈서버 reverse proxy를 담당합니다.
 
-- `AWS_S3_REGION`
-- `AWS_S3_BUCKET`
-- `AWS_S3_ACCESS_KEY_ID`
-- `AWS_S3_SECRET_ACCESS_KEY`
-- `AWS_S3_UPLOAD_PREFIX` (선택)
-- `AWS_S3_PUBLIC_BASE_URL` (선택)
+구매자용 사진 업로드의 `FILE_WRITER_URL`, `FILE_WRITER_TOKEN`, NAS 경로 설정은 홈서버 Edge Function 환경에만 두며 프런트 앱 서버에는 배포하지 않습니다.
 
 ## 5. 화면 및 라우팅 구조
 

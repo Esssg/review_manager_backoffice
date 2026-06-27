@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?VITE_SUPABASE_URL is required}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?VITE_SUPABASE_ANON_KEY is required}
+    image: review-manager-backoffice:local
+    container_name: review-manager-backoffice
+    ports:
+      - "${APP_PORT:-8080}:80"
+    restart: unless-stopped
+
