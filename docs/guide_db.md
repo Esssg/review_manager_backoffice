@@ -1,7 +1,7 @@
 # DB Guide (`public` schema)
 
 기준 프로젝트: `review_manager_backoffice` (`zwqmvttrburcwbdsunwo`)  
-테이블/컬럼 문서화 기준: 2026-06-05 KST (`products.product_link` 컬럼 추가 마이그레이션 파일 작성 기준)
+테이블/컬럼 문서화 기준: 2026-06-28 KST (`리뷰받기`, `상품전체보기` 목록 RPC 추가 마이그레이션 파일 작성 기준)
 row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업로드` 메뉴 권한 추가 뒤 갱신)
 
 ## 1) 테이블 관계 요약
@@ -64,6 +64,8 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   2026-06-04에 `bundle_id` 컬럼 추가 마이그레이션 파일 작성. 기존 row는 `bundle_id = id`로 초기화하며, 같은 `bundle_id`를 가진 여러 `products` row는 리뷰받기 화면에서 하나의 묶음으로 취급
   2026-06-04에 리뷰받기 번들 생성 시 날짜/업체명만 먼저 저장할 수 있도록 `title`, `product_name`을 null 허용으로 변경
   2026-06-05에 `product_link` 컬럼 추가 마이그레이션 파일 작성. 기존 `description`에서 `http://` 또는 `https://`로 시작하는 줄은 `product_link`로 옮기고 `description`에서는 제거
+  2026-06-28에 리뷰받기 목록 RPC의 관리자 범위/정렬 조회를 위해 `products_manager_product_date_id_idx` 인덱스 추가 마이그레이션 파일 작성
+  2026-06-28에 상품전체보기 목록 RPC의 관리자 범위/생성일 커서 조회를 위해 `products_manager_created_id_idx` 인덱스 추가 마이그레이션 파일 작성
 
 ## `admin_menu_permissions`
 - PK: `id` (bigint, identity)
@@ -136,6 +138,8 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - row count: 1785
 - 비고: 2026-04-24에 `assign_name`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name` 컬럼 추가
   2026-04-26에 `products.review_fee` 값을 이관받는 `review_fee` 컬럼 추가
+  2026-06-28에 리뷰받기 목록 RPC의 상품별 상태 집계를 위해 `submissions_product_id_status_idx` 인덱스 추가 마이그레이션 파일 작성
+  2026-06-28에 상품전체보기 목록 RPC의 상태/커서 조회를 위해 `submissions_product_status_created_id_idx` 인덱스 추가 마이그레이션 파일 작성
 
 ## `evidence_photos`
 - PK: `id` (bigint, identity)
@@ -149,6 +153,53 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   - `created_at` timestamptz, default `now()`
 - row count: 2435
 - 비고: 컬럼 목록은 2026-04-23 MCP 기준 재확인
+  2026-06-28에 상품전체보기 목록 RPC의 리뷰 사진 집계를 위해 `evidence_photos_review_submission_idx` 부분 인덱스 추가 마이그레이션 파일 작성
+
+## 2-1) RPC / 함수
+
+## `get_admin_review_receive_product_summaries(...)`
+- 용도: 관리자 `/admin/review-receive/*` 목록 전용 번들 집계 조회
+- 파라미터
+  - `p_admin_id` text
+  - `p_include_company_data` boolean, default `false`
+  - `p_view_mode` text, default `all` (`all`, `in_progress`, `completed`)
+  - `p_filters` jsonb, default `{}`
+  - `p_page_size` integer, default `50`
+  - `p_cursor_product_date` date, null 허용
+  - `p_cursor_product_id` bigint, null 허용
+- 반환 요약
+  - 번들 대표 상품 기본 정보
+  - `purchase_count`, `review_count`, `complete_count`, `submission_count`
+  - `status` (`completed` 또는 `in_progress`)
+  - `bundle_items`, `bundle_visible_items` JSONB
+- 비고: 리뷰받기 목록에서 `products` 전체와 `submissions` 원본 row 전체를 프런트로 가져오지 않기 위해 추가. 관리자 범위, `bundle_id` 기준 묶음, 진행/완료 상태, 열 필터, 커서 기반 다음 페이지 제한을 DB에서 처리합니다.
+
+## `normalize_review_receive_filter_text(value text)`
+- 용도: 리뷰받기 목록 RPC 내부 열 필터 비교용 문자열 정규화
+- 동작: 소문자 변환 후 공백, `.`, `/`, `\`, `|`, `_`, `-` 제거
+
+## `get_admin_product_overview_rows(...)`
+- 용도: 관리자 `/admin/product-overview/*` 목록 전용 submission 행 조회
+- 파라미터
+  - `p_admin_id` text
+  - `p_include_company_data` boolean, default `false`
+  - `p_status` text, default `all` (`all`, `purchase`, `review`, `complete`)
+  - `p_filters` jsonb, default `{}`
+  - `p_page_size` integer, default `1000`
+  - `p_cursor_product_created_at` timestamptz, null 허용
+  - `p_cursor_product_id` bigint, null 허용
+  - `p_cursor_submission_created_at` timestamptz, null 허용
+  - `p_cursor_submission_id` bigint, null 허용
+- 반환 요약
+  - 상품 기본 정보와 submission 기본/구매/리뷰/입금 상태 컬럼
+  - `review_photos` JSONB 배열
+  - `product_fee_deposit_GB`, `review_fee_deposit_GB` 표시값
+  - 현재 서버 필터 결과 전체 개수 `total_count`
+- 비고: 상품전체보기 목록에서 `products`, `submissions`, `evidence_photos` 전체 row를 초기 렌더 전에 모두 프런트로 가져오지 않기 위해 추가. 관리자 범위, 상태 탭, 열 필터, 커서 기반 다음 페이지 제한을 DB에서 처리합니다. 최종 함수는 필터/카운트/페이지 제한 후 현재 페이지의 리뷰 사진만 JSONB로 집계합니다. 화면은 기본 300건을 먼저 렌더링하고 스크롤 하단 진입 시 다음 300건을 조회합니다. 전체선택은 현재 서버 필터 결과 전체를 선택하는 상태로 관리합니다.
+
+## `normalize_product_overview_filter_text(value text)`
+- 용도: 상품전체보기 목록 RPC 내부 열 필터 비교용 문자열 정규화
+- 동작: 소문자 변환 후 공백, `.`, `/`, `\`, `|`, `_`, `-` 제거
 
 ## 3) 샘플 데이터 (민감정보 마스킹)
 
@@ -247,6 +298,8 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `products.bundle_id`는 리뷰받기 화면에서 여러 `products` row를 같은 묶음으로 보여주기 위한 값입니다. 기존 단일 상품은 `bundle_id = id`이며, 같은 번들에 두 번째 이후 품목을 추가할 때는 첫 품목의 `bundle_id`를 그대로 사용합니다. 관리자 리뷰받기 목록의 공개 URL은 묶음 상품별 1개만 복사하고, 구매자용 공개 화면은 URL 상품과 같은 `bundle_id`의 품목과 submissions를 함께 조회합니다. 리뷰받기 외 상품전체보기, 내보내기, 사진내려받기, 파일 업로드 등은 기본적으로 개별 `products` row 기준을 유지합니다.
 - `products.product_link`는 상품 링크 저장용 컬럼입니다. 리뷰받기 상품/리뷰어 일괄 입력과 상품/품목 저장 시 `description` 안에 `http://` 또는 `https://`로 시작하는 줄이 있으면 이 컬럼으로 분리하고, `description`에는 링크가 아닌 설명만 저장합니다.
 - `submissions`에는 `assign_name`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name`, `review_fee`가 추가됐습니다.
+- `get_admin_review_receive_product_summaries` RPC는 관리자 리뷰받기 목록의 성능 개선용입니다. 목록에서는 submission 원본 row 전체를 가져오지 않고 DB에서 번들별 개수와 진행/완료 상태를 집계하며, 열 필터와 커서 기반 다음 페이지 조회도 DB에서 처리합니다. 상세 화면은 기존처럼 선택된 번들의 submissions와 사진을 별도로 조회합니다.
+- `get_admin_product_overview_rows` RPC는 관리자 상품전체보기 목록의 성능 개선용입니다. 목록에서는 상태 탭과 열 필터를 DB에서 처리하고, 리뷰 사진은 submission별 JSONB 배열로 집계해 화면에서 기본 300건 단위로 반환받습니다. 전체선택 작업은 로드된 행만이 아니라 현재 서버 필터 조건 전체를 기준으로 처리합니다.
 - `admin_menu_permissions`는 관리자별 메뉴 노출 권한을 관리하며, 현재 `2sssg` 계정에 `대시보드`, `상품`, `리뷰받기`, `상품전체보기`, `내보내기`, `파일 업로드` 권한 6건이 들어 있습니다.
 - 2026-04-26에 `test1`, `test2`, `test3` 더미 계정을 삽입했습니다. 세 계정은 모두 회사 `테스트커머스` 소속이며, 메뉴 권한은 1=`대시보드`, 3=`리뷰받기`, 4=`상품전체보기`, 5=`내보내기`, 6=`파일 업로드`입니다.
 - 2026-04-30에 모든 관리자(`2sssg`, `aram`, `test1`, `test2`, `test3`)에게 `menu_number = 6`, `menu_label = 파일 업로드` 권한을 추가했습니다.

@@ -51,3 +51,6 @@ supabase/migrations
 !supabase/migrations/20260602110000_expand_deposit_gb_to_product_and_review_fee.sql
 !supabase/migrations/20260604123000_add_bundle_id_to_products.sql
 !supabase/migrations/20260605193000_fix_products_deposit_gb_check.sql
+!supabase/migrations/20260627174854_add_review_receive_summary_rpc.sql
+!supabase/migrations/20260627181000_add_product_overview_rows_rpc.sql
+!supabase/migrations/20260627183058_optimize_product_overview_rows_rpc.sql

@@ -23,9 +23,10 @@ import {
   deleteAdminReviewReceiveProduct,
   deleteAdminReviewReceiveProductBundle,
   fetchAdminReviewReceiveProducts,
+  REVIEW_RECEIVE_SUMMARY_PAGE_SIZE,
   updateAdminReviewReceiveProduct
 } from "../../services/adminProducts";
-import { createReviewReceiveSubmission } from "../../services/reviewReceive";
+import { createReviewReceiveSubmission, fetchReviewReceiveDetail } from "../../services/reviewReceive";
 import {
   normalizeProductReviewerRowForSave,
   parseProductReviewerBulkInput
@@ -246,54 +247,6 @@ function getPlannedDepositorNameForSave(productForm) {
   return productForm.plannedDepositorName;
 }
 
-function buildReviewReceiveBundleRows(products = []) {
-  const groups = new Map();
-
-  products.forEach((product) => {
-    const bundleKey = getBundleKey(product);
-
-    if (!groups.has(bundleKey)) {
-      groups.set(bundleKey, []);
-    }
-
-    groups.get(bundleKey).push(product);
-  });
-
-  return Array.from(groups.values()).map((items) => {
-    const sortedItems = [...items].sort((left, right) => Number(left.id) - Number(right.id));
-    const visibleItems = sortedItems.filter((item) => !isBundleShellProduct(item));
-    const representative = sortedItems[0];
-    const firstVisibleItem = visibleItems[0] ?? null;
-
-    if (sortedItems.length === 1 && !isBundleShellProduct(representative)) {
-      return {
-        ...representative,
-        bundleItems: sortedItems,
-        bundleVisibleItems: visibleItems,
-        bundleItemCount: 1,
-        isMultiProductBundle: false
-      };
-    }
-
-    return {
-      ...representative,
-      title: firstVisibleItem?.title ?? representative.title,
-      product_name: firstVisibleItem?.product_name ?? null,
-      option_name: firstVisibleItem?.option_name ?? null,
-      review_type: firstVisibleItem?.review_type ?? null,
-      description: firstVisibleItem?.description ?? null,
-      product_link: firstVisibleItem?.product_link ?? null,
-      planned_depositor_name: firstVisibleItem?.planned_depositor_name ?? representative.planned_depositor_name,
-      deposit_GB: firstVisibleItem?.deposit_GB ?? representative.deposit_GB,
-      submissions: visibleItems.flatMap((item) => item.submissions ?? []),
-      bundleItems: sortedItems,
-      bundleVisibleItems: visibleItems,
-      bundleItemCount: visibleItems.length,
-      isMultiProductBundle: true
-    };
-  });
-}
-
 function createInitialProductReviewerBulkState() {
   return {
     step: "input",
@@ -443,26 +396,20 @@ function getProductPayload(productForm, adminId, options = {}) {
   };
 }
 
-function getReviewReceiveProductStatus(product) {
-  const submissions = Array.isArray(product?.submissions) ? product.submissions : [];
-
-  if (submissions.length > 0 && submissions.every((submission) => submission.is_deposit_verified === true)) {
-    return "completed";
+function getReviewReceiveSubmissionSummary(product) {
+  if (product?.submission_count != null) {
+    return `${Number(product.purchase_count ?? 0)}/${Number(product.review_count ?? 0)}/${Number(product.complete_count ?? 0)}/(총 ${Number(product.submission_count ?? 0)}개)`;
   }
 
-  return "in_progress";
-}
-
-function getReviewReceiveSubmissionSummary(product) {
   const submissions = Array.isArray(product?.submissions) ? product.submissions : [];
   const { purchaseRows, reviewRows, completeRows } = splitReviewReceiveRows(submissions);
 
   return `${purchaseRows.length}/${reviewRows.length}/${completeRows.length}/(총 ${submissions.length}개)`;
 }
 
-function buildReviewVerifiedClipboardText(product) {
+function buildReviewVerifiedClipboardText(submissions) {
   const sortedSubmissions = sortReviewReceiveRowsByCreatedAt(
-    Array.isArray(product?.submissions) ? product.submissions : []
+    Array.isArray(submissions) ? submissions : []
   );
 
   return {
@@ -515,6 +462,7 @@ const REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO = 10;
 const REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO = 5;
 const REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT = REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 3;
 const REVIEW_RECEIVE_PRODUCT_FILTERS_STORAGE_KEY = "review_manager_review_receive_product_filters";
+const REVIEW_RECEIVE_PRODUCT_FILTER_DEBOUNCE_MS = 400;
 
 function createEmptyReviewReceiveProductFilters() {
   return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.reduce((filters, column) => {
@@ -581,33 +529,6 @@ function writeStoredReviewReceiveProductFilters(adminId, filters) {
   }
 }
 
-function getReviewReceiveProductFilterValue(product, columnKey) {
-  if (!hasRegisteredBundleItem(product) && columnKey !== "registered_date" && columnKey !== "company_name" && columnKey !== "manager_id") {
-    return UNREGISTERED_PRODUCT_ITEM_TEXT;
-  }
-
-  if (columnKey === "product_fee_deposit_GB") {
-    return getProductDepositGbPartLabels(product.deposit_GB).productFee;
-  }
-
-  if (columnKey === "review_fee_deposit_GB") {
-    return getProductDepositGbPartLabels(product.deposit_GB).reviewFee;
-  }
-
-  if (columnKey === "registered_date") {
-    return formatDateInputValue(product.product_date ?? product.created_at);
-  }
-
-  return product[columnKey] ?? "";
-}
-
-function normalizeReviewReceiveFilterText(value) {
-  return String(value ?? "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s./\\|_-]+/g, "");
-}
-
 function hasActiveReviewReceiveProductFilters(filters) {
   return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.some((column) => {
     const value = filters[column.key];
@@ -618,46 +539,6 @@ function hasActiveReviewReceiveProductFilters(filters) {
 
     return String(value ?? "").trim() !== "";
   });
-}
-
-function filterReviewReceiveProducts(products, filters) {
-  return products.filter((product) =>
-    REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.every((column) => {
-      const filterValue = filters[column.key];
-
-      if (column.type === "dateRange") {
-        const productDate = getReviewReceiveProductFilterValue(product, column.key);
-        const startDate = filterValue?.start || "";
-        const endDate = filterValue?.end || "";
-
-        if (!startDate && !endDate) {
-          return true;
-        }
-
-        if (!productDate) {
-          return false;
-        }
-
-        if (startDate && productDate < startDate) {
-          return false;
-        }
-
-        if (endDate && productDate > endDate) {
-          return false;
-        }
-
-        return true;
-      }
-
-      const searchText = normalizeReviewReceiveFilterText(filterValue);
-
-      if (!searchText) {
-        return true;
-      }
-
-      return normalizeReviewReceiveFilterText(getReviewReceiveProductFilterValue(product, column.key)).includes(searchText);
-    })
-  );
 }
 
 function FilterIcon() {
@@ -774,12 +655,19 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   } = useAdminIncludeCompanyData(adminId);
   const [products, setProducts] = useState([]);
   const [productFilters, setProductFilters] = useState(() => readStoredReviewReceiveProductFilters(adminId));
+  const [debouncedProductFilters, setDebouncedProductFilters] = useState(productFilters);
   const [openProductFilterKey, setOpenProductFilterKey] = useState("");
   const [scopeInfo, setScopeInfo] = useState({
     companyName: null,
     isCompanyScopeAvailable: false
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [listPageInfo, setListPageInfo] = useState({
+    hasMore: false,
+    nextCursor: null
+  });
+  const [listReloadKey, setListReloadKey] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isCreateTypeDialogOpen, setIsCreateTypeDialogOpen] = useState(false);
@@ -797,6 +685,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const [isSavingProductReviewerBulk, setIsSavingProductReviewerBulk] = useState(false);
   const productFormRef = useRef(null);
   const productFilterRef = useRef(null);
+  const productListScrollRef = useRef(null);
+  const productListLoadMoreRef = useRef(null);
+  const productListRequestIdRef = useRef(0);
+  const productListIsLoadingMoreRef = useRef(false);
   const { toast, showToast } = useAppToast();
   const productModalEnterConfirm = useModalEnterConfirm({
     isOpen: isProductModalOpen,
@@ -808,8 +700,16 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
   useEffect(() => {
     const loadProducts = async () => {
+      const requestId = productListRequestIdRef.current + 1;
+      productListRequestIdRef.current = requestId;
       setIsLoading(true);
+      setIsLoadingMore(false);
+      productListIsLoadingMoreRef.current = false;
       setErrorMessage("");
+      setListPageInfo({
+        hasMore: false,
+        nextCursor: null
+      });
 
       if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
         return;
@@ -822,7 +722,16 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         return;
       }
 
-      const { data, error, scope } = await fetchAdminReviewReceiveProducts(adminId, { includeCompanyData });
+      const { data, error, scope, pageInfo } = await fetchAdminReviewReceiveProducts(adminId, {
+        includeCompanyData,
+        viewMode,
+        filters: debouncedProductFilters,
+        pageSize: REVIEW_RECEIVE_SUMMARY_PAGE_SIZE
+      });
+
+      if (requestId !== productListRequestIdRef.current) {
+        return;
+      }
 
       setScopeInfo({
         companyName: scope?.companyName ?? null,
@@ -834,17 +743,137 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         setProducts([]);
       } else {
         setProducts(data ?? []);
+        setListPageInfo({
+          hasMore: Boolean(pageInfo?.hasMore && pageInfo?.nextCursor),
+          nextCursor: pageInfo?.nextCursor ?? null
+        });
       }
 
       setIsLoading(false);
     };
 
     loadProducts();
-  }, [adminId, capabilitiesErrorMessage, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities]);
+  }, [
+    adminId,
+    capabilitiesErrorMessage,
+    debouncedProductFilters,
+    includeCompanyData,
+    isIncludeCompanyDataReady,
+    isLoadingCapabilities,
+    listReloadKey,
+    viewMode
+  ]);
 
   useEffect(() => {
     writeStoredReviewReceiveProductFilters(adminId, productFilters);
   }, [adminId, productFilters]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedProductFilters(productFilters);
+    }, REVIEW_RECEIVE_PRODUCT_FILTER_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [productFilters]);
+
+  useEffect(() => {
+    if (
+      isLoading ||
+      errorMessage ||
+      !listPageInfo.hasMore ||
+      !listPageInfo.nextCursor ||
+      isLoadingCapabilities ||
+      !isIncludeCompanyDataReady ||
+      capabilitiesErrorMessage
+    ) {
+      return undefined;
+    }
+
+    const sentinel = productListLoadMoreRef.current;
+
+    if (!sentinel) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+
+        if (!entry?.isIntersecting) {
+          return;
+        }
+
+        const loadMoreProducts = async () => {
+          if (productListIsLoadingMoreRef.current) {
+            return;
+          }
+
+          const requestId = productListRequestIdRef.current;
+          productListIsLoadingMoreRef.current = true;
+          setIsLoadingMore(true);
+
+          const { data, error, pageInfo } = await fetchAdminReviewReceiveProducts(adminId, {
+            includeCompanyData,
+            viewMode,
+            filters: debouncedProductFilters,
+            pageSize: REVIEW_RECEIVE_SUMMARY_PAGE_SIZE,
+            cursor: listPageInfo.nextCursor
+          });
+
+          if (isCancelled || requestId !== productListRequestIdRef.current) {
+            productListIsLoadingMoreRef.current = false;
+            return;
+          }
+
+          if (error) {
+            setErrorMessage(error.message);
+            setListPageInfo({
+              hasMore: false,
+              nextCursor: null
+            });
+          } else {
+            setProducts((prev) => [...prev, ...(data ?? [])]);
+            setListPageInfo({
+              hasMore: Boolean(pageInfo?.hasMore && pageInfo?.nextCursor),
+              nextCursor: pageInfo?.nextCursor ?? null
+            });
+          }
+
+          productListIsLoadingMoreRef.current = false;
+          setIsLoadingMore(false);
+        };
+
+        observer.unobserve(entry.target);
+        loadMoreProducts();
+      },
+      {
+        root: productListScrollRef.current,
+        rootMargin: "260px 0px",
+        threshold: 0
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      isCancelled = true;
+      productListIsLoadingMoreRef.current = false;
+      observer.disconnect();
+    };
+  }, [
+    adminId,
+    capabilitiesErrorMessage,
+    debouncedProductFilters,
+    errorMessage,
+    includeCompanyData,
+    isIncludeCompanyDataReady,
+    isLoading,
+    isLoadingCapabilities,
+    listPageInfo.hasMore,
+    listPageInfo.nextCursor,
+    viewMode
+  ]);
 
   useEffect(() => {
     if (!openProductFilterKey) {
@@ -878,15 +907,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       : "현재 계정에 회사 정보가 없어 내 계정 데이터만 표시합니다."
     : "현재 로그인한 계정의 데이터만 표시합니다.";
 
-  const bundledProducts = buildReviewReceiveBundleRows(products);
-  const viewFilteredProducts = bundledProducts.filter((product) => {
-    if (viewMode === "all") {
-      return true;
-    }
-
-    return getReviewReceiveProductStatus(product) === viewMode;
-  });
-  const filteredProducts = filterReviewReceiveProducts(viewFilteredProducts, productFilters);
+  const filteredProducts = products;
   const hasActiveProductFilters = hasActiveReviewReceiveProductFilters(productFilters);
 
   const statusSummaryText =
@@ -899,6 +920,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const productReviewerBulkGroupCount = productReviewerBulkGroups.length;
   const productReviewerBulkReviewerCount = getProductReviewerBulkReviewerCount(productReviewerBulkGroups);
   const isProductReviewerBulkMultiProduct = productReviewerBulkGroupCount > 1;
+  const requestProductListReload = () => {
+    setExpandedBundleKey(null);
+    setListReloadKey((prev) => prev + 1);
+  };
 
   const openCreateTypeDialog = () => {
     setIsCreateTypeDialogOpen(true);
@@ -935,8 +960,21 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
   const handleCopyReviewVerifiedRows = async (product) => {
     setActiveActionProductId(null);
+    setActionProductId(product.id);
 
-    const { count, text } = buildReviewVerifiedClipboardText(product);
+    const {
+      productResult: { error: productError },
+      submissionsResult: { data: submissions, error: submissionsError }
+    } = await fetchReviewReceiveDetail(product.id, adminId);
+
+    setActionProductId(null);
+
+    if (productError || submissionsError) {
+      showToast(productError?.message ?? submissionsError?.message ?? "리뷰작성완료 데이터를 불러오지 못했습니다.", "error");
+      return;
+    }
+
+    const { count, text } = buildReviewVerifiedClipboardText(submissions);
 
     if (count === 0) {
       showToast("복사할 리뷰작성 데이터가 없습니다.", "info");
@@ -1185,13 +1223,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     const reflectPartialSave = () => {
       if (createdProducts.length > 0) {
-        setProducts((prev) => [
-          ...createdProducts.map((item) => ({
-            ...item,
-            submissions: [...(item.submissions ?? [])]
-          })),
-          ...prev
-        ]);
+        requestProductListReload();
       }
     };
 
@@ -1244,13 +1276,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       }
     }
 
-    setProducts((prev) => [
-      ...createdProducts.map((item) => ({
-        ...item,
-        submissions: [...(item.submissions ?? [])]
-      })),
-      ...prev
-    ]);
+    requestProductListReload();
     showToast(`품목 ${createdProducts.length}건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
     setProductReviewerBulk(createInitialProductReviewerBulkState());
     setIsProductReviewerBulkModalOpen(false);
@@ -1293,15 +1319,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       return;
     }
 
-    setProducts((prev) => {
-      if (editingProduct) {
-        return prev.map((product) =>
-          product.id === editingProduct.id ? { ...data, submissions: product.submissions ?? [] } : product
-        );
-      }
-
-      return [data, ...prev];
-    });
+    requestProductListReload();
     showToast(editingProduct ? "리뷰받기 상품을 수정했습니다." : "리뷰받기 상품을 추가했습니다.", "success");
     setEditingProduct(null);
     setProductModalMode("single");
@@ -1345,12 +1363,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     }
 
     if (isBundleDelete) {
-      const deletedProductIds = new Set(result.deletedProductIds ?? getBundleItems(product).map((item) => item.id));
-      setProducts((prev) => prev.filter((item) => !deletedProductIds.has(item.id)));
-      setExpandedBundleKey((prev) => (prev === getBundleKey(product) ? null : prev));
+      requestProductListReload();
       showToast("다중품목 묶음을 삭제했습니다.", "success");
     } else {
-      setProducts((prev) => prev.filter((item) => item.id !== product.id));
+      requestProductListReload();
       showToast("리뷰받기 상품을 삭제했습니다.", "success");
     }
 
@@ -1409,7 +1425,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         {isLoading && <p className="login-message">리뷰받기 상품 데이터를 불러오는 중...</p>}
         {!isLoading && errorMessage && <p className="login-error">{errorMessage}</p>}
         {!isLoading && !errorMessage && (
-          <div className="review-receive-product-list-scroll">
+          <div className="review-receive-product-list-scroll" ref={productListScrollRef}>
             <table className="review-receive-product-list-table">
               <colgroup>
                 <col style={{ width: `${REVIEW_RECEIVE_ROW_NUMBER_COLUMN_WIDTH_RATIO}%` }} />
@@ -1458,7 +1474,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                   <tr>
                     <td colSpan={REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT}>
                       {products.length === 0
-                        ? "등록된 리뷰받기 상품이 없습니다."
+                        ? hasActiveProductFilters
+                          ? "선택한 필터 조건에 맞는 리뷰받기 상품이 없습니다."
+                          : "등록된 리뷰받기 상품이 없습니다."
                         : hasActiveProductFilters
                           ? "선택한 필터 조건에 맞는 리뷰받기 상품이 없습니다."
                           : "선택한 보기 조건에 맞는 리뷰받기 상품이 없습니다."}
@@ -1591,6 +1609,15 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                 )}
               </tbody>
             </table>
+            <div ref={productListLoadMoreRef} className="review-receive-list-load-more" aria-live="polite">
+              {isLoadingMore
+                ? "추가 데이터를 불러오는 중..."
+                : listPageInfo.hasMore
+                  ? "아래로 스크롤하면 다음 리뷰받기 상품을 불러옵니다."
+                  : filteredProducts.length > 0
+                    ? "모든 리뷰받기 상품을 불러왔습니다."
+                    : ""}
+            </div>
           </div>
         )}
       </section>

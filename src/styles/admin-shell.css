@@ -508,6 +508,20 @@
   min-width: 0;
 }
 
+.review-receive-list-load-more {
+  min-height: 44px;
+  padding: 14px 10px 6px;
+  color: #0369a1;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.product-overview-list-load-more {
+  border-top: 1px solid #dbeafe;
+  background: #f8fbff;
+}
+
 .review-receive-product-list-table th {
   padding: 8px 3px;
   font-size: 11px;
@@ -966,6 +980,13 @@
 
 .product-overview-section-toolbar .review-receive-toolbar-actions {
   flex: 0 0 auto;
+}
+
+.product-overview-selection-summary {
+  margin: 8px 0 12px;
+  color: #0369a1;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .product-overview-empty-actions {

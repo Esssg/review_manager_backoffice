@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
-import { chunkValues, compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
+import { chunkValues, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE =
@@ -9,14 +9,88 @@ const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_WITH_DEPOSIT_GB =
   `${ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE},"deposit_GB"`;
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT =
   `${ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_WITH_DEPOSIT_GB},product_date`;
-const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_FALLBACKS = [
-  ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT,
-  `${ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE},product_date`,
-  ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_WITH_DEPOSIT_GB,
-  ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE
-];
-const ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT =
-  "id,product_id,is_review_verified,is_deposit_verified,review_fee,created_at";
+const REVIEW_RECEIVE_SUMMARY_RPC = "get_admin_review_receive_product_summaries";
+export const REVIEW_RECEIVE_SUMMARY_PAGE_SIZE = 50;
+
+function normalizeReviewReceiveSummaryCount(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function normalizeReviewReceiveSummaryProduct(row) {
+  const submissionCount = normalizeReviewReceiveSummaryCount(row?.submission_count);
+  const completeCount = normalizeReviewReceiveSummaryCount(row?.complete_count);
+
+  return {
+    id: Number(row?.id),
+    bundle_id: row?.bundle_id == null ? null : Number(row.bundle_id),
+    title: row?.title ?? null,
+    product_name: row?.product_name ?? null,
+    description: row?.description ?? null,
+    product_link: row?.product_link ?? null,
+    company_name: row?.company_name ?? null,
+    option_name: row?.option_name ?? null,
+    review_type: row?.review_type ?? null,
+    planned_depositor_name: row?.planned_depositor_name ?? null,
+    manager_id: row?.manager_id ?? null,
+    product_date: row?.product_date ?? null,
+    created_at: row?.created_at ?? null,
+    cursor_product_date: row?.cursor_product_date ?? row?.product_date ?? null,
+    deposit_GB: row?.deposit_GB ?? row?.["deposit_GB"] ?? null,
+    purchase_count: normalizeReviewReceiveSummaryCount(row?.purchase_count),
+    review_count: normalizeReviewReceiveSummaryCount(row?.review_count),
+    complete_count: completeCount,
+    submission_count: submissionCount,
+    status: row?.status ?? (submissionCount > 0 && completeCount === submissionCount ? "completed" : "in_progress"),
+    submissions: []
+  };
+}
+
+function parseReviewReceiveSummaryItems(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsedValue = JSON.parse(value);
+      return Array.isArray(parsedValue) ? parsedValue : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizeReviewReceiveSummaryRow(row) {
+  const product = normalizeReviewReceiveSummaryProduct(row);
+  const bundleItems = parseReviewReceiveSummaryItems(row?.bundle_items).map(normalizeReviewReceiveSummaryProduct);
+  const bundleVisibleItems = parseReviewReceiveSummaryItems(row?.bundle_visible_items).map(normalizeReviewReceiveSummaryProduct);
+  const bundleProductCount = normalizeReviewReceiveSummaryCount(row?.bundle_product_count || bundleItems.length);
+  const bundleItemCount = normalizeReviewReceiveSummaryCount(row?.bundle_item_count || bundleVisibleItems.length);
+
+  return {
+    ...product,
+    bundleItems: bundleItems.length > 0 ? bundleItems : [product],
+    bundleVisibleItems,
+    bundleProductCount,
+    bundleItemCount,
+    isMultiProductBundle: bundleProductCount > 1 || bundleItemCount === 0
+  };
+}
+
+function getReviewReceiveSummaryCursor(row) {
+  if (!row?.id || !row?.cursor_product_date) {
+    return null;
+  }
+
+  return {
+    productDate: row.cursor_product_date,
+    productId: row.id
+  };
+}
+
 function isMissingReviewReceiveProductColumn(error) {
   const message = `${error?.message ?? ""} ${error?.details ?? ""} ${error?.hint ?? ""}`;
   return message.includes("product_date") || message.includes("deposit_GB") || message.includes("bundle_id");
@@ -36,40 +110,6 @@ function buildMissingProductColumnError(error) {
   }
 
   return new Error("products.product_date 컬럼이 아직 없습니다. product_date 추가 마이그레이션을 먼저 적용해주세요.");
-}
-
-async function fetchReviewReceiveProductRows(scope, selectColumns) {
-  const result = await fetchAllRows(() =>
-    supabase.from("products").select(selectColumns).in("manager_id", scope.managerIds)
-  );
-
-  if (result.data) {
-    result.data.sort((left, right) => {
-      if (selectColumns.includes("product_date")) {
-        const dateComparison = String(right.product_date ?? "").localeCompare(String(left.product_date ?? ""));
-        if (dateComparison !== 0) return dateComparison;
-      }
-
-      return Number(right.id) - Number(left.id);
-    });
-  }
-
-  return result;
-}
-
-async function fetchReviewReceiveSubmissionStatusRows(productIds) {
-  const result = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
-    supabase
-      .from("submissions")
-      .select(ADMIN_REVIEW_RECEIVE_SUBMISSION_STATUS_SELECT)
-      .in("product_id", productIdChunk)
-  );
-
-  if (result.data) {
-    result.data.sort((left, right) => compareByCreatedAtThenId(left, right));
-  }
-
-  return result;
 }
 
 async function deleteRowsInChunks(tableName, columnName, values) {
@@ -115,52 +155,41 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
     };
   }
 
-  let productsResult = null;
+  const pageSize = Math.max(1, Math.min(Number(options.pageSize ?? REVIEW_RECEIVE_SUMMARY_PAGE_SIZE), 200));
+  const cursor = options.cursor ?? null;
+  const result = await supabase.rpc(REVIEW_RECEIVE_SUMMARY_RPC, {
+    p_admin_id: adminId,
+    p_include_company_data: Boolean(options.includeCompanyData),
+    p_view_mode: options.viewMode ?? "all",
+    p_filters: options.filters ?? {},
+    p_page_size: pageSize,
+    p_cursor_product_date: cursor?.productDate ?? null,
+    p_cursor_product_id: cursor?.productId ?? null
+  });
 
-  for (const selectColumns of ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_FALLBACKS) {
-    productsResult = await fetchReviewReceiveProductRows(scope, selectColumns);
-
-    if (!isMissingReviewReceiveProductColumn(productsResult.error)) {
-      break;
-    }
-  }
-
-  if (productsResult.error || !productsResult.data?.length) {
-    return {
-      ...productsResult,
-      scope
-    };
-  }
-
-  const productIds = productsResult.data.map((product) => product.id);
-  const submissionsResult = await fetchReviewReceiveSubmissionStatusRows(productIds);
-
-  if (submissionsResult.error) {
+  if (result.error) {
     return {
       data: null,
-      error: submissionsResult.error,
+      error: result.error,
       scope
     };
   }
 
-  const submissionsByProductId = (submissionsResult.data ?? []).reduce((acc, submission) => {
-    const productId = submission.product_id;
-
-    if (!acc[productId]) {
-      acc[productId] = [];
-    }
-
-    acc[productId].push(submission);
-    return acc;
-  }, {});
+  const rows = result.data ?? [];
+  const hasMore = rows.length > pageSize;
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+  const normalizedRows = pageRows.map(normalizeReviewReceiveSummaryRow);
+  const nextCursor = hasMore ? getReviewReceiveSummaryCursor(normalizedRows.at(-1)) : null;
 
   return {
-    data: productsResult.data.map((product) => ({
-      ...product,
-      submissions: submissionsByProductId[product.id] ?? []
-    })),
+    data: normalizedRows,
     error: null,
-    scope
+    scope,
+    pageInfo: {
+      hasMore,
+      nextCursor,
+      pageSize
+    }
   };
 }
 
