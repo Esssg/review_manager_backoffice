@@ -32,6 +32,10 @@ function parseProductOverviewJsonArray(value) {
   return [];
 }
 
+function readProductOverviewRowValue(row, key) {
+  return row[key] ?? row[key.toLowerCase()] ?? null;
+}
+
 function normalizeProductOverviewRow(row) {
   return {
     product_id: Number(row.product_id),
@@ -67,8 +71,8 @@ function normalizeProductOverviewRow(row) {
     is_deposit_verified: row.is_deposit_verified ?? false,
     deposited_at: row.deposited_at ?? null,
     actual_depositor_name: row.actual_depositor_name ?? null,
-    product_fee_deposit_GB: row.product_fee_deposit_GB ?? null,
-    review_fee_deposit_GB: row.review_fee_deposit_GB ?? null
+    product_fee_deposit_GB: readProductOverviewRowValue(row, "product_fee_deposit_GB"),
+    review_fee_deposit_GB: readProductOverviewRowValue(row, "review_fee_deposit_GB")
   };
 }
 
@@ -86,7 +90,7 @@ function buildProductOverviewProduct(row) {
     option_name: row.option_name ?? null,
     review_type: row.review_type ?? null,
     planned_depositor_name: row.planned_depositor_name ?? null,
-    deposit_GB: row.deposit_GB ?? null,
+    deposit_GB: readProductOverviewRowValue(row, "deposit_GB"),
     created_at: row.product_created_at ?? null
   };
 }
