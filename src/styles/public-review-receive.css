@@ -530,8 +530,9 @@
     flex-direction: row;
     gap: 12px;
     overflow-x: auto;
-    padding-bottom: 6px;
+    padding: 0 18px 6px;
     scroll-snap-type: x mandatory;
+    scroll-padding-inline: 18px;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
@@ -549,7 +550,7 @@
   }
 
   .public-review-mobile-card {
-    flex: 0 0 min(88%, 360px);
+    flex: 0 0 min(calc(100% - 42px), 360px);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -558,7 +559,7 @@
     padding: 14px;
     background: linear-gradient(180deg, #ffffff 0%, #f8fcff 100%);
     box-shadow: 0 10px 24px rgba(14, 116, 144, 0.08);
-    scroll-snap-align: start;
+    scroll-snap-align: center;
   }
 
   .public-review-mobile-card-header {
@@ -613,6 +614,10 @@
     background: #fff;
   }
 
+  .public-review-mobile-meta-item.is-wide {
+    grid-column: 1 / -1;
+  }
+
   .public-review-mobile-meta-item span,
   .public-review-mobile-block-label {
     font-size: 11px;
@@ -625,8 +630,8 @@
     color: #0f172a;
     font-size: 13px;
     line-height: 1.35;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
 
   .public-review-mobile-photo-block {
@@ -664,6 +669,10 @@
 
 @media (max-width: 520px) {
   .public-review-mobile-card {
-    flex-basis: 92%;
+    flex-basis: calc(100% - 42px);
+  }
+
+  .public-review-mobile-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

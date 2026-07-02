@@ -18,8 +18,8 @@ function renderPhotoCell(row, onOpenPhotoViewer) {
 
 function getMobileFieldItems(row) {
   return [
-    { label: "품명", value: row.product_name || "-" },
-    { label: "옵션", value: row.option_name || "-" },
+    { label: "품명", value: row.product_name || "-", isWide: true },
+    { label: "옵션", value: row.option_name || "-", isWide: true },
     { label: "리뷰형태", value: row.review_type || "-" },
     { label: "주문번호", value: row.order_number || "-" },
     { label: "구매자", value: row.buyer_name || "-" },
@@ -78,7 +78,10 @@ export default function PublicReviewReceiveSection({
 
                 <div className="public-review-mobile-meta-grid">
                   {mobileFieldItems.map((item) => (
-                    <div key={`${row.id}-${item.label}`} className="public-review-mobile-meta-item">
+                    <div
+                      key={`${row.id}-${item.label}`}
+                      className={`public-review-mobile-meta-item${item.isWide ? " is-wide" : ""}`}
+                    >
                       <span>{item.label}</span>
                       <strong>{item.value}</strong>
                     </div>
