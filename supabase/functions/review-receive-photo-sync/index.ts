@@ -20,6 +20,12 @@ const DEFAULT_PUBLIC_PATH_PREFIX = "/rmb-images";
 const DEFAULT_UPLOAD_PREFIX = "review-receive";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+const IMAGE_TYPE_EXTENSION_MAP = new Map([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/webp", "webp"],
+  ["image/gif", "gif"]
+]);
 
 const ERROR_CODES = {
   SYNC_REQUEST_INVALID: "00011",
@@ -116,6 +122,22 @@ function sanitizeFileName(fileName: string) {
 
 function getFileExtension(fileName: string) {
   return fileName.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function getImageExtensionFromContentType(contentType: string) {
+  return IMAGE_TYPE_EXTENSION_MAP.get(contentType) ?? "jpg";
+}
+
+function ensureAllowedFileExtension(fileName: string, extension: string) {
+  const trimmedFileName = fileName.trim() || "image";
+  const currentExtension = getFileExtension(trimmedFileName);
+
+  if (ALLOWED_EXTENSIONS.has(currentExtension)) {
+    return trimmedFileName;
+  }
+
+  const baseName = trimmedFileName.replace(/\.[^.]*$/g, "").replace(/\.+$/g, "") || "image";
+  return `${baseName}.${extension}`;
 }
 
 function encodeObjectKey(objectKey: string) {
@@ -375,19 +397,16 @@ async function validateAndReadImageFile(file: File) {
     throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "이미지 파일은 10MB 이하만 업로드할 수 있습니다.", 400);
   }
 
-  const extension = getFileExtension(file.name);
-
-  if (!ALLOWED_EXTENSIONS.has(extension)) {
-    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "허용되지 않은 이미지 확장자입니다.", 400);
-  }
-
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   if (!hasExpectedImageSignature(file.type, bytes)) {
     throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "이미지 파일 형식이 올바르지 않습니다.", 400);
   }
 
-  return bytes;
+  return {
+    bytes,
+    fileName: ensureAllowedFileExtension(file.name, getImageExtensionFromContentType(file.type))
+  };
 }
 
 function getFileWriterHeaders(storageConfig: ReturnType<typeof getStorageConfig>, contentType = "application/json") {
@@ -486,8 +505,8 @@ async function handleSyncAction(payload: SyncPayload) {
 
   try {
     for (const file of payload.files) {
-      const bytes = await validateAndReadImageFile(file);
-      const objectKey = buildObjectKey(storageConfig.uploadPrefix, payload.productId, payload.submissionId, file.name);
+      const { bytes, fileName } = await validateAndReadImageFile(file);
+      const objectKey = buildObjectKey(storageConfig.uploadPrefix, payload.productId, payload.submissionId, fileName);
       const imageUrl = buildPublicImagePath(storageConfig.publicPathPrefix, objectKey);
 
       await writeImageFile(storageConfig, objectKey, bytes);
