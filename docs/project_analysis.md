@@ -26,6 +26,7 @@
 - 증빙 사진 썸네일 및 모달 뷰어
 - 내보내기 메뉴 8종(전체상품, 내상품, 일자별, 상품별, 입금일 기준, 상태별, 신청자 명단, 사진내려받기)
 - 파일 업로드 메뉴 진입점 및 Excel 파싱/미리보기/DB 반영
+- 일괄수정하기 메뉴: 상품전체보기 필터 결과 Excel 내보내기, 변경 미리보기, submission 일괄 반영
 - 리뷰받기 `products.bundle_id` 기반 여러 품목 묶음 표시, 상품별 공개 URL, 품목별 submissions 관리
 - 리뷰받기 목록 DB RPC 기반 번들 요약 조회, 진행/완료 서버 필터, 열 필터 서버 조회, 커서 기반 무한 스크롤
 - 상품전체보기 DB RPC 기반 submission 행 조회, 상태 탭/열 필터 서버 조회, 300건 단위 커서 무한 스크롤, 서버 조건 기준 전체선택
@@ -128,6 +129,7 @@ src/
     exportData.js         내보내기용 products/submissions 등 조회
     exportPhotos.js       사진내려받기용 products/submissions/evidence_photos 조회
     fileUpload.js         파일 업로드 products 생성 및 submissions 주문번호 기준 저장
+    bulkEdit.js           일괄수정 Excel 대상 현재값 조회 및 적용 RPC 호출
     paginatedQuery.js     Supabase 고유 키 커서 전체 조회, IN 조건 분할, 제한 동시 실행
   utils/
     applicationRows.js    신청자 정렬 유틸
@@ -147,6 +149,7 @@ src/
     fileUploadValidation.js
                           파일 업로드 날짜/금액/계좌/상태값 검증 유틸
     fileUploadTemplate.js 파일 업로드 샘플 Excel 다운로드 유틸
+    bulkEditExcel.js      일괄수정 Excel 열 계약, 파싱, 차이 계산 유틸
   styles/
     base.css              공통 토큰/전역 UI 규칙
     login.css             로그인 화면 전용 스타일
@@ -190,6 +193,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 대시보드는 실제 `products`, `submissions`, `applications`, `evidence_photos`, `admins` 데이터를 서비스/유틸/훅으로 분리해 조회·집계합니다.
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
 - `상품전체보기` 화면은 별도 페이지 + 조회 서비스 + 행 변환 유틸로 분리돼 있습니다.
+- `일괄수정하기` 화면은 상품전체보기의 읽기 전용 필터 테이블을 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
 - 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
@@ -237,6 +241,7 @@ Node 스크립트용 대체 키도 지원합니다.
 - `/admin/export`: 내보내기 (기본 하위로 리다이렉트)
 - `/admin/export/all-products` 등: 내보내기 하위(전체상품·내상품·일자별·상품별·입금일·상태별·신청자 명단·사진내려받기)
 - `/admin/file-upload`: 파일 업로드
+- `/admin/bulk-edit`: 일괄수정하기
 - `/admin/setting`: 관리자 설정
 - `/review-receive/specific/:productId`: 구매자용 리뷰받기 상세
 - `/`: 로그인으로 리다이렉트
@@ -255,6 +260,7 @@ Node 스크립트용 대체 키도 지원합니다.
 리뷰받기 상세는 `products.bundle_id`가 같은 여러 `products` row를 같은 묶음으로 읽고, 날짜/업체명 공통 정보 아래 품목별 접기/펼치기 섹션에서 각 품목의 submissions를 개별 관리합니다. 리뷰받기 목록의 공개 URL 복사는 품목별이 아니라 묶음 상품별 1개 URL 기준으로 제공합니다.
 `admin_menu_permissions.menu_number = 5`인 `내보내기` 메뉴는 하위 경로가 `/admin/export/*`이며, 현재 `전체상품`, `내상품`, `일자별`, `상품별`, `입금일 기준`, `상태별`, `신청자 명단` 화면에서 Excel 내보내기(컬럼 선택·미리보기·기간 필터·상태/상품 필터)를 제공합니다. `사진내려받기` 화면은 상품내역 필터 후 필터링된 상품의 submission 증빙 사진을 브라우저에서 ZIP으로 묶어 내려받습니다.
 `admin_menu_permissions.menu_number = 6`인 `파일 업로드` 메뉴는 `/admin/file-upload` 경로를 사용합니다. Excel 파일 선택/드래그앤드롭/붙여넣기, 파싱 결과 미리보기, 오류/경고/스킵 행 표시, 오류 행 제외 후 저장 예정 데이터 확인, 샘플 양식 다운로드, Supabase `products` 생성 및 `submissions` 주문번호 기준 insert/update 흐름을 제공합니다.
+`admin_menu_permissions.menu_number = 7`인 `일괄수정하기` 메뉴는 `/admin/bulk-edit` 경로를 사용합니다. 상품전체보기와 같은 필터/페이지네이션 목록을 읽기 전용으로 보여주고, 현재 필터 결과 전체를 수정용 Excel로 내보냅니다. 업로드 시 제출 ID·열 형식·동일 회사 범위를 확인한 뒤, 변경될 필드의 이전/이후 값을 보여주고 최종 확인 후 submission만 일괄 수정합니다. 입금완료 관련 열은 `can_verify_deposit` 권한을 따릅니다.
 
 ## 6. 인증 및 데이터 흐름 요약
 

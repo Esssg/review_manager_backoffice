@@ -7,7 +7,8 @@ export const ADMIN_MENU_NUMBER = {
   REVIEW_RECEIVE: 3,
   PRODUCT_OVERVIEW: 4,
   EXPORT: 5,
-  FILE_UPLOAD: 6
+  FILE_UPLOAD: 6,
+  BULK_EDIT: 7
 };
 
 export const ADMIN_MENU_ITEMS = [
@@ -98,6 +99,11 @@ export const ADMIN_MENU_ITEMS = [
     menuNumber: ADMIN_MENU_NUMBER.FILE_UPLOAD,
     label: "파일 업로드",
     path: "/admin/file-upload"
+  },
+  {
+    menuNumber: ADMIN_MENU_NUMBER.BULK_EDIT,
+    label: "일괄수정하기",
+    path: "/admin/bulk-edit"
   }
 ];
 
@@ -128,6 +134,10 @@ export function getAdminMenuItemByPathname(pathname) {
 
   if (pathname === "/admin/file-upload") {
     return getAdminMenuItemByNumber(ADMIN_MENU_NUMBER.FILE_UPLOAD);
+  }
+
+  if (pathname === "/admin/bulk-edit") {
+    return getAdminMenuItemByNumber(ADMIN_MENU_NUMBER.BULK_EDIT);
   }
 
   if (pathname === "/admin/setting") {

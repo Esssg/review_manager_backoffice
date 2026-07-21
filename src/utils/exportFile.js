@@ -34,7 +34,22 @@ export function downloadExcel(filename, sheets) {
   normalizedSheets.forEach((sheet, index) => {
     const sheetName = sanitizeSheetName(sheet?.name || `시트${index + 1}`);
     const rows = Array.isArray(sheet?.rows) ? sheet.rows : [];
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const leadingRows = Array.isArray(sheet?.leadingRows) ? sheet.leadingRows : [];
+    const headers = Array.isArray(sheet?.headers) ? sheet.headers : Object.keys(rows[0] ?? {});
+    const worksheet = leadingRows.length > 0
+      ? XLSX.utils.aoa_to_sheet([...leadingRows, headers])
+      : XLSX.utils.json_to_sheet(rows);
+
+    if (leadingRows.length > 0 && rows.length > 0) {
+      XLSX.utils.sheet_add_json(worksheet, rows, { skipHeader: true, origin: -1 });
+
+      if (headers.length > 1) {
+        worksheet["!merges"] = leadingRows.map((_, rowIndex) => ({
+          s: { r: rowIndex, c: 0 },
+          e: { r: rowIndex, c: headers.length - 1 }
+        }));
+      }
+    }
 
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
   });

@@ -1,7 +1,7 @@
 # DB Guide (`public` schema)
 
 기준 프로젝트: `review_manager_backoffice` (`zwqmvttrburcwbdsunwo`)  
-테이블/컬럼 문서화 기준: 2026-06-28 KST (`리뷰받기`, `상품전체보기` 목록 RPC 추가 마이그레이션 파일 작성 기준)
+테이블/컬럼 문서화 기준: 2026-07-21 KST (`일괄수정하기` 메뉴·적용 RPC 마이그레이션 파일 작성 기준)
 row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업로드` 메뉴 권한 추가 뒤 갱신)
 
 ## 1) 테이블 관계 요약
@@ -84,6 +84,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   `menu_number = 4`는 `상품전체보기` 메뉴에 사용
   `menu_number = 5`는 `내보내기` 메뉴에 사용 (2026-04-25 추가)
   `menu_number = 6`은 `파일 업로드` 메뉴에 사용 (2026-04-30 추가)
+  `menu_number = 7`은 `일괄수정하기` 메뉴(`/admin/bulk-edit`)에 사용 (2026-07-21 추가). 초기 권한은 `test1`에만 부여
   2026-04-26에 테스트 계정 `test1`, `test2`, `test3`에는 `menu_number` 1, 3, 4, 5만 부여
 
 ## `product_steps`
@@ -201,6 +202,15 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - 용도: 상품전체보기 목록 RPC 내부 열 필터 비교용 문자열 정규화
 - 동작: 소문자 변환 후 공백, `.`, `/`, `\`, `|`, `_`, `-` 제거
 
+## `apply_admin_bulk_submission_updates(p_admin_id text, p_updates jsonb)`
+- 용도: 관리자 `/admin/bulk-edit`의 Excel 차이 반영 전용 submission 일괄 수정
+- 입력
+  - `p_admin_id`: 로그인 관리자 ID
+  - `p_updates`: `submission_id`와 변경된 submission 열만 포함한 JSON 배열
+- 수정 허용 열: `assign_name`, `order_number`, `buyer_name`, `recipient_name`, `purchase_account`, `contact`, `address`, `bank_name`, `bank_account`, `account_holder`, `amount`, `review_fee`, `is_review_verified`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name`
+- 검증: `menu_number = 7` 권한, 로그인 관리자와 대상 상품 담당자의 동일 회사, 중복/존재하지 않는 제출 ID, 허용되지 않은 열을 확인합니다. 입금완료 관련 3개 열은 `admins.can_verify_deposit = true`일 때만 수정할 수 있습니다.
+- 반환: 실제 반영된 `submission_id` 목록
+
 ## 3) 샘플 데이터 (민감정보 마스킹)
 
 ## `admins` sample
@@ -250,6 +260,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - (`admin_id`: `test1`, `menu_number`: 4, `menu_label`: `상품전체보기`)
 - (`admin_id`: `test1`, `menu_number`: 5, `menu_label`: `내보내기`)
 - (`admin_id`: `test1`, `menu_number`: 6, `menu_label`: `파일 업로드`)
+- (`admin_id`: `test1`, `menu_number`: 7, `menu_label`: `일괄수정하기`)
 
 ## `product_steps` sample
 - (`id`: 1, `product_id`: 1, `step_number`: 1)
@@ -300,9 +311,10 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `submissions`에는 `assign_name`, `is_deposit_verified`, `deposited_at`, `actual_depositor_name`, `review_fee`가 추가됐습니다.
 - `get_admin_review_receive_product_summaries` RPC는 관리자 리뷰받기 목록의 성능 개선용입니다. 목록에서는 submission 원본 row 전체를 가져오지 않고 DB에서 번들별 개수와 진행/완료 상태를 집계하며, 열 필터와 커서 기반 다음 페이지 조회도 DB에서 처리합니다. 상세 화면은 기존처럼 선택된 번들의 submissions와 사진을 별도로 조회합니다.
 - `get_admin_product_overview_rows` RPC는 관리자 상품전체보기 목록의 성능 개선용입니다. 목록에서는 상태 탭과 열 필터를 DB에서 처리하고, 리뷰 사진은 submission별 JSONB 배열로 집계해 화면에서 기본 300건 단위로 반환받습니다. 전체선택 작업은 로드된 행만이 아니라 현재 서버 필터 조건 전체를 기준으로 처리합니다.
-- `admin_menu_permissions`는 관리자별 메뉴 노출 권한을 관리하며, 현재 `2sssg` 계정에 `대시보드`, `상품`, `리뷰받기`, `상품전체보기`, `내보내기`, `파일 업로드` 권한 6건이 들어 있습니다.
+- `admin_menu_permissions`는 관리자별 메뉴 노출 권한을 관리하며, `menu_number = 7`은 `/admin/bulk-edit`의 `일괄수정하기` 메뉴입니다. 2026-07-21 마이그레이션은 초기 운영 권한으로 `test1`에만 이 권한을 부여합니다.
 - 2026-04-26에 `test1`, `test2`, `test3` 더미 계정을 삽입했습니다. 세 계정은 모두 회사 `테스트커머스` 소속이며, 메뉴 권한은 1=`대시보드`, 3=`리뷰받기`, 4=`상품전체보기`, 5=`내보내기`, 6=`파일 업로드`입니다.
 - 2026-04-30에 모든 관리자(`2sssg`, `aram`, `test1`, `test2`, `test3`)에게 `menu_number = 6`, `menu_label = 파일 업로드` 권한을 추가했습니다.
+- `apply_admin_bulk_submission_updates`는 Excel에서 실제로 변경된 submission 필드만 원자적으로 반영합니다. 대상 상품의 담당자와 로그인 관리자의 `admins.company`가 같아야 하며, 담당 관리자 ID 자체가 다르다는 이유로는 막지 않습니다.
 - 2026-04-26 더미 데이터 삽입량: `products` 60건, `product_steps` 180건, `applications` 630건, `submissions` 1,740건, `evidence_photos` 2,217건입니다.
 - 2026-04-26에 `test1`, `test2`, `test3` 더미 submissions 중 `is_review_verified = true`인 1,323건 모두 `photo_type = 'review'` 사진을 갖도록 누락된 review 사진 204건을 추가했습니다. 이후 추가 데이터 반영을 포함한 현재 `evidence_photos` row count는 2,435건입니다.
 - 2026-04-26에 `review_fee`를 `products`에서 `submissions`로 이관했습니다. 최종 확인 시 `submissions` 1,785건 중 `review_fee`가 채워진 행은 1,511건입니다.

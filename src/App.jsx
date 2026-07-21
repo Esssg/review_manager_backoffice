@@ -10,6 +10,7 @@ import AdminExportByStatusPage from "./pages/admin/AdminExportByStatusPage";
 import AdminExportMyProductsPage from "./pages/admin/AdminExportMyProductsPage";
 import AdminExportPhotosPage from "./pages/admin/AdminExportPhotosPage";
 import AdminFileUploadPage from "./pages/admin/AdminFileUploadPage";
+import AdminBulkEditPage from "./pages/admin/AdminBulkEditPage";
 import AdminProductDetailPage from "./pages/admin/AdminProductDetailPage";
 import AdminProductOverviewPage from "./pages/admin/AdminProductOverviewPage";
 import AdminProductsPage from "./pages/admin/AdminProductsPage";
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="photos" element={<AdminExportPhotosPage />} />
         </Route>
         <Route path="file-upload" element={<AdminFileUploadPage />} />
+        <Route path="bulk-edit" element={<AdminBulkEditPage />} />
         <Route path="setting" element={<AdminSettingPage />} />
       </Route>
       <Route path="/review-receive/specific/:productId" element={<PublicReviewReceiveDetailPage />} />

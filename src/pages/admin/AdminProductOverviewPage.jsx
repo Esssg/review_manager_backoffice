@@ -149,11 +149,15 @@ function getReviewBatchActualDepositorName(row, mode, customName) {
   return customName.trim() || null;
 }
 
-function renderOverviewPhotoCell(row, onOpenPhotoViewer) {
+function renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly) {
   const rowPhotos = Array.isArray(row.review_photos) ? row.review_photos : [];
 
   if (rowPhotos.length === 0) {
     return <span>제출 전</span>;
+  }
+
+  if (isReadOnly) {
+    return <span>제출 완료</span>;
   }
 
   return (
@@ -180,13 +184,13 @@ function renderOverviewPhotoCell(row, onOpenPhotoViewer) {
   );
 }
 
-function renderOverviewCell(row, column, onOpenPhotoViewer) {
+function renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly = false) {
   if (column.type === "photo") {
-    return renderOverviewPhotoCell(row, onOpenPhotoViewer);
+    return renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly);
   }
 
   if (column.key === "product_link") {
-    return <ProductLinkCopy value={row[column.key]} />;
+    return isReadOnly ? formatCellValue(row[column.key], column.type) : <ProductLinkCopy value={row[column.key]} />;
   }
 
   return formatCellValue(row[column.key], column.type);
@@ -232,15 +236,17 @@ function getVisibleProducts(rows, productMap) {
     .filter(Boolean);
 }
 
-function ProductOverviewTable({
+export function ProductOverviewTable({
   rows,
   filters,
   onFilterChange,
   emptyMessage,
   onOpenPhotoViewer,
-  selectedSubmissionIds,
-  onToggleRowSelection,
-  onToggleAllSelection,
+  selectedSubmissionIds = new Set(),
+  onToggleRowSelection = () => {},
+  onToggleAllSelection = () => {},
+  showSelection = true,
+  isReadOnly = false,
   isAllMatchingSelected = false,
   isAllMatchingSelectionActive = false,
   loadMoreRef = null,
@@ -250,7 +256,7 @@ function ProductOverviewTable({
   totalCount = rows.length,
   wrapClassName = ""
 }) {
-  const columnCount = PRODUCT_OVERVIEW_COLUMNS.length + 1;
+  const columnCount = PRODUCT_OVERVIEW_COLUMNS.length + (showSelection ? 1 : 0);
   const isAllSelected =
     rows.length > 0 &&
     (isAllMatchingSelected ||
@@ -323,26 +329,28 @@ function ProductOverviewTable({
       <table className="review-receive-table product-overview-table">
         <thead>
           <tr>
-            <th className="product-overview-selection-column">
-              <label
-                className="pretty-checkbox product-overview-selection-control"
-                onClick={(event) => event.stopPropagation()}
-                aria-label="현재 필터 결과 전체 선택"
-              >
-                <input
-                  type="checkbox"
-                  checked={isAllSelected}
-                  onChange={(event) => onToggleAllSelection(rows, event.target.checked)}
-                />
-                <span className="checkmark" aria-hidden="true" />
-              </label>
-            </th>
+            {showSelection && (
+              <th className="product-overview-selection-column">
+                <label
+                  className="pretty-checkbox product-overview-selection-control"
+                  onClick={(event) => event.stopPropagation()}
+                  aria-label="현재 필터 결과 전체 선택"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={(event) => onToggleAllSelection(rows, event.target.checked)}
+                  />
+                  <span className="checkmark" aria-hidden="true" />
+                </label>
+              </th>
+            )}
             {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
               <th key={column.key}>{column.label}</th>
             ))}
           </tr>
           <tr className="product-overview-filter-row">
-            <th className="product-overview-selection-column" />
+            {showSelection && <th className="product-overview-selection-column" />}
             {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
               <th key={`${column.key}-filter`}>
                 {["photo", "boolean"].includes(column.type) ? (
@@ -403,29 +411,31 @@ function ProductOverviewTable({
             rows.map((row) => (
               <tr
                 key={`${row.product_id}-${row.submission_id}`}
-                className={`review-receive-row clickable-row${selectedSubmissionIds.has(row.submission_id) ? " is-selected" : ""}`}
-                onClick={() => onToggleRowSelection(row.submission_id)}
+                className={`review-receive-row${showSelection ? " clickable-row" : ""}${selectedSubmissionIds.has(row.submission_id) ? " is-selected" : ""}`}
+                onClick={showSelection ? () => onToggleRowSelection(row.submission_id) : undefined}
               >
-                <td className="product-overview-selection-column">
-                  <label
-                    className="pretty-checkbox product-overview-selection-control"
-                    onClick={(event) => event.stopPropagation()}
-                    aria-label={`${row.assign_name || row.order_number || row.submission_id} 행 선택`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedSubmissionIds.has(row.submission_id)}
-                      onChange={() => onToggleRowSelection(row.submission_id)}
-                    />
-                    <span className="checkmark" aria-hidden="true" />
-                  </label>
-                </td>
+                {showSelection && (
+                  <td className="product-overview-selection-column">
+                    <label
+                      className="pretty-checkbox product-overview-selection-control"
+                      onClick={(event) => event.stopPropagation()}
+                      aria-label={`${row.assign_name || row.order_number || row.submission_id} 행 선택`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSubmissionIds.has(row.submission_id)}
+                        onChange={() => onToggleRowSelection(row.submission_id)}
+                      />
+                      <span className="checkmark" aria-hidden="true" />
+                    </label>
+                  </td>
+                )}
                 {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
                   <td
                     key={`${row.submission_id}-${column.key}`}
                     className={column.type === "photo" ? "product-overview-photo-cell" : ""}
                   >
-                    {renderOverviewCell(row, column, onOpenPhotoViewer)}
+                    {renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly)}
                   </td>
                 ))}
               </tr>

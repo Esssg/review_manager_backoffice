@@ -1,518 +1,172 @@
-# 앱 서버 배포 이전/이후 작업 계획
-
-작성일: 2026-06-27
-
-이 문서는 `review_manager_backoffice` 앱을 **다른 서버**에 배포할 때 그 서버에서 Codex가 이어서 작업하기 위한 계획이다.
-
-주의: 이 파일은 앱 repo 안의 계획서다. 홈서버 전체 마이그레이션 기록은 `/home/jinitlab/plans.md`에 따로 있다.
-
-## 0. 현재 확정된 배포 방향
-
-- Supabase self-hosted, Edge Function, 이미지 파일 저장소, 이미지 static serving은 홈서버 `192.168.20.20`에 둔다.
-- React/Vite 앱은 이 repo가 있는 서버가 아니라 **다른 앱 서버**에 배포한다.
-- 다른 앱 서버는 DB에 직접 접속하지 않는다.
-- 다른 앱 서버와 브라우저는 홈서버의 Supabase/Kong/NPM public endpoint를 통해 REST/Functions/Image를 사용한다.
-- 파일 쓰기/삭제는 홈서버 내부 Docker network의 `rmb-file-writer`가 담당한다.
-- 앱 서버는 `rmb-file-writer`에 직접 접근할 필요가 없고, 접근해서도 안 된다.
-
-## 1. 홈서버에서 이미 완료된 것
-
-### Local Supabase
-
-- Compose project: `supabase`
-- 주요 컨테이너:
-  - `supabase-db`
-  - `supabase-kong`
-  - `supabase-rest`
-  - `supabase-auth`
-  - `supabase-edge-functions`
-  - `rmb-file-writer`
-- DB direct publish:
-  - `supabase-db`는 host `127.0.0.1:54322`에만 publish됨.
-- 아직 주의가 필요한 publish:
-  - `supabase-pooler`: `0.0.0.0:5432`, `0.0.0.0:6543`
-  - `supabase-kong`: `0.0.0.0:8000`, `0.0.0.0:8443`
-
-### DB restore
-
-Cloud Supabase public app table 7개를 local Supabase 운영 `public` schema로 복원했다.
-
-복원 row count:
-
-- `admins`: 7
-- `products`: 1382
-- `product_steps`: 180
-- `applications`: 630
-- `submissions`: 8009
-- `evidence_photos`: 6382
-- `admin_menu_permissions`: 30
-
-검증:
-
-- FK violation: 0
-- `evidence_photos.image_url`에서 S3 URL은 `/rmb-images/review-receive/...` 상대 path로 변환됨.
-- remaining S3 URL rows: 0
-- `/rmb-images/review-receive/%` rows: 3961
-- `placehold.co` placeholder rows: 2421
-- DB의 `/rmb-images/review-receive/%` image_url 3961건에 대해 NAS 파일 존재 검사: missing 0
-
-### REST 권한
-
-Cloud와 동일하게 local에도 아래 권한을 적용했다.
-
-- 대상 roles: `anon`, `authenticated`, `service_role`
-- 대상 tables:
-  - `admins`
-  - `products`
-  - `product_steps`
-  - `applications`
-  - `submissions`
-  - `evidence_photos`
-  - `admin_menu_permissions`
-- table privileges:
-  - `select`
-  - `insert`
-  - `update`
-  - `delete`
-- identity sequence privileges:
-  - `usage`
-  - `select`
-  - `update`
+# `일괄수정하기` 메뉴 구현 계획
 
-REST smoke:
+상태: **프런트엔드·마이그레이션 구현 완료 / DB 마이그레이션 적용 대기**
 
-- `GET /rest/v1/products?select=id&limit=1` with local anon key: `HTTP/1.1 200 OK`
+이 문서는 구현 전에 화면·엑셀 계약·DB 반영 규칙을 확정하기 위한 계획입니다. 아래 `결정 필요` 항목에 답을 적은 뒤 구현을 시작합니다. 답변 전에는 라우트, DB, 프런트 코드를 변경하지 않습니다.
 
-주의: 이 권한 구조는 Cloud의 현재 상태를 그대로 맞춘 것이다. RLS가 꺼져 있고 anon write가 열려 있으므로 인터넷 공개 전 보안 설계가 필요하다.
+## 1. 확정된 요구사항
 
-### Image serving
+- 좌측 관리자 메뉴에 `일괄수정하기`를 추가한다.
+- `admin_menu_permissions`에는 우선 `test1` 계정에만 해당 메뉴 권한을 추가한다.
+- 화면의 조회·필터·표는 `상품전체보기 > 전체보기`와 같은 데이터를 기준으로 한다.
+- 기존 상품전체보기의 작업 버튼은 제거하고, 이 화면에는 `필터 초기화`, `현재 화면 엑셀로 내보내기`, `일괄수정하기`만 둔다.
+- 내보낸 Excel의 첫 번째 열에는 각 행을 식별할 ID를 넣는다.
+- 사용자가 수정한 Excel을 `일괄수정하기` 모달에서 업로드한다.
+- 업로드 뒤 `다음` 단계에서 실제 변경 예정 항목을 보여준다.
+- 사용자가 확인하고 `적용하기`를 누르면 검증된 변경만 DB에 반영한다.
+- 수정 대상 검증은 담당 관리자 ID 일치 여부가 아니라 로그인 관리자와 대상 상품 담당자의 동일 `admins.company` 값으로 처리한다. 회사 정보가 비어 있는 계정은 일괄수정을 허용하지 않는다.
 
-- NAS path:
-  - host: `/mnt/nas/rmb-images`
-  - file-writer container: `/data/rmb-images`
-  - Edge Functions container legacy mount: `/mnt/rmb-images`
-- public image path:
-  - DB에는 `/rmb-images/review-receive/...` 상대 path 저장
-- 확인된 image endpoint:
-  - `http://sinabro-rmb.jinitlab.com/rmb-images/...`
-- sample static image:
-  - `HTTP/1.1 200 OK`
-  - `Content-Type: image/png`
-  - `Cache-Control: public, max-age=31536000, immutable`
+## 2. 현재 구조 확인 결과와 재사용 방침
 
-### Edge Function upload/delete
+- 현재 상품전체보기는 `/admin/product-overview/all`이며, `get_admin_product_overview_rows` RPC로 관리자 범위·열 필터·커서 페이지네이션을 처리한다.
+- 행의 고유 제출 식별자는 `submissions.id`이며, 현재 화면 데이터에는 `submission_id`와 `product_id`가 모두 있다.
+- 현재 `PRODUCT_OVERVIEW_COLUMNS`에는 `products`, `submissions`, `evidence_photos`의 표시 열이 함께 정의돼 있다. 사진, 제품비/리뷰비 입금구분 표시값 등은 원본 테이블의 단일 수정 컬럼이 아니거나 파생값이다.
+- 상품전체보기의 현 내보내기는 화면에 적재된 행만이 아니라 **현재 상태 탭·열 필터에 맞는 전체 결과**를 다시 조회해 Excel로 만든다.
+- 기존 파일 업로드는 신규 상품/제출 생성 흐름이므로, 이번의 “기존 행 차이 비교 후 수정” 용도로 그대로 재사용하지 않는다. 다만 Excel 읽기(`xlsx`), 파일 선택 UI, 날짜·금액·불리언 정규화 및 오류 표시는 재사용 후보로 검토한다.
+- 화면 하나를 위해 현재 대형 `AdminProductOverviewPage`를 통째로 복제하지 않는다. 목록 조회/필터 테이블을 설정 가능한 공용 단위로 분리하거나, 이미 분리된 순수 유틸·서비스를 공유해 신규 페이지의 작업 액션만 별도로 둔다. 이는 새 화면에만 필요한 Excel 파싱·차이 비교·적용 책임을 기존 화면의 구매/입금/삭제 로직과 섞지 않기 위해서다.
 
-Edge Function:
+## 3. 구현 범위 계획
 
-- name: `review-receive-photo-sync`
-- endpoint:
-  - `/functions/v1/review-receive-photo-sync`
-- contract:
-  - `multipart/form-data`
-  - `action=sync`
-  - `productId`
-  - `submissionId`
-  - `assignName`
-  - `removedImageUrls`: JSON string array
-  - `files`: image files
+### 3-1. 메뉴, 라우팅, 권한
 
-파일 쓰기 구조:
+1. 확정된 메뉴 번호와 경로를 `ADMIN_MENU_NUMBER`, `ADMIN_MENU_ITEMS`, 경로-메뉴 판별 로직에 함께 추가한다.
+2. `/admin/*` 아래에 신규 라우트를 추가하고, `AdminLayout`의 기존 DB 기반 메뉴 권한 및 직접 URL 접근 제한을 그대로 적용한다.
+3. 메뉴 권한 운영 데이터에 `test1`의 한 행을 upsert한다. 다른 계정의 예외 하드코딩은 하지 않는다.
+4. 새 메뉴 번호·라벨·경로 계약 및 `test1` 권한 샘플을 `docs/guide_db.md`에 갱신하고, 구조 변화가 확정되면 `docs/project_analysis.md`의 메뉴/화면 설명도 갱신한다.
 
-- Edge Function은 권한 검증, image validation, DB insert/delete를 담당한다.
-- 실제 NAS file write/delete는 Python `rmb-file-writer` service에 위임한다.
-- `rmb-file-writer`는 Docker network 내부 서비스이고 host port publish가 없다.
-- `docker ps`에는 `8080/tcp`만 보여야 정상이다.
+### 3-2. 일괄수정 목록 화면
 
-E2E smoke:
+1. 헤더는 `일괄수정하기`로 표시하고, 기본 조회는 상품전체보기의 `전체보기`와 동일하게 `status=all`을 사용한다.
+2. 관리자 범위, `내 회사 데이터 포함`, 열 필터, 로딩·오류·빈 상태, 커서 기반 추가 로딩을 기존 계약 그대로 유지한다.
+3. 기존 작업 기능(구매정보 입력, 리뷰완료/입금완료 처리, 삭제, 기존 내보내기 모달, 상태별 탭)은 이 페이지에 노출하거나 호출하지 않는다.
+4. 화면 상단/목록 툴바에는 확정된 범위에 따라 `필터 초기화`, `현재 화면 엑셀로 내보내기`, `일괄수정하기`만 배치한다. 비활성·로딩 상태와 키보드 포커스도 기존 하늘색 UI 토큰으로 맞춘다.
 
-- Edge Function 경유 multipart upload 성공.
-- DB `evidence_photos` row insert 확인: 1
-- NAS file exists 확인: true
-- 같은 Edge Function `sync`로 제거 요청 성공.
-- cleanup 후 DB row: 0
-- cleanup 후 NAS file exists: false
+### 3-3. 수정용 Excel 내보내기 계약
 
-## 2. 홈서버에서 아직 정리해야 할 것
+1. 일반 상품전체보기 내보내기와 구분되는 전용 파일명과 시트명을 사용한다.
+2. 첫 열에 `submission_id`를 넣고, 제품 필드를 수정 대상으로 포함하면 두 번째 식별 열로 `product_id`도 넣는다. ID 열은 수정 대상이 아니며, 누락·중복·다른 회사 데이터 ID는 업로드 검증 오류로 처리한다.
+3. 그 뒤에는 확정된 수정 가능 열을 사람이 읽는 한글 헤더로 고정 순서로 넣는다. 사진·파생 표시값·시스템 식별자 등 수정 불가 열은 별도로 표시하거나 파일에서 제외한다.
+4. 현재 적용된 필터와 관리자 범위에 해당하는 전체 행을 다시 조회해 내보낸다. 따라서 아직 스크롤로 로드하지 않은 행도 같은 필터 결과라면 포함한다. 이 동작은 최종 결정에서 바뀔 수 있다.
+5. 업로드 파서는 시트/헤더/ID/셀 형식을 엄격하게 검증한다. 날짜, 정수 금액, 불리언, 입금구분 등은 기존 검증 유틸을 확장해 DB 값으로 정규화한다.
 
-앱 서버로 넘어가기 전에 홈서버에서 마저 확인하거나 결정해야 하는 항목이다.
+### 3-4. 업로드 및 변경 미리보기 모달
 
-### 2.1 Public endpoint 확정
+1. `일괄수정하기`를 누르면 파일 선택 영역이 있는 첫 번째 모달을 연다. `.xlsx`와 `.xls`만 받고, 파일명·읽기 중 상태·형식 오류를 보여준다.
+2. 파일을 읽은 뒤 다음을 모두 검사한다.
+   - 전용 Excel 헤더 및 ID 열 존재 여부
+   - ID의 숫자 형식, 중복 여부, 대상 상품 담당자와 로그인 관리자의 동일 회사 여부
+   - 수정 가능 열만 수정됐는지와 각 값의 타입·도메인 유효성
+   - 현재 DB 값과 비교했을 때 실제 변경이 있는지
+   - 한 상품이 여러 submission 행으로 반복될 때 제품 단위 변경값이 서로 충돌하는지
+3. 오류가 하나라도 있으면 오류 행·열·이유를 보여주고 `다음`을 비활성화한다. 변경이 없는 파일은 적용 단계로 진행시키지 않고 안내한다.
+4. `다음`을 누르면 두 번째 단계에서 아래를 보여준다.
+   - 총 업로드 행 수, 유효 행 수, 변경 행 수, 제품 변경 건수, 제출 변경 건수
+   - 행별 ID, 상품/주문 식별 정보, 필드명, 기존 값, 변경 값
+   - 적용에서 제외된 오류/충돌 항목과 이유
+5. 두 번째 단계의 `적용하기`는 공통 `AppAlertDialog`로 최종 확인을 한 번 더 받는다. 적용 중에는 닫기·중복 제출을 막고, 완료 후 성공/실패/반영 건수를 명확히 표시한 뒤 목록을 최신 데이터로 다시 조회한다.
 
-앱 서버에서 사용할 최종 Supabase URL을 확정해야 한다.
+### 3-5. DB 적용과 안전성
 
-현재 후보:
+1. 브라우저의 Excel ID를 신뢰해 무조건 `update`하지 않는다. 적용 직전에 서버에서 ID별 현재 행과 담당 관리자 회사를 다시 조회하고, 로그인 관리자와 대상 상품 담당자의 동일 회사 여부를 검증한다.
+2. 제품 컬럼은 `products.id`, 제출 컬럼은 `submissions.id` 기준으로 분리해 갱신한다. 사진 테이블은 이번 기능에서 수정하지 않는다.
+3. 다건 적용은 전용 Supabase RPC/마이그레이션으로 한 요청에서 검증·적용한다. 이렇게 하면 클라이언트 반복 업데이트의 부분 성공, 다른 회사 데이터 수정, 중간 실패를 줄인다.
+4. RPC는 입력 JSON의 허용 열 목록을 화이트리스트로 고정하고, 대상 ID의 동일 회사 여부와 `can_verify_deposit` 같은 기존 권한을 서버에서도 확인한다. 응답은 적용 건수와 ID별 오류/충돌 결과만 반환한다.
+5. 적용 단위를 한 파일 전체의 원자적 처리로 할지, 유효 행만 부분 처리할지는 아래 결정에 따른다. DB 함수/스키마 객체를 추가하거나 변경하면 최종 구조를 재조회하고 `docs/guide_db.md`의 RPC 문서도 갱신한다.
 
-```text
-http://sinabro-rmb.jinitlab.com
-```
+### 3-6. 검증 및 완료 기준
 
-권장:
+1. 순수 Excel 파서·값 정규화·차이 계산·제품 중복 행 충돌 검사는 Node 테스트로 추가한다.
+2. `test1`에는 새 메뉴가 보이고 직접 URL도 접근되며, 권한이 없는 계정은 메뉴가 보이지 않고 URL 접근도 기존 권한 처리대로 막히는지 확인한다.
+3. 같은 회사의 다른 관리자 상품은 적용할 수 있고, 다른 회사 상품 ID를 포함한 파일은 적용할 수 없는지 확인한다.
+4. 빈 결과, 필터 적용 뒤 내보내기, 300건 이상 결과, ID 누락/중복/변조, 다른 회사 ID, 잘못된 날짜·금액·상태값, 변경 없음, 적용 취소, 적용 성공, 서버 오류를 수동 확인한다.
+5. `npm test`, `npm run build`를 실행한다. DB/RPC 변경이 확정되면 관련 실제 연결 검증도 수행한다.
 
-```text
-https://sinabro-rmb.jinitlab.com
-```
+## 4. 결정 필요 — 답변을 적어 주세요
 
-확인해야 할 path:
+아래 각 항목의 `답변:` 뒤에 선택지 문자 또는 구체적인 값을 적어 주세요. 선택지에 없는 요구사항도 적을 수 있습니다.
 
-- `/rest/v1/...`
-- `/auth/v1/...`
-- `/functions/v1/review-receive-photo-sync`
-- `/rmb-images/...`
+### Q1. 메뉴 번호와 URL
 
-앱 서버의 `VITE_SUPABASE_URL`은 브라우저에서 접근 가능한 Supabase/Kong/NPM origin이어야 한다. LAN-only로 운영할 것이 아니라면 `192.168.20.20:8000`을 넣으면 안 된다.
+- A. `menu_number = 7`, 경로 `/admin/bulk-edit` **(권장)**
+- B. `menu_number = 7`, 경로 `/admin/bulk-update`
+- C. 다른 번호/경로: 직접 기입
 
-### 2.2 NPM/Cloudflare/TLS
+답변: A
 
-현재 `sinabro-rmb.jinitlab.com` 경유 함수와 이미지 smoke는 통과했다.
+### Q2. “상품전체보기와 같은 화면”에서 남길 표의 상호작용 범위
 
-다만 앱 배포 전 아래를 최종 확인해야 한다.
+필터 입력/드롭다운은 유지해야 필터링이 가능하므로 버튼 제거 대상에서 제외하는 것으로 제안합니다. 행 선택 체크박스, 사진 보기, 상품 링크 열의 상호작용은 어떻게 할지 결정이 필요합니다.
 
-- HTTPS가 필요한지 여부.
-- Cloudflare proxy 또는 tunnel 사용 여부.
-- NPM Proxy Host가 `/rest/v1`, `/auth/v1`, `/functions/v1`, `/rmb-images`를 모두 올바르게 처리하는지.
-- `client_max_body_size`가 사진 업로드 최대 크기보다 큰지. 현재 Edge Function은 파일당 10MB 제한이다.
+- A. 필터와 표 데이터만 읽기 전용으로 유지하고, 행 선택·사진 보기·링크/행 작업 등 다른 상호작용은 모두 제거한다 **(권장)**
+- B. 필터, 행 선택, 사진 보기, 링크 열 상호작용은 유지하되 작업 툴바 버튼만 제거한다
+- C. 유지/제거할 상호작용을 직접 기입
 
-### 2.3 DB/pooler port exposure
+답변: A
 
-앱 서버는 DB에 직접 접속하지 않으므로 public internet에 DB port를 열 필요가 없다.
+### Q3. “현재 화면 엑셀”의 내보내기 범위
 
-정리 권장:
+- A. 현재 관리자 범위와 현재 필터의 **전체 결과**를 내보낸다. 아직 스크롤로 불러오지 않은 행도 포함한다 **(권장, 현 상품전체보기와 동일)**
+- B. 현재 브라우저에 로드되어 화면에 보이는 행만 내보낸다
+- C. 선택된 행만 내보낸다 (이 경우 행 선택 UI를 유지해야 함)
 
-- `5432`, `6543` public exposure 제거 또는 firewall로 제한.
-- Studio도 public internet에 직접 열지 않는다.
-- 필요한 경우 VPN, Cloudflare Access, IP allowlist 뒤에 둔다.
+답변: A
 
-### 2.4 RLS/권한 보안
+### Q4. Excel에서 수정 허용할 열
 
-현재 local은 Cloud와 동일하게 public app tables가 RLS disabled이고 `anon`에 read/write가 열려 있다.
+현재 표에는 제품 공통 값과 submission별 값이 섞여 있습니다. 특히 하나의 상품은 여러 submission 행에 반복되므로, 제품 열의 수정 여부를 명확히 정해야 합니다.
 
-앱 기능 호환성은 맞지만 보안상 위험하다.
+- A. submission 열만 수정 허용: 배정명, 주문번호, 구매자/수취인, 구매계정, 연락처, 주소, 은행/계좌/예금주, 금액, 리뷰비, 리뷰완료, 입금완료, 입금일, 실제입금자명 **(권장: 첫 구현 범위가 가장 명확함)**
+- B. A + 제품 열도 수정 허용: 상품 제목, 설명, 링크, 업체명, 품명, 옵션, 리뷰형태, 예정 입금자명, 제품비/리뷰비 입금구분
+- C. 수정 가능/불가 열을 직접 목록으로 기입
 
-인터넷 공개 전 결정해야 할 것:
+항상 수정 불가로 둘 후보: `submission_id`, `product_id`, 관리자, 사진, 제품비/리뷰비 입금구분의 표시값(원본 코드로 별도 처리하지 않는 경우).
 
-- RLS를 언제 설계/적용할지.
-- public review receive page에서 필요한 최소 write 범위.
-- admin 기능을 anon key로 계속 열어둘지, 별도 인증/서버 보호를 붙일지.
-- 최소한 Cloudflare Access, Basic Auth, VPN, IP allowlist 중 하나로 admin app 접근을 제한할지.
+답변: A
 
-중요: 정책 없이 RLS만 켜면 앱이 바로 막힌다. RLS는 별도 설계 후 적용해야 한다.
+### Q5. 제품 공통 열을 수정할 때, 같은 `product_id`의 여러 행 값이 다르면
 
-### 2.5 Cloud/S3 live drift
+Q4에서 B 또는 C로 제품 열 수정을 허용할 때만 답변해 주세요.
 
-Cloud Supabase와 S3가 아직 live라면 local DB/NAS는 시간이 지날수록 다시 벌어진다.
+- A. 해당 상품의 충돌을 오류로 표시하고, 같은 값으로 맞춘 뒤 다시 업로드하게 한다 **(권장)**
+- B. Excel에서 가장 위 행의 값만 제품에 적용한다
+- C. 다른 정책: 직접 기입
 
-최종 cutover 전에 필요:
+답변:
 
-1. 기존 Cloud 앱 write freeze.
-2. S3 -> NAS 최종 증분 sync.
-3. Cloud DB -> local DB 최종 delta 또는 재복원.
-4. `evidence_photos.image_url` 변환 재검증.
-5. 앱 서버 endpoint 전환.
+### Q6. 기존 데이터가 Excel 다운로드 뒤 다른 곳에서 변경된 경우
 
-현재 restore script `/home/jinitlab/scripts/migrate_cloud_public_to_local.mjs`는 target public table이 이미 있으면 중단하도록 만들었다. 최종 재복원을 하려면 별도 truncate/recreate 또는 delta migration 절차가 필요하다.
+- A. 현재 DB 값과 달라도 업로드 파일 값으로 덮어쓴다(마지막 적용 값 우선) **(권장: 추가 스키마 변경 없이 단순함)**
+- B. 다운로드 당시 기준값과 현재 DB 값이 달라진 행을 충돌로 막고 재다운로드를 요구한다. 이를 위해 Excel에 기준값/버전 정보를 추가한다.
+- C. 충돌 행만 제외하고 나머지 행을 적용한다.
 
-### 2.6 Compose 재기동 명령
+답변: A
 
-홈서버에서 Supabase stack을 재기동할 때는 아래 override를 모두 포함해야 현재 기능이 유지된다.
+### Q7. 한 파일 안에 오류 또는 다른 회사 ID가 있을 때 적용 방식
 
-```bash
-cd /opt/supabase/docker
-docker compose -f docker-compose.yml -f docker-compose.db-direct.yml -f docker-compose.functions-nas.yml -f docker-compose.file-writer.yml up -d
-```
+- A. 오류가 하나라도 있으면 파일 전체를 적용하지 않는다. 오류를 고쳐 다시 업로드한다 **(권장: 의도치 않은 부분 반영 방지)**
+- B. 오류 행만 제외하고 유효한 변경 행은 적용한다
 
-`docker-compose.file-writer.yml`을 빼면 사진 업로드/삭제가 깨진다.
+답변: A
 
-## 3. 다른 앱 서버에서 해야 할 일
+### Q8. 입금/완료 상태를 Excel로 수정할 권한
 
-다른 서버에서 Codex를 실행하면 이 섹션부터 진행하면 된다.
+현재 `can_verify_deposit` 권한은 입금완료 처리에 사용됩니다. 일괄수정에서도 이를 지킬지 결정이 필요합니다.
 
-### 3.1 Repo 준비
+- A. `is_deposit_verified`, `deposited_at`, `actual_depositor_name` 변경은 `can_verify_deposit=true`인 계정만 허용하고, 나머지 열은 메뉴 권한 계정이 수정한다 **(권장)**
+- B. `일괄수정하기` 메뉴 권한만 있으면 위 입금 관련 열도 수정할 수 있다
+- C. 다른 권한 규칙: 직접 기입
 
-1. `review_manager_backoffice` repo를 앱 서버에 clone 또는 pull한다.
-2. 현재 홈서버 repo의 변경사항이 원격에 반영되어 있는지 확인한다.
-   - `src/services/reviewReceivePublic.js`
-   - `src/pages/public/PublicReviewReceiveDetailPage.jsx`
-   - `supabase/functions/review-receive-photo-sync/index.ts`
-3. 앱 서버는 Supabase Edge Function을 배포하지 않는다.
-   - Edge Function은 홈서버 self-hosted Supabase에 이미 배치되어 있다.
-   - repo의 `supabase/functions/...`는 코드 이력과 참고용이다.
+답변: A
 
-### 3.2 환경변수
+## 5. 답변 후 확정할 산출물
 
-앱 서버의 frontend build env:
+- 확정된 화면/라우트/권한/Excel 열 계약을 반영한 구현 계획 최종본
+- 전용 Excel 파서·차이 계산·DB 적용 서비스와 필요한 공용 UI 분리
+- `test1` 메뉴 권한 데이터 및 관련 DB 문서 갱신
+- 테스트와 빌드 검증 결과
 
-```env
-VITE_SUPABASE_URL=<홈서버 public Supabase origin>
-VITE_SUPABASE_ANON_KEY=<홈서버 local Supabase ANON_KEY>
-```
+## 6. 구현 반영 결과
 
-예시:
-
-```env
-VITE_SUPABASE_URL=https://sinabro-rmb.jinitlab.com
-VITE_SUPABASE_ANON_KEY=<do-not-commit>
-```
-
-주의:
-
-- `VITE_SUPABASE_URL`은 `/rest/v1`, `/functions/v1`, `/auth/v1`이 모두 붙는 origin이어야 한다.
-- `VITE_SUPABASE_ANON_KEY`는 홈서버 `/opt/supabase/docker/.env`의 `ANON_KEY` 값이다.
-- key를 repo에 commit하지 않는다.
-- 앱 서버에서 Cloud Supabase key를 계속 쓰면 migration 결과를 보지 못한다.
-
-### 3.3 이미지 상대경로 제약
-
-local DB의 `evidence_photos.image_url`은 아래처럼 상대 path다.
-
-```text
-/rmb-images/review-receive/<productId>/<submissionId>/<file>
-```
-
-React 앱은 이 값을 그대로 `<img src>` 또는 `fetch(image_url)`에 쓴다.
-
-따라서 앱 origin이 `sinabro-rmb.jinitlab.com`과 다르면 브라우저는 기본적으로 앱 서버의 `/rmb-images/...`를 요청한다.
-
-앱 서버에서 반드시 둘 중 하나를 해야 한다.
-
-권장 A: 앱 서버 reverse proxy
-
-- 앱 서버의 `/rmb-images/`를 홈서버 image endpoint로 proxy한다.
-- 예:
-
-```nginx
-location /rmb-images/ {
-    proxy_pass https://sinabro-rmb.jinitlab.com/rmb-images/;
-    proxy_set_header Host sinabro-rmb.jinitlab.com;
-}
-```
-
-주의: 위 예시는 형태만 보여준다. 실제 앱 서버가 Nginx, Caddy, Traefik, Docker proxy 중 무엇을 쓰는지에 맞게 작성한다.
-
-대안 B: 앱 코드에서 image base URL을 붙인다.
-
-- `VITE_IMAGE_BASE_URL=https://sinabro-rmb.jinitlab.com` 같은 env를 추가한다.
-- 모든 image_url 렌더링/fetch 지점에 URL normalize helper를 적용한다.
-- 손댈 곳이 많아질 수 있어 우선은 앱 서버 `/rmb-images/` proxy가 더 단순하다.
-
-### 3.4 앱 Docker 빌드/실행
-
-앱 서버에서 수행:
-
-```bash
-docker compose build
-docker compose up -d
-docker compose ps
-```
-
-`Dockerfile`의 build stage가 `npm ci`, `npm test`, `npm run build`를 실행하고, 최종 Nginx 이미지에는 정적 결과물만 포함한다. 기본 호스트 포트는 `8080`이고 `.env`의 `APP_PORT`로 변경할 수 있다.
-
-SPA rewrite가 필요하다.
-
-기존 Vercel 설정과 같은 의미로 모든 route fallback이 `index.html`로 가야 한다.
-
-Nginx 예시:
-
-```nginx
-location / {
-    try_files $uri $uri/ /index.html;
-}
-```
-
-현재 repo의 `nginx/default.conf`에 SPA fallback과 `/rmb-images/` 홈서버 proxy가 반영되어 있다.
-
-### 3.5 브라우저 smoke test
-
-앱 서버 배포 후 브라우저에서 확인한다.
-
-1. 앱 첫 화면 로드.
-2. admin 로그인 또는 기존 앱 로그인 방식 확인.
-3. 상품/제출 목록 조회.
-4. 기존 사진 썸네일 로드.
-5. public review receive page 진입.
-6. 사진 업로드.
-7. 업로드 후 DB row 생성 확인.
-8. 업로드 후 이미지 URL이 브라우저에서 열리는지 확인.
-9. 사진 삭제.
-10. 삭제 후 DB row와 NAS file cleanup 확인.
-11. `AdminExportPhotosPage`의 `fetch(image_url)` 다운로드가 앱 서버 `/rmb-images/` proxy를 통해 동작하는지 확인.
-
-### 3.6 앱 서버가 홈서버에 요구하는 네트워크
-
-앱 서버 자체가 DB에 접속할 필요는 없다.
-
-브라우저와 앱 서버는 아래 endpoint에 접근할 수 있어야 한다.
-
-- Supabase REST/Auth/Functions origin:
-  - `https://sinabro-rmb.jinitlab.com`
-- Image path:
-  - `https://sinabro-rmb.jinitlab.com/rmb-images/...`
-
-앱 서버 proxy를 쓴다면 앱 서버에서 홈서버 image endpoint로 outbound HTTPS가 가능해야 한다.
-
-홈서버 내부-only 서비스:
-
-- `rmb-file-writer:8080`
-  - Docker network 내부 전용.
-  - 앱 서버에서 접근하지 않는다.
-- local DB `127.0.0.1:54322`
-  - 홈서버 host local 전용.
-  - 앱 서버에서 접근하지 않는다.
-
-### 3.7 cutover 전 확인
-
-앱 서버에서 정상 동작이 확인되면 최종 전환 전에 홈서버 쪽과 맞춰야 한다.
-
-1. Cloud/Vercel old app write freeze 시간 확정.
-2. 홈서버에서 S3 -> NAS final sync.
-3. 홈서버에서 Cloud DB -> local DB final delta 또는 재복원.
-4. 앱 서버 env가 local Supabase로 되어 있는지 재확인.
-5. DNS 또는 reverse proxy route 전환.
-6. Cloud Supabase/S3 rollback window 유지.
-7. 안정화 후 Cloud 비용 리소스 정리.
-
-## 4. 앱 서버 Codex에게 줄 첫 작업 지시 예시
-
-다른 앱 서버에서 Codex를 열면 아래처럼 시작하면 된다.
-
-```text
-review_manager_backoffice/plans.md를 읽고 3번 섹션부터 수행해줘.
-앱은 이 서버에 배포하고, Supabase/이미지/Edge Function은 홈서버 sinabro-rmb.jinitlab.com을 사용한다.
-먼저 env와 /rmb-images proxy를 맞추고 npm build, 브라우저 smoke test까지 진행해줘.
-```
-
----
-
-# admins 계정별 동작 권한 구현 계획
-
-작성일: 2026-06-04
-
-## 목표
-
-- 관리자 계정별로 `내 회사 데이터 포함` 기본값과 `입금완료` 처리 권한을 제어한다.
-- `hyejin2054`는 회사 데이터 포함이 기본으로 켜져 있고, 사용자가 변경할 수 있으며, 입금완료 처리가 가능하다.
-- `aram2525`, `kimhanbi77`은 회사 데이터 포함이 기본으로 꺼져 있고, 사용자가 변경할 수 있으며, 입금완료 처리는 불가능하다.
-- 그 외 계정은 회사 데이터 포함이 기본으로 꺼져 있고, 사용자가 변경할 수 있으며, 입금완료 처리가 가능하다.
-- 그 외 계정은 입금완료 등 제한 대상 동작 권한을 가진다.
-- 메뉴 권한(`admin_menu_permissions`)과 동작 권한을 섞지 않고, 한 곳의 기준을 여러 화면에서 재사용한다.
-
-## 현재 확인한 구조
-
-- 로그인 계정 ID는 `review_manager_admin_id` localStorage 값으로 읽는다.
-- `내 회사 데이터 포함` 값은 페이지 진입/이동 때마다 `admins.include_company_data_include` 기준으로 초기화된다.
-- 대시보드는 `src/hooks/useAdminDashboard.js`에서 회사 데이터 포함 여부를 관리한다.
-- 내보내기 화면들은 `src/hooks/useAdminExportData.js`에서 회사 데이터 포함 여부를 관리한다.
-- 실제 회사 범위 계산은 `src/services/adminScope.js`의 `resolveAdminManagerScope(adminId, { includeCompanyData })`가 담당한다.
-- 입금완료 쓰기는 주로 아래 화면에 있다.
-  - `src/pages/admin/AdminProductOverviewPage.jsx`
-  - `src/pages/admin/AdminReviewReceiveDetailPage.jsx`
-- 입금완료 데이터는 `submissions.is_deposit_verified`, `submissions.deposited_at`, `submissions.actual_depositor_name`을 수정한다.
-- 기존 공통 확인 UI는 `src/components/common/AppAlertDialog.jsx`를 사용한다.
-
-## 권한 계약
-
-### 계정별 기대 동작
-
-| 계정 | 회사 데이터 포함 기본값 | 회사 데이터 포함 토글 | 입금완료 처리 |
-| --- | --- | --- | --- |
-| `hyejin2054` | 켜짐 | 변경 가능 | 가능 |
-| `aram2525` | 꺼짐 | 변경 가능 | 불가능 |
-| `kimhanbi77` | 꺼짐 | 변경 가능 | 불가능 |
-| 그 외 계정 | 꺼짐 | 변경 가능 | 가능 |
-
-### 권장 구현 방식
-
-1. 장기 운영 기준은 DB 컬럼 또는 별도 권한 테이블로 관리한다.
-2. 프런트 코드에는 특정 계정 ID 분기문을 여러 화면에 흩뿌리지 않는다.
-3. DB 권한 조회가 준비되기 전 임시 구현이 필요하면 `src/constants/admin.js` 또는 `src/lib/adminCapabilities.js` 같은 단일 모듈에만 계정 예외를 둔다.
-
-## DB 변경 계획
-
-권장안은 `admins`에 동작 권한 컬럼을 추가하는 것이다. 메뉴 권한처럼 행이 계속 늘어나는 구조가 아니라, 현재 요구사항은 계정 프로필 성격이 강하므로 `admins` 확장이 단순하다.
-
-1. Supabase 최종 스키마를 확인한다.
-2. `admins`에 아래 컬럼 추가를 검토한다.
-   - `include_company_data_include` bool, default `false`
-   - `can_verify_deposit` bool, default `true`
-3. `include_company_data_include` 값 계약을 문서화한다.
-   - `true`: 페이지 진입/이동 시 회사 데이터 포함을 켠다.
-   - `false`: 페이지 진입/이동 시 회사 데이터 포함을 끈다.
-4. 기존 계정 데이터를 업데이트한다.
-   - `hyejin2054`: `include_company_data_include = true`, `can_verify_deposit = true`
-   - `aram2525`: `include_company_data_include = false`, `can_verify_deposit = false`
-   - `kimhanbi77`: `include_company_data_include = false`, `can_verify_deposit = false`
-   - 그 외: `include_company_data_include = false`, `can_verify_deposit = true`
-5. 스키마 변경 후 Supabase에서 최종 스키마를 다시 조회한다.
-6. `docs/guide_db.md`에 컬럼, 값 계약, 샘플 데이터를 반영한다.
-
-## 코드 변경 계획
-
-### 1. 권한 조회/정규화 레이어 추가
-
-1. `src/services/adminAuth.js` 또는 새 서비스 파일에 현재 관리자 권한 조회 함수를 추가한다.
-   - 필요한 컬럼만 select한다.
-   - 조회 실패 시 화면에 명확한 오류를 보여준다.
-2. `src/utils` 또는 `src/lib`에 권한 정규화 함수를 둔다.
-   - `getInitialIncludeCompanyData({ defaultValue, storedValue })`
-   - `canVerifyDeposit(capabilities)`
-3. 권한 값이 없거나 구버전 DB일 때의 fallback을 정한다.
-   - 기본 fallback은 "그 외 계정" 계약에 맞춰 `include_company_data_include = false`, `can_verify_deposit = true`로 둔다.
-
-### 2. 회사 데이터 포함 정책 적용
-
-1. `useAdminDashboard`의 localStorage 직접 읽기/쓰기 흐름을 제거하고 권한 기반으로 바꾼다.
-2. `useAdminExportData`도 같은 헬퍼를 사용하게 바꾼다.
-3. 페이지 진입/이동 시 `admins.include_company_data_include`를 초기값으로 사용한다.
-4. 모든 계정은 현재 페이지 안에서만 토글 변경을 임시 적용한다.
-5. 토글 변경값은 localStorage에 저장하지 않는다.
-6. 회사 데이터 포함이 있는 모든 관리자 화면에서 같은 상태 계산을 재사용한다.
-
-### 3. 입금완료 처리 권한 적용
-
-1. `AdminProductOverviewPage.jsx`의 입금완료 일괄 처리 버튼을 권한 기반으로 비활성화한다.
-2. `AdminProductOverviewPage.jsx`의 실제 저장 함수 진입부에도 `canVerifyDeposit` guard를 추가한다.
-3. `AdminReviewReceiveDetailPage.jsx`의 입금완료 체크박스, 입금완료 확인 다이얼로그, 입금완료 일괄 처리 버튼을 권한 기반으로 막는다.
-4. `AdminReviewReceiveDetailPage.jsx`의 실제 저장 함수 진입부에도 `canVerifyDeposit` guard를 추가한다.
-5. 권한 없는 계정이 직접 이벤트를 호출해도 `submissions.is_deposit_verified`가 수정되지 않도록 UI와 핸들러 양쪽에서 막는다.
-6. 권한 없는 상태에는 빈 화면 대신 "입금완료 처리 권한이 없습니다." 같은 사용자 피드백을 표시한다.
-
-### 4. 권한 로딩 상태 처리
-
-1. 관리자 레이아웃 또는 각 페이지 훅에서 권한 조회 중 본문을 먼저 렌더링하지 않게 한다.
-2. 권한 조회 실패 시 쓰기 버튼을 기본적으로 막고 오류 메시지를 표시한다.
-3. 기존 메뉴 권한 로딩과 충돌하지 않도록 동작 권한 로딩 상태를 별도로 둔다.
-
-### 5. 문서 동기화
-
-1. DB 스키마를 바꾸면 `docs/guide_db.md`를 반드시 갱신한다.
-2. 구조나 권한 흐름 설명이 커지면 `docs/project_analysis.md`에도 "관리자 동작 권한" 섹션 추가를 검토한다.
-3. 계정별 운영 정책은 `plans.md`에만 남기지 말고 DB 문서 또는 별도 운영 문서에 남긴다.
-
-## 검증 계획
-
-1. `npm run build`를 실행한다.
-2. DB 컬럼을 추가했다면 `npm run supabase:check`를 실행한다.
-3. 각 계정으로 수동 시나리오를 확인한다.
-   - `hyejin2054`: 페이지 진입/이동 시 대시보드/내보내기에서 회사 데이터 포함이 켜지는지 확인
-   - `hyejin2054`: 회사 데이터 포함 토글을 끌 수 있고, 변경값이 유지되는지 확인
-   - `hyejin2054`: 상품전체보기/리뷰받기 상세에서 입금완료 처리가 가능한지 확인
-   - `aram2525`, `kimhanbi77`: 페이지 진입/이동 시 회사 데이터 포함이 꺼지는지 확인
-   - `aram2525`, `kimhanbi77`: 회사 데이터 포함 토글을 켤 수 있고, 변경값이 유지되는지 확인
-   - `aram2525`, `kimhanbi77`: 입금완료 버튼/체크/일괄처리가 막히는지 확인
-   - 그 외 계정: 페이지 진입/이동 시 회사 데이터 포함이 꺼지고, 토글과 입금완료 처리가 모두 가능한지 확인
-4. 권한 없는 계정이 URL 직접 접근 또는 버튼 비활성 우회 상황에서도 저장 함수 guard로 막히는지 확인한다.
-
-## 구현 순서
-
-1. 권한 저장 방식을 DB 컬럼 방식으로 확정한다.
-2. Supabase 마이그레이션을 작성하고 적용한다.
-3. `docs/guide_db.md`를 갱신한다.
-4. 관리자 권한 조회 서비스와 정규화 유틸을 추가한다.
-5. 대시보드/내보내기 회사 데이터 포함 훅을 공통 권한 기준으로 수정한다.
-6. 상품전체보기와 리뷰받기 상세의 입금완료 UI/핸들러에 권한 guard를 추가한다.
-7. 빌드와 계정별 수동 검증을 수행한다.
-
-## 구현 전 확인할 사항
-
-- DB 스키마를 변경해도 되는지 확인이 필요하다.
-- `내 회사 데이터 포함 버튼이 모든 페이지에서 적용`의 범위가 현재 토글이 있는 대시보드/내보내기만인지, 상품전체보기/리뷰받기 목록/상세 조회 범위까지 확장해야 하는지 확인이 필요하다.
-- 기존 `review_manager_include_company_data` localStorage 값은 더 이상 회사 데이터 포함 상태 계산에 사용하지 않는다.
+- 확정 답변 A 기준으로 `/admin/bulk-edit`, `menu_number = 7`, 읽기 전용 표, 현재 필터 전체 Excel 내보내기, submission 열만 수정, 마지막 적용값 우선, 오류 시 전체 적용 차단, 입금완료 권한 검증을 구현했다.
+- `test1`의 `admin_menu_permissions` 권한 행은 Supabase에 추가해 조회로 확인했다.
+- `supabase/migrations/20260721120000_add_bulk_edit_menu_and_apply_rpc.sql`에 메뉴 권한 upsert와 적용 RPC를 작성했다. 이 작업 환경에는 DB 마이그레이션 실행 권한/접속 정보가 없어 RPC는 아직 원격 DB에 적용하지 못했다.
