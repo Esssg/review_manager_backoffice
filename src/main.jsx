@@ -8,6 +8,7 @@ import "./styles/admin-export.css";
 import "./styles/admin-file-upload.css";
 import "./styles/admin-product-detail.css";
 import "./styles/admin-shell.css";
+import "./styles/admin-product-overview.css";
 import "./styles/login.css";
 import "./styles/public-review-receive.css";
 

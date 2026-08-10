@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10·L-01 완료 / 다음 단계(L-02) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10·L-01·L-02 완료 / 다음 단계(L-03) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -364,6 +364,7 @@
   - src/styles/admin-shell.css
   - src/styles/admin-dashboard.css
   - src/styles/admin-export.css
+  - src/styles/admin-product-overview.css
   - src/styles/public-review-receive.css
   - 추출 대상 src/components/admin/**
 - 적용할 Skill/rule: review-manager-ui의 기존 sky-blue token·responsive/a11y 계약, review-manager-development.
@@ -372,6 +373,7 @@
   - selector 이름과 DOM 구조를 불필요하게 바꾸지 않고 dead rule만 근거를 확인해 제거한다.
   - style split은 H-03 code split과 함께 영향 범위를 작은 feature 단위로 검증한다.
 - 회귀 위험: cascade, 모바일 breakpoint, sticky/scroll, dialog stacking, print 스타일이 변할 수 있다. 주요 route의 브라우저 검증이 필요하다.
+- 실행 결과: 상품전체보기 feature의 테이블·sticky header·필터 dropdown·선택/상태 toolbar·삭제/입금취소·내보내기 modal 및 responsive 규칙을 `src/styles/admin-product-overview.css`로 이관하고 `src/main.jsx`에서 공통 shell 뒤에 로드했다. 공통 리뷰 테이블·modal·layout 규칙은 `admin-shell.css`에 유지해 공유 책임을 보존했고, 사용처가 없는 `product-overview-toolbar-actions`와 cascade상 효과가 없던 정렬 규칙은 제거했다. selector/DOM 구조와 기존 computed cascade를 유지했으며, `npm test` 30개·`npm run build`·`git diff --check`를 통과했다. Playwright로 상품전체보기의 table/filter/selection UI, 좁은 viewport의 overflow·sticky·responsive 규칙, 내보내기 modal 표시 및 28개 열 옵션, 리뷰받기 목록 table/scroll을 확인했다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었다.
 
 ### L-03. 순수 유틸·권한·데이터 계약 테스트 보강
 

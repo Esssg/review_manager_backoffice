@@ -190,6 +190,8 @@ src/
                           상품 상세 전용 스타일
     admin-export.css
                           내보내기 전용 스타일
+    admin-product-overview.css
+                          상품전체보기 feature 전용 스타일
     public-review-receive.css
                           구매자용 리뷰받기 전용 스타일
 
@@ -234,6 +236,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
 - `상품전체보기` 화면은 페이지의 조회·선택·쓰기 상태, 조회 서비스, 행 변환·선택 유틸, `admin/product-overview` feature component로 분리돼 있습니다. 상품 map, scope별 행, 선택 membership, 구매자 순번 map, bulk preview 같은 비용 있는 파생값은 구조적 의존성에 맞춰 memoize하고, 선택 query key는 `productOverviewSelection` 순수 유틸로 고정합니다.
 - `일괄수정하기` 화면은 페이지 파일을 경유하지 않고 상품전체보기의 읽기 전용 필터 테이블 feature component를 직접 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
+- 상품전체보기의 테이블·필터·선택·내보내기 modal 및 responsive 규칙은 `admin-product-overview.css`가 소유하고, 공통 리뷰 테이블·modal·layout primitive는 `admin-shell.css`가 소유합니다. 기능별 CSS는 전역 로딩을 유지하되 feature stylesheet를 공통 shell 뒤에 로드해 기존 cascade를 보존합니다.
 - `리뷰받기` 목록 화면은 페이지가 조회·필터·페이지네이션·쓰기 상태를 보유하고, `admin/review-receive` feature component가 상태 탭·필터 헤더·상품/번들 행·무한 스크롤 표시를 담당합니다. 목록 전용 날짜·번들·완료현황 파생 로직은 `reviewReceiveProductList` 순수 유틸에 둡니다.
 - 관리자 리뷰받기 상세는 페이지가 조회·제출·사진·모달 상태와 callback을 보유하고, `AdminReviewReceiveAllProductsPanel`과 `AdminReviewReceiveProductItems`가 전체 품목·품목별 요약과 접기/펼치기 UI를 담당합니다. `AdminReviewReceiveSubmissionSection`이 제출 section/table, 행 편집·선택·사진 셀·열 필터 헤더를 렌더링하고, `AdminReviewReceiveProductReviewerBulkModal`이 상품/리뷰어 일괄 입력의 단계별 입력·입금구분 요약 UI를 담당합니다. 열 필터 순수 로직은 `reviewReceiveDetailTable` 유틸에 두며, 기존 callback·CSS/DOM 계약을 유지합니다.
 - 구매자용 리뷰받기 상세는 `PublicReviewReceiveProductSummary`, `PublicReviewReceiveLookupPanel`, `PublicReviewReceiveSection`, 사진 모달 컴포넌트로 상단 요약·조회·결과·사진 UI를 분리하고, 페이지는 공개 조회와 사진 초안/저장 상태를 조합합니다.
