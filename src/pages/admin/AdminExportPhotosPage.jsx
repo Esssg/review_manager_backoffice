@@ -3,6 +3,7 @@ import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
 import { ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "../../constants/admin";
 import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import { fetchAdminPhotoExportData } from "../../services/exportPhotos";
+import { runWithConcurrency } from "../../utils/asyncPool";
 import { buildZipBlob, downloadBlob, getExtensionFromUrl, sanitizeZipPathSegment } from "../../utils/zipFile";
 
 const PHOTO_EXPORT_FILTER_COLUMNS = [
@@ -19,6 +20,7 @@ const PHOTO_EXPORT_FILTER_COLUMNS = [
   { key: "submission_count", label: "제출 수" },
   { key: "photo_count", label: "사진 수" }
 ];
+const PHOTO_DOWNLOAD_CONCURRENCY = 4;
 
 function normalizeFilterValue(value) {
   return String(value ?? "")
@@ -314,40 +316,48 @@ export default function AdminExportPhotosPage() {
       failedCount: 0
     });
 
-    const files = [];
     let failedCount = 0;
+    const results = await runWithConcurrency(
+      photoTargets,
+      async (target, index) => {
+        try {
+          const response = await fetch(target.photo.image_url);
 
-    for (let index = 0; index < photoTargets.length; index += 1) {
-      const target = photoTargets[index];
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
 
-      try {
-        const response = await fetch(target.photo.image_url);
+          const contentType = response.headers.get("content-type") ?? "";
+          const extension = getExtensionFromUrl(target.photo.image_url, contentType);
+          const content = await response.arrayBuffer();
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          return {
+            ok: true,
+            file: {
+              path: buildPhotoZipPath(target, extension, index),
+              content,
+              lastModified: target.photo.created_at ? new Date(target.photo.created_at) : new Date()
+            }
+          };
+        } catch {
+          failedCount += 1;
+          return { ok: false };
         }
-
-        const contentType = response.headers.get("content-type") ?? "";
-        const extension = getExtensionFromUrl(target.photo.image_url, contentType);
-        const content = await response.arrayBuffer();
-
-        files.push({
-          path: buildPhotoZipPath(target, extension, index),
-          content,
-          lastModified: target.photo.created_at ? new Date(target.photo.created_at) : new Date()
-        });
-      } catch {
-        failedCount += 1;
+      },
+      {
+        concurrency: PHOTO_DOWNLOAD_CONCURRENCY,
+        onProgress: ({ completed, total }) => {
+          setDownloadState({
+            isDownloading: true,
+            current: completed,
+            total,
+            message: `${completed}/${total}장 처리 중입니다.`,
+            failedCount
+          });
+        }
       }
-
-      setDownloadState({
-        isDownloading: true,
-        current: index + 1,
-        total: photoTargets.length,
-        message: `${index + 1}/${photoTargets.length}장 처리 중입니다.`,
-        failedCount
-      });
-    }
+    );
+    const files = results.filter((result) => result?.ok).map((result) => result.file);
 
     if (files.length === 0) {
       setDownloadState({
