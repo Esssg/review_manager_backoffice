@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Manager Development"
+  short_description: "Reusable React architecture and state patterns"
+  default_prompt: "Use $review-manager-development to implement a change while preserving the existing architecture."

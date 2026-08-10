@@ -1,0 +1,4 @@
+interface:
+  display_name: "Supabase Schema Sync"
+  short_description: "Safe Supabase pagination and schema synchronization"
+  default_prompt: "Use $supabase-schema-sync to safely change Supabase-backed data flows in this project."

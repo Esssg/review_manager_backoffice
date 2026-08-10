@@ -1,0 +1,4 @@
+interface:
+  display_name: "Admin Access Control"
+  short_description: "Admin routing and database permission boundaries"
+  default_prompt: "Use $admin-access-control to change an admin route or permission-protected menu safely."

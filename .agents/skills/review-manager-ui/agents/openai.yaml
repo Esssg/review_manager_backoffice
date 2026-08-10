@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Manager UI"
+  short_description: "Accessible sky-blue UI and shared dialog patterns"
+  default_prompt: "Use $review-manager-ui to implement a consistent accessible UI change in this project."
