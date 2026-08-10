@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03 완료 / 다음 단계(M-04) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04 완료 / 다음 단계(M-05) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -232,6 +232,7 @@
   - 텍스트 입력은 한 이벤트 경로로 통일하고, 기존 debounce/reset/close/focus 동작을 보존한다.
   - 날짜 필터, sessionStorage 복원, 빈 결과와 loading 상태의 contract를 테스트한다.
 - 회귀 위험: 입력 debounce 시점, IME 입력, 키보드 조작, 필터 초기화 동작이 달라질 수 있다. 한국어 IME와 직접 URL 재진입을 포함해 브라우저에서 검증한다.
+- 실행 결과: 목록/상세에 중복 구현되어 있던 필터 header를 `ReviewReceiveFilterHeader`로 통합하고, 목록(columnKey)과 상세(sectionKey·columnKey)의 callback 차이는 공통 컴포넌트 내부 adapter로 명시했다. text input의 중복 `onInput`·`onChange` 연결을 `onChange` 하나로 줄였으며, 날짜 범위·초기화·닫기·빈 결과를 유지했다. 목록 업체명 필터와 상세 구매자 필터 입력을 Playwright로 확인해 필터 적용과 0건 결과를 검증했고 `npm run build`를 통과했다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었다.
 
 ### M-05. 독립적인 Supabase 요청의 waterfall 제거
 

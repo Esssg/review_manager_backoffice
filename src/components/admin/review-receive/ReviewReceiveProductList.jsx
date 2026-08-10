@@ -21,7 +21,7 @@ import {
   isMultiProductBundleRow,
   hasRegisteredBundleItem
 } from "../../../utils/reviewReceiveProductList";
-import ReviewReceiveProductFilterHeader from "./ReviewReceiveProductFilterHeader";
+import ReviewReceiveFilterHeader from "./ReviewReceiveFilterHeader";
 
 function renderProductLinkCopy(value) {
   return <ProductLinkCopy value={value} displayValue={formatProductLinkPreview(value)} />;
@@ -153,7 +153,7 @@ export default function ReviewReceiveProductList({
               <tr>
                 <th className="review-receive-row-number-column">No.</th>
                 {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY.map((column) => (
-                  <ReviewReceiveProductFilterHeader
+                  <ReviewReceiveFilterHeader
                     key={column.key}
                     column={column}
                     filterValue={productFilters[column.key]}
@@ -166,7 +166,7 @@ export default function ReviewReceiveProductList({
                 ))}
                 <th className="review-receive-summary-column">완료현황</th>
                 {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY.map((column) => (
-                  <ReviewReceiveProductFilterHeader
+                  <ReviewReceiveFilterHeader
                     key={column.key}
                     column={column}
                     filterValue={productFilters[column.key]}

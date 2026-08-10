@@ -6,7 +6,8 @@ function FilterIcon() {
   );
 }
 
-export default function ReviewReceiveProductFilterHeader({
+export default function ReviewReceiveFilterHeader({
+  sectionKey = "",
   column,
   filterValue,
   isOpen,
@@ -17,8 +18,22 @@ export default function ReviewReceiveProductFilterHeader({
 }) {
   const isDateRange = column.type === "dateRange";
   const isActive = isDateRange ? Boolean(filterValue?.start || filterValue?.end) : String(filterValue ?? "").trim() !== "";
-  const handleTextFilterInput = (event) => {
-    onFilterChange(column.key, event.currentTarget.value);
+  const filterKey = sectionKey ? `${sectionKey}:${column.key}` : column.key;
+  const emitFilterChange = (value) => {
+    if (sectionKey) {
+      onFilterChange(sectionKey, column.key, value);
+      return;
+    }
+
+    onFilterChange(column.key, value);
+  };
+  const emitFilterReset = () => {
+    if (sectionKey) {
+      onFilterReset(sectionKey, column.key);
+      return;
+    }
+
+    onFilterReset(column.key);
   };
 
   return (
@@ -32,7 +47,7 @@ export default function ReviewReceiveProductFilterHeader({
           className="review-receive-column-filter-button"
           onClick={(event) => {
             event.stopPropagation();
-            onOpenChange(isOpen ? "" : column.key);
+            onOpenChange(isOpen ? "" : filterKey);
           }}
           aria-label={`${column.label} 필터 열기`}
           aria-haspopup="dialog"
@@ -52,7 +67,7 @@ export default function ReviewReceiveProductFilterHeader({
                     className="table-cell-input"
                     value={filterValue?.start ?? ""}
                     onChange={(event) =>
-                      onFilterChange(column.key, {
+                      emitFilterChange({
                         ...(filterValue ?? { start: "", end: "" }),
                         start: event.target.value
                       })
@@ -66,7 +81,7 @@ export default function ReviewReceiveProductFilterHeader({
                     className="table-cell-input"
                     value={filterValue?.end ?? ""}
                     onChange={(event) =>
-                      onFilterChange(column.key, {
+                      emitFilterChange({
                         ...(filterValue ?? { start: "", end: "" }),
                         end: event.target.value
                       })
@@ -79,17 +94,16 @@ export default function ReviewReceiveProductFilterHeader({
                 type="text"
                 className="table-cell-input"
                 value={filterValue ?? ""}
-                onInput={handleTextFilterInput}
-                onChange={handleTextFilterInput}
+                onChange={(event) => emitFilterChange(event.currentTarget.value)}
                 placeholder={`${column.label} 검색`}
                 autoFocus
               />
             )}
             <div className="review-receive-column-filter-actions">
-              <button type="button" className="admin-secondary-button" onClick={() => onFilterReset(column.key)}>
+              <button type="button" className="admin-secondary-button" onClick={emitFilterReset}>
                 초기화
               </button>
-              <button type="button" className="admin-primary-button" onClick={() => onOpenChange("") }>
+              <button type="button" className="admin-primary-button" onClick={() => onOpenChange("")}>
                 닫기
               </button>
             </div>
