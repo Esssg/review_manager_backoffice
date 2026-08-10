@@ -1,4 +1,4 @@
-import { formatReviewReceiveAccount } from "./reviewReceiveTable";
+import { formatReviewReceiveAccount } from "./reviewReceiveTable.js";
 
 export const REVIEW_RECEIVE_ROW_FILTER_COLUMNS = [
   { key: "row_number", label: "순번", type: "text" },

@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10·L-01·L-02 완료 / 다음 단계(L-03) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10·L-01·L-02·L-03 완료 / 다음 단계 없음
 
 ## 1. 목표와 범위
 
@@ -32,7 +32,7 @@
 - 저장소 전체 재검색 결과, 단수형 evidence_photo는 레거시 fallback/삭제 호출과 오래된 문서에만 남아 있고, participants/campaigns는 연결 점검 스크립트와 설정 문서에만 남아 있다. 반면 evidence_photos는 서비스·Edge Function·마이그레이션에서 실제 사용 중이다.
 - 대시보드·엑셀 export·사진 ZIP·파일 업로드에 순차 요청 또는 N+1 요청 후보가 있다.
 - 제품 개요 테이블은 최대 300행을 한 번에 렌더링하며, 렌더마다 큰 파생 계산과 membership 검색을 수행한다.
-- 현재 Node 테스트는 3개 파일, 총 10개 테스트가 통과한다. 화면·권한·Supabase allowlist·대시보드 집계에 대한 회귀 테스트는 부족하다.
+- 현재 Node 테스트는 15개 파일, 총 41개 테스트가 통과한다. 메뉴/권한·입력 parser·리뷰받기 필터·Supabase allowlist까지 순수 계약을 고정했지만, 화면 통합 흐름과 실제 네트워크 오류 경로에 대한 회귀 테스트는 여전히 제한적이다.
 
 ## 3. High 우선순위
 
@@ -381,18 +381,21 @@
 - 원인: 큰 page 통합 흐름을 직접 테스트하기 전에 순수 경계와 access matrix fixture가 충분히 고정되지 않았다.
 - 관련 파일:
   - src/utils/*.test.js
+  - src/constants/admin.js
+  - src/utils/adminCapabilities.js
   - src/utils/dashboardMetrics.js
   - src/utils/reviewReceiveBulkInput.js
-  - src/utils/reviewReceiveFilters.js
+  - src/utils/reviewReceiveDetailTable.js
   - src/utils/productOverviewRows.js
   - src/services/adminScope.js
   - scripts/check-supabase.mjs
-- 적용할 Skill/rule: review-agent의 defect-first·재현 가능한 검증 원칙, review-manager-development, admin-access-control, supabase-schema-sync.
+- 적용할 Skill/rule: review-manager-development의 순수 경계·재현 가능한 검증 원칙, admin-access-control, supabase-schema-sync.
 - 예상 변경 내용:
-  - dashboard metric 날짜/중복/담당자 없음, review filter/IME 입력 계약, storage legacy normalization을 Node 테스트로 추가한다.
-  - 허용 테이블 정적 검사와 scope/capability matrix를 테스트한다.
+  - 기존 dashboard metric·storage·allowlist 테스트를 기반으로 review filter/IME 입력, 메뉴·scope/capability matrix 계약을 Node 테스트로 고정한다.
+  - 허용 테이블 정적 검사와 실제 DB 호출을 분리해 유지한다.
   - 실제 네트워크·브라우저 흐름은 순수 테스트와 분리해 최소 smoke 시나리오로 유지한다.
 - 회귀 위험: 테스트 fixture가 실제 운영 계약과 어긋나면 잘못된 안정감을 줄 수 있다. fixture는 docs/guide_db.md와 실제 허용 테이블 계약을 기준으로 유지한다.
+- 실행 결과: `tests/adminAccessControl.test.js`에 관리자 상위·하위 경로와 공개/설정 경계를 고정하고, `tests/adminCapabilities.test.js`에 계정별 fallback·boolean 정규화·레거시 컬럼 오류 판별을 추가했다. `tests/reviewReceiveDetailTable.test.js`에는 NFKC/구분기호 필터, 구매 section 열 범위, boolean·account·date inclusive 조합을 추가했으며, `tests/reviewReceiveBulkInput.test.js`에는 tab 입력·구매계정·리뷰비·line error·빠른입력/배정명 계약을 추가했다. Node 테스트가 순수 유틸을 직접 로드할 수 있도록 `reviewReceiveDetailTable.js`의 내부 import 확장자만 명시했고 기능 동작은 변경하지 않았다. `npm test` 41개, `npm run build`, `git diff --check`를 통과했으며, Playwright로 리뷰받기 목록 29행/필터 버튼 9개와 상품전체보기 300행/필터/내보내기 버튼을 smoke 확인했다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었고, DB 호출·쓰기·스키마 변경은 수행하지 않았다.
 
 ## 6. 권장 실행 순서
 
