@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01 완료 / 다음 단계 승인 대기
+상태: H-01·H-02 완료 / 다음 단계 승인 대기
 
 ## 1. 목표와 범위
 
@@ -65,7 +65,7 @@
 - 회귀 위험: 코드상 레거시 fallback 제거로 이 저장소의 제품 상세 사진 동작이 달라질 가능성은 있으나, 현재 허용 테이블 public.evidence_photos가 실제 존재하고 사용 중임을 확인했다. 다른 프로젝트의 물리 테이블을 삭제하지 않으므로 공유 DB에 대한 외부 회귀는 만들지 않는다. 제품 상세 조회·삭제와 Edge Function 사진 흐름을 구현 후 검증한다.
 - 실행 결과: 레거시 참조 제거, allowlist 정적 테스트 추가, npm test 11개 통과, npm run build 성공, products 단일 테이블 연결 점검 성공, review receive 상세의 evidence_photos 요청 200 및 evidence_photo 요청 0건을 확인했다.
 
-### H-02. 인증 경계에서 Hook 순서와 render 중 navigation 정리
+### H-02. 인증 경계에서 Hook 순서와 render 중 navigation 정리 — 완료
 
 - 문제: 인증 정보가 없을 때 Hook 호출보다 먼저 반환하거나 render 중 navigate()를 실행하는 코드가 있어, 상태 변화 시 Hook 순서 오류와 예측 불가능한 redirect가 발생할 수 있다.
 - 원인: 인증/권한 경계와 실제 화면의 Hook·렌더 책임이 한 컴포넌트에 섞여 있다.
@@ -81,6 +81,7 @@
   - loading, error, no-permission, unauthenticated 상태를 구분하고 현재 URL별 redirect 의미를 유지한다.
   - 직접 URL 접근과 메뉴 권한 확인을 함께 검증할 수 있는 테스트 경계를 만든다.
 - 회귀 위험: 로그인 직후 메뉴 로딩 순서, 설정 직접 접근, 권한 거부 화면이 달라질 수 있다. 인증됨/미인증/권한 없음/로딩 상태를 각각 브라우저로 확인한다.
+- 실행 결과: AdminLayout과 AdminSettingPage의 인증 child 경계를 분리했고, npm test 11개 통과, npm run build 성공, 미인증 설정 경로의 로그인 redirect와 인증 후 설정 로딩/돌아가기 navigation을 브라우저에서 확인했다.
 
 ### H-03. 라우트·대형 의존성 코드 분할
 

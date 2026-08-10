@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { supabase } from "../../lib/supabase";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
@@ -105,9 +105,18 @@ function PasswordInput({
 }
 
 export default function AdminSettingPage() {
-  const navigate = useNavigate();
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
-  
+
+  if (!adminId) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  return <AuthenticatedAdminSettingPage adminId={adminId} />;
+}
+
+function AuthenticatedAdminSettingPage({ adminId }) {
+  const navigate = useNavigate();
+
   const [adminData, setAdminData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -136,11 +145,6 @@ export default function AdminSettingPage() {
     onConfirm: null,
     variant: "normal"
   });
-
-  if (!adminId) {
-    navigate("/admin/login", { replace: true });
-    return null;
-  }
 
   useEffect(() => {
     const fetchAdminData = async () => {

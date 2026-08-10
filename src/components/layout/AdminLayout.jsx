@@ -31,6 +31,15 @@ function getExpandableMenuNumbersForPath(pathname) {
 
 export default function AdminLayout() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+
+  if (!adminId) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  return <AuthenticatedAdminLayout adminId={adminId} />;
+}
+
+function AuthenticatedAdminLayout({ adminId }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [allowedMenus, setAllowedMenus] = useState([]);
@@ -44,10 +53,6 @@ export default function AdminLayout() {
     isOpen: false,
     isLoading: false
   });
-
-  if (!adminId) {
-    return <Navigate to="/admin/login" replace />;
-  }
 
   useEffect(() => {
     let isMounted = true;
