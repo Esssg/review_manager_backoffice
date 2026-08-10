@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerModal";
 import StepTabList from "../../components/admin/product-detail/StepTabList";
 import ProductOverviewSection from "../../components/admin/product-overview/ProductOverviewSection";
@@ -36,6 +36,10 @@ import {
   mergeProductOverviewRows,
   replaceProductOverviewRows
 } from "../../utils/productOverviewRows";
+import {
+  buildProductOverviewSelectionQueryKey,
+  buildSelectedProductOverviewSubmissionIds
+} from "../../utils/productOverviewSelection";
 import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
 import { getDeletionErrorMessage } from "../../utils/deletionContract";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "../../utils/photoItems";
@@ -275,44 +279,56 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
   const isStatusView = viewMode === "status";
   const currentQueryStatus = isStatusView ? activeStatusTab : "all";
-  const currentSelectionQueryKey = JSON.stringify({
-    viewMode,
-    status: currentQueryStatus,
-    filters: debouncedFilters,
-    includeCompanyData
-  });
-  const productMap = new Map(products.map((product) => [product.id, product]));
-  const activeSelection =
-    selection.queryKey === currentSelectionQueryKey
-      ? selection
-      : { mode: "ids", ids: [], excludedIds: [], queryKey: currentSelectionQueryKey, totalCount: 0 };
-  const selectedSubmissionIdSet =
-    activeSelection.mode === "all_matching"
-      ? new Set(
-          rows
-            .filter((row) => !activeSelection.excludedIds.includes(row.submission_id))
-            .map((row) => row.submission_id)
-        )
-      : new Set(activeSelection.ids);
+  const currentSelectionQueryKey = useMemo(
+    () =>
+      buildProductOverviewSelectionQueryKey({
+        viewMode,
+        status: currentQueryStatus,
+        filters: debouncedFilters,
+        includeCompanyData
+      }),
+    [currentQueryStatus, debouncedFilters, includeCompanyData, viewMode]
+  );
+  const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const activeSelection = useMemo(
+    () =>
+      selection.queryKey === currentSelectionQueryKey
+        ? selection
+        : { mode: "ids", ids: [], excludedIds: [], queryKey: currentSelectionQueryKey, totalCount: 0 },
+    [currentSelectionQueryKey, selection]
+  );
+  const selectedSubmissionIdSet = useMemo(
+    () => buildSelectedProductOverviewSubmissionIds(rows, activeSelection),
+    [activeSelection, rows]
+  );
   const selectedCount =
     activeSelection.mode === "all_matching"
       ? Math.max(0, (activeSelection.totalCount || pageInfo.totalCount || 0) - activeSelection.excludedIds.length)
       : activeSelection.ids.length;
   const isAllMatchingSelection = activeSelection.mode === "all_matching";
   const isAllMatchingSelected = isAllMatchingSelection && activeSelection.excludedIds.length === 0 && selectedCount > 0;
-  const scopeRowsByKey = {
-    all: currentQueryStatus === "all" ? rows : [],
-    purchase: currentQueryStatus === "purchase" ? rows : [],
-    review: currentQueryStatus === "review" ? rows : [],
-    complete: currentQueryStatus === "complete" ? rows : []
-  };
-  const selectedLoadedRows = rows.filter((row) => selectedSubmissionIdSet.has(row.submission_id));
-  const selectedRowsByScope = {
-    all: currentQueryStatus === "all" ? selectedLoadedRows : [],
-    purchase: currentQueryStatus === "purchase" ? selectedLoadedRows : [],
-    review: currentQueryStatus === "review" ? selectedLoadedRows : [],
-    complete: currentQueryStatus === "complete" ? selectedLoadedRows : []
-  };
+  const scopeRowsByKey = useMemo(
+    () => ({
+      all: currentQueryStatus === "all" ? rows : [],
+      purchase: currentQueryStatus === "purchase" ? rows : [],
+      review: currentQueryStatus === "review" ? rows : [],
+      complete: currentQueryStatus === "complete" ? rows : []
+    }),
+    [currentQueryStatus, rows]
+  );
+  const selectedLoadedRows = useMemo(
+    () => rows.filter((row) => selectedSubmissionIdSet.has(row.submission_id)),
+    [rows, selectedSubmissionIdSet]
+  );
+  const selectedRowsByScope = useMemo(
+    () => ({
+      all: currentQueryStatus === "all" ? selectedLoadedRows : [],
+      purchase: currentQueryStatus === "purchase" ? selectedLoadedRows : [],
+      review: currentQueryStatus === "review" ? selectedLoadedRows : [],
+      complete: currentQueryStatus === "complete" ? selectedLoadedRows : []
+    }),
+    [currentQueryStatus, selectedLoadedRows]
+  );
   const purchaseBulkVisibleRows = scopeRowsByKey[purchaseBulkScope] ?? [];
   const purchaseBulkSelectedRows = purchaseBulkResolvedRows ?? selectedRowsByScope[purchaseBulkScope] ?? [];
   const isPurchaseBulkSelectionMode = purchaseBulkSelectedRows.length > 0;
@@ -320,15 +336,19 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const reviewBatchVisibleRows = scopeRowsByKey[reviewBatchScope] ?? [];
   const reviewBatchSelectedRows = reviewBatchResolvedRows ?? selectedRowsByScope[reviewBatchScope] ?? [];
   const reviewBatchBaseRows = reviewBatchSelectedRows.length > 0 ? reviewBatchSelectedRows : reviewBatchVisibleRows;
-  const reviewBatchTargetRows = reviewBatchBaseRows.filter(
-    (row) => row.is_review_verified && !row.is_deposit_verified
+  const reviewBatchTargetRows = useMemo(
+    () => reviewBatchBaseRows.filter((row) => row.is_review_verified && !row.is_deposit_verified),
+    [reviewBatchBaseRows]
   );
   const canVerifyDeposit =
     !isLoadingCapabilities && !capabilitiesErrorMessage && capabilities.canVerifyDeposit;
   const exportModalRows = scopeRowsByKey[exportModal.scopeKey] ?? [];
-  const exportSelectedColumnKeySet = new Set(exportColumnKeys);
+  const exportSelectedColumnKeySet = useMemo(() => new Set(exportColumnKeys), [exportColumnKeys]);
   const isAllExportColumnsSelected = exportColumnKeys.length === PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS.length;
-  const purchaseAssignVisibleProducts = getVisibleProducts(purchaseAssignVisibleRows, productMap);
+  const purchaseAssignVisibleProducts = useMemo(
+    () => getVisibleProducts(purchaseAssignVisibleRows, productMap),
+    [productMap, purchaseAssignVisibleRows]
+  );
   const resolvedPurchaseAssignProductId =
     purchaseAssignVisibleProducts.length === 1
       ? String(purchaseAssignVisibleProducts[0].id)
@@ -336,31 +356,54 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const selectedPurchaseAssignProduct = resolvedPurchaseAssignProductId
     ? productMap.get(Number(resolvedPurchaseAssignProductId)) ?? null
     : null;
-  const purchaseAssignPositionMaps = buildProductOverviewRowPositionMaps(purchaseAssignVisibleRows);
-  const basePurchaseAssignPreview = buildPurchaseAssignPreview(
-    purchaseAssignText,
-    purchaseAssignPositionMaps.rowByNumberMap,
-    purchaseAssignPositionMaps.maxRowNumber
+  const purchaseAssignPositionMaps = useMemo(
+    () => buildProductOverviewRowPositionMaps(purchaseAssignVisibleRows),
+    [purchaseAssignVisibleRows]
   );
-  const purchaseAssignPreview =
-    purchaseAssignVisibleProducts.length > 1 &&
-    !resolvedPurchaseAssignProductId &&
-    basePurchaseAssignPreview.entries.length > 0 &&
-    !basePurchaseAssignPreview.errorMessage
-      ? {
-          ...basePurchaseAssignPreview,
-          errorMessage: "대상 상품을 선택해주세요."
-        }
-      : basePurchaseAssignPreview;
-  const purchaseBulkPreview = isPurchaseBulkSelectionMode
-    ? buildSelectedPurchaseBulkPreview(purchaseBulkText, purchaseBulkSelectedRows)
-    : buildPurchaseBulkPreview(
-        purchaseBulkAssignName,
-        purchaseBulkText,
-        purchaseBulkVisibleRows,
-        { allowCreateNewRows: false }
-      );
-  const hasActiveFilters = Object.values(filters).some((value) => String(value ?? "").trim() !== "");
+  const basePurchaseAssignPreview = useMemo(
+    () =>
+      buildPurchaseAssignPreview(
+        purchaseAssignText,
+        purchaseAssignPositionMaps.rowByNumberMap,
+        purchaseAssignPositionMaps.maxRowNumber
+      ),
+    [purchaseAssignPositionMaps, purchaseAssignText]
+  );
+  const purchaseAssignPreview = useMemo(
+    () =>
+      purchaseAssignVisibleProducts.length > 1 &&
+      !resolvedPurchaseAssignProductId &&
+      basePurchaseAssignPreview.entries.length > 0 &&
+      !basePurchaseAssignPreview.errorMessage
+        ? {
+            ...basePurchaseAssignPreview,
+            errorMessage: "대상 상품을 선택해주세요."
+          }
+        : basePurchaseAssignPreview,
+    [basePurchaseAssignPreview, purchaseAssignVisibleProducts.length, resolvedPurchaseAssignProductId]
+  );
+  const purchaseBulkPreview = useMemo(
+    () =>
+      isPurchaseBulkSelectionMode
+        ? buildSelectedPurchaseBulkPreview(purchaseBulkText, purchaseBulkSelectedRows)
+        : buildPurchaseBulkPreview(
+            purchaseBulkAssignName,
+            purchaseBulkText,
+            purchaseBulkVisibleRows,
+            { allowCreateNewRows: false }
+          ),
+    [
+      isPurchaseBulkSelectionMode,
+      purchaseBulkAssignName,
+      purchaseBulkSelectedRows,
+      purchaseBulkText,
+      purchaseBulkVisibleRows
+    ]
+  );
+  const hasActiveFilters = useMemo(
+    () => Object.values(filters).some((value) => String(value ?? "").trim() !== ""),
+    [filters]
+  );
   const currentViewHeaderText = isStatusView ? "상태별보기 화면입니다." : "전체보기 화면입니다.";
   const activeTotalCount = Number(pageInfo.totalCount ?? rows.length);
   const activeCountLabel =
@@ -623,6 +666,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       return;
     }
 
+    const submissionIdSet = new Set(submissionIds);
+
     setSelection((prev) => {
       if (prev.queryKey !== currentSelectionQueryKey) {
         return prev;
@@ -637,7 +682,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
       return {
         ...prev,
-        ids: prev.ids.filter((submissionId) => !submissionIds.includes(submissionId))
+        ids: prev.ids.filter((submissionId) => !submissionIdSet.has(submissionId))
       };
     });
   };
@@ -656,7 +701,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
             };
 
       if (baseSelection.mode === "all_matching") {
-        const isExcluded = baseSelection.excludedIds.includes(submissionId);
+        const isExcluded = new Set(baseSelection.excludedIds).has(submissionId);
 
         return {
           ...baseSelection,

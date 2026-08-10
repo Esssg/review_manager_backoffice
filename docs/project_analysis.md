@@ -159,6 +159,8 @@ src/
     dashboardMetrics.js   대시보드 날짜/상태/집계/Top N/최근 활동 유틸
     productOverviewRows.js
                          상품전체보기 평탄화/정렬/필터 유틸
+    productOverviewSelection.js
+                         상품전체보기 선택 query key·로드 행 membership 유틸
     submissionParser.js   제출 문자열 파싱 유틸
     reviewReceiveRows.js  리뷰받기 섹션 분리/정렬 유틸
     reviewReceiveProductList.js
@@ -230,7 +232,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 순수 파싱/정렬 로직은 `src/utils/*`와 `src/constants/*`로 이동했습니다.
 - 대시보드는 실제 `products`, `submissions`, `applications`, `evidence_photos`, `admins` 데이터를 서비스/유틸/훅으로 분리해 조회·집계합니다.
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
-- `상품전체보기` 화면은 페이지의 조회·선택·쓰기 상태, 조회 서비스, 행 변환 유틸, `admin/product-overview` feature component로 분리돼 있습니다.
+- `상품전체보기` 화면은 페이지의 조회·선택·쓰기 상태, 조회 서비스, 행 변환·선택 유틸, `admin/product-overview` feature component로 분리돼 있습니다. 상품 map, scope별 행, 선택 membership, 구매자 순번 map, bulk preview 같은 비용 있는 파생값은 구조적 의존성에 맞춰 memoize하고, 선택 query key는 `productOverviewSelection` 순수 유틸로 고정합니다.
 - `일괄수정하기` 화면은 페이지 파일을 경유하지 않고 상품전체보기의 읽기 전용 필터 테이블 feature component를 직접 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
 - `리뷰받기` 목록 화면은 페이지가 조회·필터·페이지네이션·쓰기 상태를 보유하고, `admin/review-receive` feature component가 상태 탭·필터 헤더·상품/번들 행·무한 스크롤 표시를 담당합니다. 목록 전용 날짜·번들·완료현황 파생 로직은 `reviewReceiveProductList` 순수 유틸에 둡니다.
 - 관리자 리뷰받기 상세는 페이지가 조회·제출·사진·모달 상태와 callback을 보유하고, `AdminReviewReceiveAllProductsPanel`과 `AdminReviewReceiveProductItems`가 전체 품목·품목별 요약과 접기/펼치기 UI를 담당합니다. `AdminReviewReceiveSubmissionSection`이 제출 section/table, 행 편집·선택·사진 셀·열 필터 헤더를 렌더링하고, `AdminReviewReceiveProductReviewerBulkModal`이 상품/리뷰어 일괄 입력의 단계별 입력·입금구분 요약 UI를 담당합니다. 열 필터 순수 로직은 `reviewReceiveDetailTable` 유틸에 두며, 기존 callback·CSS/DOM 계약을 유지합니다.

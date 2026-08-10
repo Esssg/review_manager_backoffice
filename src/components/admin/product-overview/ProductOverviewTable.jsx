@@ -4,6 +4,42 @@ import { PRODUCT_OVERVIEW_PAGE_SIZE } from "../../../services/productOverview";
 import { PRODUCT_OVERVIEW_COLUMNS } from "../../../utils/productOverviewRows";
 import { getPhotoId, getPhotoUrl } from "../../../utils/photoItems";
 
+const PRODUCT_OVERVIEW_DROPDOWN_COLUMN_TYPES = new Set(["photo", "boolean"]);
+const PRODUCT_OVERVIEW_FILTER_DROPDOWN_LABELS = {
+  review_photos: {
+    "": "전체",
+    has: "사진 있음",
+    none: "사진없음"
+  },
+  is_review_verified: {
+    "": "전체",
+    true: "예",
+    false: "아니오"
+  },
+  is_deposit_verified: {
+    "": "전체",
+    true: "예",
+    false: "아니오"
+  }
+};
+const PRODUCT_OVERVIEW_FILTER_DROPDOWN_OPTIONS = {
+  review_photos: [
+    { value: "", label: "전체" },
+    { value: "has", label: "사진 있음" },
+    { value: "none", label: "사진없음" }
+  ],
+  is_review_verified: [
+    { value: "", label: "전체" },
+    { value: "true", label: "예" },
+    { value: "false", label: "아니오" }
+  ],
+  is_deposit_verified: [
+    { value: "", label: "전체" },
+    { value: "true", label: "예" },
+    { value: "false", label: "아니오" }
+  ]
+};
+
 function formatCellValue(value, type) {
   if (value == null || value === "") {
     return "-";
@@ -94,40 +130,6 @@ export function ProductOverviewTable({
       (!isAllMatchingSelectionActive && rows.every((row) => selectedSubmissionIds.has(row.submission_id))));
   const [openFilterKey, setOpenFilterKey] = useState("");
   const filterDropdownRef = useRef(null);
-  const filterDropdownLabels = {
-    review_photos: {
-      "": "전체",
-      has: "사진 있음",
-      none: "사진없음"
-    },
-    is_review_verified: {
-      "": "전체",
-      true: "예",
-      false: "아니오"
-    },
-    is_deposit_verified: {
-      "": "전체",
-      true: "예",
-      false: "아니오"
-    }
-  };
-  const filterDropdownOptions = {
-    review_photos: [
-      { value: "", label: "전체" },
-      { value: "has", label: "사진 있음" },
-      { value: "none", label: "사진없음" }
-    ],
-    is_review_verified: [
-      { value: "", label: "전체" },
-      { value: "true", label: "예" },
-      { value: "false", label: "아니오" }
-    ],
-    is_deposit_verified: [
-      { value: "", label: "전체" },
-      { value: "true", label: "예" },
-      { value: "false", label: "아니오" }
-    ]
-  };
 
   useEffect(() => {
     if (!openFilterKey) {
@@ -184,7 +186,7 @@ export function ProductOverviewTable({
             {showSelection && <th className="product-overview-selection-column" />}
             {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
               <th key={`${column.key}-filter`}>
-                {["photo", "boolean"].includes(column.type) ? (
+                {PRODUCT_OVERVIEW_DROPDOWN_COLUMN_TYPES.has(column.type) ? (
                   <div
                     className="product-overview-filter-dropdown"
                     ref={openFilterKey === column.key ? filterDropdownRef : null}
@@ -197,14 +199,16 @@ export function ProductOverviewTable({
                       aria-expanded={openFilterKey === column.key}
                       aria-label={`${column.label} 필터`}
                     >
-                      <span>{filterDropdownLabels[column.key]?.[filters[column.key] ?? ""] ?? "전체"}</span>
+                      <span>
+                        {PRODUCT_OVERVIEW_FILTER_DROPDOWN_LABELS[column.key]?.[filters[column.key] ?? ""] ?? "전체"}
+                      </span>
                       <span className="product-overview-filter-trigger-arrow" aria-hidden="true">
                         ▾
                       </span>
                     </button>
                     {openFilterKey === column.key && (
                       <div className="product-overview-filter-menu" role="listbox" aria-label={`${column.label} 필터 옵션`}>
-                        {filterDropdownOptions[column.key].map((option) => (
+                        {PRODUCT_OVERVIEW_FILTER_DROPDOWN_OPTIONS[column.key].map((option) => (
                           <button
                             key={option.value || "all"}
                             type="button"

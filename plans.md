@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05 완료·M-01 1차·2차(목록)·3차(상세/공개 상단 UI)·4차 1단계(제출 section/table)·2단계(상품/리뷰어 bulk modal) 완료 / 다음 단계(M-02) 승인 대기
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02 완료 / 다음 단계(M-03) 승인 대기
 
 ## 1. 목표와 범위
 
@@ -187,17 +187,19 @@
 - 문제: 제품 개요 페이지가 렌더마다 JSON key 생성, Map/Set 생성, 대량 row map, bulk preview 계산을 반복한다. row 내부에서는 includes 기반 membership 검색도 발생한다.
 - 원인: 파생값이 render 계산에 흩어져 있고, 비용이 큰 계산과 단순 표시 계산의 경계가 없다.
 - 관련 파일:
-  - src/pages/admin/AdminProductOverviewPage.jsx:613-712
-  - src/pages/admin/AdminProductOverviewPage.jsx:411-443
+  - src/pages/admin/AdminProductOverviewPage.jsx:279-418, 666-706
+  - src/components/admin/product-overview/ProductOverviewTable.jsx:1-220
   - src/utils/productOverviewRows.js
-  - src/utils/productOverviewBulk.js
+  - src/utils/productOverviewSelection.js
+  - src/utils/reviewReceiveBulkInput.js
 - 적용할 Skill/rule: react-best-practices의 rerender-derived-state-no-effect, rerender-dependencies, rerender-memo, js-set-map-lookups, js-index-maps, review-manager-development.
 - 예상 변경 내용:
   - 파생값은 state로 중복 저장하지 않고, 실제 비용이 큰 계산만 primitive/구조적 dependency 기준으로 useMemo한다.
   - 선택 제외 ID 등 반복 membership은 Set/index map으로 바꾼다.
-  - row를 독립 component로 만들고 필요 시 memo하여 변경된 row만 갱신한다.
+  - 대량 table의 row 독립 component/memo 경계는 별도 측정이 필요한 M-03에서 적용한다.
   - query key와 bulk preview의 결과가 기존 필터·선택·페이지네이션과 동일한지 순수 테스트를 추가한다.
 - 회귀 위험: selection query key, 전체 선택/제외 선택, infinite loading, bulk preview의 경계가 달라질 수 있다. 단순 계산까지 무분별하게 memoize하지 않고 대표 데이터로 before/after 결과를 비교한다.
+- 실행 결과: 선택 query key와 all-matching/일반 ID 선택 membership을 `productOverviewSelection` 순수 유틸로 분리하고, 상품 map·scope별 행·선택 로드 행·입금완료 대상·export 컬럼 Set·구매자 순번 map·구매정보/구매자 bulk preview를 실제 입력 배열과 텍스트가 바뀔 때만 계산하도록 `useMemo`를 적용했다. all-matching 제외 ID와 선택 해제 membership은 `Set.has` 기반으로 유지했고, ProductOverviewTable의 고정 필터 옵션도 컴포넌트 외부 상수로 이동했다. `npm test` 21개 통과, `npm run build` 성공을 확인했으며, Playwright로 전체보기 사진 필터(719건→451건), 전체 선택·행 제외(451건→450건), 필터 초기화, 구매정보 modal preview/닫기, 상태별보기 구매완료·리뷰완료 전환을 확인했다. 브라우저에는 기존 capability 컬럼 조회 400 오류만 남았고 새 오류는 없었다. query key·선택 membership·bulk preview 계약은 `tests/productOverviewDerived.test.js`로 고정했다. row component/memo와 content-visibility는 다음 M-03에서 실제 대량 렌더 측정 후 진행한다.
 
 ### M-03. 대량 테이블 렌더링 비용 줄이기
 
