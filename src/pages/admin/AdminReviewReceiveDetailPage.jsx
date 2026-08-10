@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import AdminReviewReceiveAllProductsPanel from "../../components/admin/review-receive/AdminReviewReceiveAllProductsPanel";
 import AdminReviewReceiveProductItems from "../../components/admin/review-receive/AdminReviewReceiveProductItems";
+import AdminReviewReceiveSubmissionSection from "../../components/admin/review-receive/AdminReviewReceiveSubmissionSection";
 import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerModal";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
@@ -45,6 +46,11 @@ import {
   sortReviewReceiveRowsByCreatedAt,
   splitReviewReceiveRows
 } from "../../utils/reviewReceiveRows";
+import {
+  createEmptySectionColumnFilters,
+  filterReviewReceiveRowsByColumnFilters,
+  REVIEW_RECEIVE_ROW_FILTER_COLUMNS
+} from "../../utils/reviewReceiveDetailTable";
 import {
   buildPurchaseAssignPreview,
   buildPurchaseBulkPreview,
@@ -412,248 +418,6 @@ function buildReviewReceiveDetailExportRows(rows, options = {}) {
 
     return baseRow;
   });
-}
-
-const REVIEW_RECEIVE_ROW_FILTER_COLUMNS = [
-  { key: "row_number", label: "순번", type: "text" },
-  { key: "assign_name", label: "배정", type: "text" },
-  { key: "order_number", label: "주문번호", type: "text" },
-  { key: "buyer_name", label: "구매자", type: "text" },
-  { key: "recipient_name", label: "수취인", type: "text" },
-  { key: "purchase_account", label: "구매계정", type: "text" },
-  { key: "contact", label: "연락처", type: "text" },
-  { key: "address", label: "주소", type: "text" },
-  { key: "account", label: "계좌", type: "text" },
-  { key: "amount", label: "금액", type: "text" },
-  { key: "review_fee", label: "리뷰비", type: "text" },
-  { key: "photos", label: "사진", type: "text" },
-  { key: "planned_depositor_name", label: "입금자명(예정)", type: "text" },
-  { key: "is_review_verified", label: "리뷰완료", type: "text" },
-  { key: "is_deposit_verified", label: "입금완료", type: "text" },
-  { key: "deposited_at", label: "입금일", type: "dateRange", hiddenInPurchase: true },
-  { key: "actual_depositor_name", label: "실제입금자명", type: "text", hiddenInPurchase: true }
-];
-
-function getVisibleReviewReceiveRowFilterColumns(isPurchaseSection) {
-  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.filter((column) => !isPurchaseSection || !column.hiddenInPurchase);
-}
-
-function createEmptyReviewReceiveRowFilters() {
-  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.reduce((filters, column) => {
-    filters[column.key] = column.type === "dateRange" ? { start: "", end: "" } : "";
-    return filters;
-  }, {});
-}
-
-function createEmptySectionColumnFilters() {
-  return {
-    allProducts: createEmptyReviewReceiveRowFilters(),
-    allProductsReview: createEmptyReviewReceiveRowFilters(),
-    allProductsComplete: createEmptyReviewReceiveRowFilters(),
-    purchase: createEmptyReviewReceiveRowFilters(),
-    review: createEmptyReviewReceiveRowFilters(),
-    complete: createEmptyReviewReceiveRowFilters()
-  };
-}
-
-function normalizeReviewReceiveFilterText(value) {
-  return String(value ?? "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s./\\|_-]+/g, "");
-}
-
-function formatBooleanFilterValue(value) {
-  return value ? "완료 true 체크됨 checked yes" : "미완료 false 체크안됨 unchecked no";
-}
-
-function getReviewReceiveRowFilterValue(row, columnKey, context) {
-  const { rowNumberMap, plannedDepositorName, getPlannedDepositorName } = context;
-
-  if (columnKey === "row_number") {
-    return rowNumberMap[row.id] ?? "";
-  }
-
-  if (columnKey === "account") {
-    return row.accountInfoInput || formatReviewReceiveAccount(row.bank_name, row.bank_account, row.account_holder);
-  }
-
-  if (columnKey === "photos") {
-    return row.photos?.length ? "제출완료 사진있음 uploaded" : "제출전 사진없음 empty";
-  }
-
-  if (columnKey === "planned_depositor_name") {
-    return getPlannedDepositorName?.(row) ?? plannedDepositorName ?? "";
-  }
-
-  if (columnKey === "is_review_verified") {
-    return formatBooleanFilterValue(Boolean(row.is_review_verified));
-  }
-
-  if (columnKey === "is_deposit_verified") {
-    return formatBooleanFilterValue(Boolean(row.is_deposit_verified));
-  }
-
-  if (columnKey === "deposited_at") {
-    return row.deposited_at ?? "";
-  }
-
-  return row[columnKey] ?? "";
-}
-
-function hasActiveReviewReceiveRowFilters(filters = {}) {
-  return REVIEW_RECEIVE_ROW_FILTER_COLUMNS.some((column) => {
-    const value = filters[column.key];
-
-    if (column.type === "dateRange") {
-      return Boolean(value?.start || value?.end);
-    }
-
-    return String(value ?? "").trim() !== "";
-  });
-}
-
-function filterReviewReceiveRowsByColumnFilters(rows, filters = {}, context) {
-  return rows.filter((row) =>
-    REVIEW_RECEIVE_ROW_FILTER_COLUMNS.every((column) => {
-      const filterValue = filters[column.key];
-
-      if (column.type === "dateRange") {
-        const rowDate = getReviewReceiveRowFilterValue(row, column.key, context);
-        const startDate = filterValue?.start || "";
-        const endDate = filterValue?.end || "";
-
-        if (!startDate && !endDate) {
-          return true;
-        }
-
-        if (!rowDate) {
-          return false;
-        }
-
-        if (startDate && rowDate < startDate) {
-          return false;
-        }
-
-        if (endDate && rowDate > endDate) {
-          return false;
-        }
-
-        return true;
-      }
-
-      const searchText = normalizeReviewReceiveFilterText(filterValue);
-
-      if (!searchText) {
-        return true;
-      }
-
-      return normalizeReviewReceiveFilterText(getReviewReceiveRowFilterValue(row, column.key, context)).includes(searchText);
-    })
-  );
-}
-
-function FilterIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-      <path d="M2 3h12l-4.7 5.4v3.2L6.7 13V8.4L2 3Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function ReviewReceiveRowFilterHeader({
-  sectionKey,
-  column,
-  filterValue,
-  isOpen,
-  onOpenChange,
-  onFilterChange,
-  onFilterReset,
-  menuRef
-}) {
-  const isDateRange = column.type === "dateRange";
-  const isActive = isDateRange ? Boolean(filterValue?.start || filterValue?.end) : String(filterValue ?? "").trim() !== "";
-  const handleTextFilterInput = (event) => {
-    onFilterChange(sectionKey, column.key, event.currentTarget.value);
-  };
-
-  return (
-    <th
-      className={`review-receive-filterable-header${isDateRange ? " is-date-range" : ""}${isOpen ? " is-open" : ""}${isActive ? " is-filtered" : ""}`}
-    >
-      <div className="review-receive-column-filter" ref={isOpen ? menuRef : null}>
-        <span className="review-receive-column-label">{column.label}</span>
-        <button
-          type="button"
-          className="review-receive-column-filter-button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenChange(isOpen ? "" : `${sectionKey}:${column.key}`);
-          }}
-          aria-label={`${column.label} 필터 열기`}
-          aria-haspopup="dialog"
-          aria-expanded={isOpen}
-        >
-          <FilterIcon />
-        </button>
-        {isOpen && (
-          <div className="review-receive-column-filter-popover" role="dialog" aria-label={`${column.label} 필터`}>
-            <div className="review-receive-column-filter-title">{column.label} 필터</div>
-            {isDateRange ? (
-              <div className="review-receive-date-filter-fields">
-                <label>
-                  <span>시작일</span>
-                  <input
-                    type="date"
-                    className="table-cell-input"
-                    value={filterValue?.start ?? ""}
-                    onChange={(event) =>
-                      onFilterChange(sectionKey, column.key, {
-                        ...(filterValue ?? { start: "", end: "" }),
-                        start: event.target.value
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>종료일</span>
-                  <input
-                    type="date"
-                    className="table-cell-input"
-                    value={filterValue?.end ?? ""}
-                    onChange={(event) =>
-                      onFilterChange(sectionKey, column.key, {
-                        ...(filterValue ?? { start: "", end: "" }),
-                        end: event.target.value
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            ) : (
-              <input
-                type="text"
-                className="table-cell-input"
-                value={filterValue ?? ""}
-                onInput={handleTextFilterInput}
-                onChange={handleTextFilterInput}
-                placeholder={`${column.label} 검색`}
-                autoFocus
-              />
-            )}
-            <div className="review-receive-column-filter-actions">
-              <button type="button" className="admin-secondary-button" onClick={() => onFilterReset(sectionKey, column.key)}>
-                초기화
-              </button>
-              <button type="button" className="admin-primary-button" onClick={() => onOpenChange("")}>
-                닫기
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </th>
-  );
 }
 
 export default function AdminReviewReceiveDetailPage() {
@@ -2603,12 +2367,6 @@ export default function AdminReviewReceiveDetailPage() {
     filteredPurchaseSectionRows
   );
 
-  const renderEditableCell = (row, displayValue, inputNode) => (
-    <td onDoubleClick={() => openRowEditor(row.id)}>
-      {row.isEditing ? inputNode : displayValue || "-"}
-    </td>
-  );
-
   const purchaseAssignPreview = buildPurchaseAssignPreview(purchaseAssignText, rowByNumberMap, maxRowNumber);
   const purchaseBulkEnterConfirm = useModalEnterConfirm({
     isOpen: isPurchaseBulkModalOpen,
@@ -2714,525 +2472,60 @@ export default function AdminReviewReceiveDetailPage() {
     showToast(`리뷰비 ${updatedRows.length}건을 일괄 입력했습니다.`, "success");
   };
 
-  const renderTableColumns = (isPurchaseSection, showPurchaseActions) => (
-    <colgroup>
-      <col className="review-col-index" />
-      <col className="review-col-assign" />
-      <col className="review-col-order" />
-      <col className="review-col-name" />
-      <col className="review-col-name" />
-      <col className="review-col-purchase-account" />
-      <col className="review-col-contact" />
-      <col className="review-col-address" />
-      <col className="review-col-account" />
-      <col className="review-col-amount" />
-      <col className="review-col-amount" />
-      <col className="review-col-photo" />
-      <col className="review-col-planned-depositor" />
-      <col className="review-col-check" />
-      <col className="review-col-check" />
-      {!isPurchaseSection && <col className="review-col-date" />}
-      {!isPurchaseSection && <col className="review-col-actual-depositor" />}
-      {showPurchaseActions && <col className="review-col-actions" />}
-    </colgroup>
-  );
-
-  const renderSection = (sectionKey, title, description, totalRows, filteredRows, options = {}) => {
-    const {
-      bodyIntro = null,
-      isSubsection = false,
-      isPurchaseSection = sectionKey === "purchase",
-      showPurchaseToolbar = isPurchaseSection,
-      showPurchaseActions = isPurchaseSection,
-      showAddRow = isPurchaseSection,
-      showSelectionActions = true,
-      selectRowsOnClick = true,
-      isReviewCompletionSection = sectionKey === "review",
-      sectionRowNumberMap = rowNumberMap,
-      sectionPlannedDepositorName = plannedDepositorName,
-      getSectionProductForRow = () => activeProduct,
-      getSectionPlannedDepositorName = (row) =>
-        getSectionProductForRow(row)?.planned_depositor_name ?? sectionPlannedDepositorName,
-      onRowActivate,
-      activeRowId = null,
-      exportProductLabel
-    } = options;
-    const searchValue = sectionSearchQueries[sectionKey];
-    const isCollapsed = Boolean(collapsedSections[sectionKey]);
-    const sectionBodyId = `review-receive-section-body-${sectionKey}`;
-    const columnFilters = sectionColumnFilters[sectionKey] ?? {};
-    const visibleFilterColumns = getVisibleReviewReceiveRowFilterColumns(isPurchaseSection);
-    const hasSearchQuery = Boolean(searchValue.trim());
-    const hasActiveColumnFilters = hasActiveReviewReceiveRowFilters(columnFilters);
-    const selectedRowsInSection = filteredRows.filter((row) => selectedRowIds.has(row.id));
-    const selectedRowsInSectionCount = selectedRowsInSection.length;
-    const countLabel =
-      totalRows.length === filteredRows.length ? `${filteredRows.length}건` : `${filteredRows.length}/${totalRows.length}건`;
-    const emptyMessage =
-      totalRows.length === 0
-        ? `${title} 상태의 제출 데이터가 없습니다.`
-        : hasSearchQuery || hasActiveColumnFilters
-          ? "필터 조건에 맞는 제출 데이터가 없습니다."
-          : `${title} 상태의 제출 데이터가 없습니다.`;
-
-    return (
-      <section
-        className={`${isSubsection ? "review-receive-all-products-subsection" : "dashboard-panel"} review-receive-section`}
-        aria-label={title}
-      >
-        <div className="review-receive-section-header">
-          <div>
-            <h2>{title}</h2>
-            <p>{description}</p>
-          </div>
-          <div className="review-receive-section-header-actions">
-            <span className="status-badge">{countLabel}</span>
-            <button
-              type="button"
-              className="review-receive-section-download-button"
-              onClick={() =>
-                handleSectionExcelDownload(sectionKey, title, filteredRows, {
-                  sectionRowNumberMap,
-                  sectionPlannedDepositorName,
-                  getSectionPlannedDepositorName,
-                  productLabel: exportProductLabel
-                })
-              }
-              disabled={filteredRows.length === 0}
-            >
-              엑셀로 내려받기
-            </button>
-            <button
-              type="button"
-              className="review-receive-section-toggle"
-              onClick={() => toggleSectionCollapsed(sectionKey)}
-              aria-expanded={!isCollapsed}
-              aria-controls={sectionBodyId}
-            >
-              {isCollapsed ? "펼치기" : "접기"}
-            </button>
-          </div>
-        </div>
-
-        <div id={sectionBodyId} hidden={isCollapsed}>
-          {bodyIntro}
-          <div className="review-receive-section-toolbar">
-            {showPurchaseToolbar && (
-              <div className="review-receive-toolbar-actions">
-                <div className="review-receive-toolbar-button-row">
-                  <button type="button" className="admin-secondary-button" onClick={handleCopyPurchaseBuyers}>
-                    구매자 복사하기
-                  </button>
-                  <button type="button" className="admin-secondary-button" onClick={openPurchaseAssignModal}>
-                    구매자 일괄 입력
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-secondary-button"
-                    onClick={openReviewFeeBatchDialog}
-                    disabled={filteredPurchaseSectionRows.length === 0}
-                  >
-                    리뷰비 일괄 입력하기
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-secondary-button"
-                    onClick={openPhotoReviewBatchModal}
-                    disabled={photoReviewBatchTargetRows.length === 0}
-                  >
-                    리뷰완료 일괄처리
-                  </button>
-                  <button type="button" className="admin-primary-button" onClick={openPurchaseBulkModal}>
-                    구매정보 입력하기
-                  </button>
-                </div>
-              </div>
-            )}
-            {sectionKey === "review" && (
-              <div className="review-receive-toolbar-actions">
-                <button
-                  type="button"
-                  className="admin-primary-button"
-                  onClick={openReviewBatchModal}
-                  disabled={!canVerifyDeposit || filteredReviewCompletedRows.length === 0}
-                  title={!canVerifyDeposit ? "입금완료 처리 권한이 없습니다." : undefined}
-                >
-                  일괄처리하기
-                </button>
-                {!canVerifyDeposit && <p className="login-error">입금완료 처리 권한이 없습니다.</p>}
-              </div>
-            )}
-            {showSelectionActions && (
-              <>
-                <button
-                  type="button"
-                  className="review-receive-select-all-button"
-                  onClick={() => toggleRowsSelection(filteredRows)}
-                  disabled={filteredRows.length === 0}
-                >
-                  {filteredRows.length > 0 && selectedRowsInSectionCount === filteredRows.length
-                    ? "전체 해제하기"
-                    : "전체 선택하기"}
-                </button>
-                <button
-                  type="button"
-                  className="review-receive-delete-selected-button"
-                  onClick={() => openSelectedRowsDeleteDialog(filteredRows)}
-                  disabled={selectedRowsInSectionCount === 0}
-                >
-                  {selectedRowsInSectionCount > 0 ? `삭제하기 ${selectedRowsInSectionCount}` : "삭제하기"}
-                </button>
-              </>
-            )}
-            <input
-              type="search"
-              className="review-receive-search-input"
-              value={searchValue}
-              onChange={(event) => handleSectionSearchChange(sectionKey, event.target.value)}
-              placeholder={`${title} 섹션 검색`}
-              aria-label={`${title} 섹션 검색`}
-            />
-          </div>
-
-          <div className="table-scroll-wrap review-receive-detail-table-wrap">
-            <table
-              className={[
-                "review-receive-table",
-                `review-receive-table-${isPurchaseSection ? "purchase" : sectionKey}`,
-                showPurchaseActions ? "has-row-actions" : ""
-              ].filter(Boolean).join(" ")}
-            >
-              {renderTableColumns(isPurchaseSection, showPurchaseActions)}
-              <thead>
-                <tr>
-                  {visibleFilterColumns.map((column) => {
-                    const filterKey = `${sectionKey}:${column.key}`;
-
-                    return (
-                      <ReviewReceiveRowFilterHeader
-                        key={column.key}
-                        sectionKey={sectionKey}
-                        column={column}
-                        filterValue={columnFilters[column.key]}
-                        isOpen={openSectionColumnFilterKey === filterKey}
-                        onOpenChange={setOpenSectionColumnFilterKey}
-                        onFilterChange={handleSectionColumnFilterChange}
-                        onFilterReset={handleSectionColumnFilterReset}
-                        menuRef={sectionColumnFilterRef}
-                      />
-                    );
-                  })}
-                  {showPurchaseActions && <th>관리</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={isPurchaseSection ? (showPurchaseActions ? 16 : 15) : 17}>{emptyMessage}</td>
-                  </tr>
-                ) : (
-                  filteredRows.map((row) => (
-                  <Fragment key={row.id}>
-                    <tr
-                      className={[
-                        "review-receive-row",
-                        row.isNew ? "is-new" : "",
-                        row.isDirty ? "is-dirty" : "",
-                        selectedRowIds.has(row.id) ? "is-selected" : "",
-                        activeRowId === row.id ? "is-context-active" : ""
-                      ].filter(Boolean).join(" ")}
-                      data-row-editor-id={row.id}
-                      onClick={(event) => handleRowClick(event, row, onRowActivate, selectRowsOnClick)}
-                    >
-                      <td className="review-row-index">{sectionRowNumberMap[row.id] ?? "-"}</td>
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.assign_name,
-                            <input
-                              className="table-cell-input"
-                              value={row.assign_name ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "assign_name", event.target.value)}
-                              placeholder="배정명"
-                            />
-                          )
-                        : <td>{row.assign_name || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.order_number,
-                            <input
-                              className="table-cell-input"
-                              value={row.order_number ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "order_number", event.target.value)}
-                              placeholder="주문번호"
-                            />
-                          )
-                        : <td>{row.order_number || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.buyer_name,
-                            <input
-                              className="table-cell-input"
-                              value={row.buyer_name ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "buyer_name", event.target.value)}
-                              placeholder="구매자"
-                            />
-                          )
-                        : <td>{row.buyer_name || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.recipient_name,
-                            <input
-                              className="table-cell-input"
-                              value={row.recipient_name ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "recipient_name", event.target.value)}
-                              placeholder="수취인"
-                            />
-                          )
-                        : <td>{row.recipient_name || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.purchase_account,
-                            <input
-                              className="table-cell-input"
-                              value={row.purchase_account ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "purchase_account", event.target.value)}
-                              placeholder="구매계정"
-                            />
-                          )
-                        : <td>{row.purchase_account || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.contact,
-                            <input
-                              className="table-cell-input"
-                              value={row.contact ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "contact", event.target.value)}
-                              placeholder="연락처"
-                            />
-                          )
-                        : <td>{row.contact || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.address,
-                            <input
-                              className="table-cell-input"
-                              value={row.address ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "address", event.target.value)}
-                              placeholder="주소"
-                            />
-                          )
-                        : <td>{row.address || "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            formatAccountInfo(row),
-                            <input
-                              className="table-cell-input"
-                              value={row.accountInfoInput ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "accountInfoInput", event.target.value)}
-                              placeholder="은행 계좌번호 예금주"
-                            />
-                          )
-                        : <td>{formatAccountInfo(row)}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.amount == null ? "" : String(row.amount),
-                            <input
-                              className="table-cell-input table-cell-input-number"
-                              value={row.amountInput ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "amountInput", event.target.value)}
-                              placeholder="금액"
-                            />
-                          )
-                        : <td>{row.amount ?? "-"}</td>}
-                      {showPurchaseActions && row.isEditing
-                        ? renderEditableCell(
-                            row,
-                            row.review_fee == null ? "" : String(row.review_fee),
-                            <input
-                              className="table-cell-input table-cell-input-number"
-                              value={row.reviewFeeInput ?? ""}
-                              onChange={(event) => handleFieldChange(row.id, "reviewFeeInput", event.target.value)}
-                              placeholder="리뷰비"
-                            />
-                          )
-                        : <td>{row.review_fee ?? "-"}</td>}
-                      <td>
-                        <div className="photo-link-list">
-                          {row.photos?.length ? (
-                            row.photos.map((photo, photoIndex) => {
-                              const url = getPhotoUrl(photo);
-
-                              return (
-                                <button
-                                  key={`${row.id}-${getPhotoId(photo) ?? url}-${photoIndex}`}
-                                  type="button"
-                                  className="photo-thumb-button"
-                                  onClick={() => openPhotoViewer(row.photos, photoIndex)}
-                                >
-                                  <img src={url} alt={`증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
-                                </button>
-                              );
-                            })
-                          ) : (
-                            <span>제출 전</span>
-                          )}
-                        </div>
-                      </td>
-                      <td>{getSectionPlannedDepositorName(row) || "-"}</td>
-                      <td>
-                        <label className="pretty-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(row.is_review_verified)}
-                            disabled={updatingRowId === row.id}
-                            onChange={(event) => handleReviewVerifiedChange(row, event.target.checked)}
-                          />
-                          <span className="checkmark" aria-hidden="true" />
-                        </label>
-                      </td>
-                      <td>
-                        <label className="pretty-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(row.is_deposit_verified)}
-                            disabled={updatingRowId === row.id || !row.is_review_verified || !canVerifyDeposit}
-                            onChange={(event) => handleDepositVerifiedChange(row, event.target.checked)}
-                          />
-                          <span className="checkmark" aria-hidden="true" />
-                        </label>
-                      </td>
-                      {!isPurchaseSection &&
-                        (isReviewCompletionSection ? (
-                          <>
-                            <td>
-                              <input
-                                type="date"
-                                className="table-cell-input"
-                                value={row.deposited_at ?? ""}
-                                onChange={(event) => handleFieldChange(row.id, "deposited_at", event.target.value)}
-                                onBlur={() => handleReviewCompletionMetaSave(row)}
-                                disabled={updatingRowId === row.id || !canVerifyDeposit}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                className="table-cell-input"
-                                value={row.actual_depositor_name ?? ""}
-                                onChange={(event) => handleFieldChange(row.id, "actual_depositor_name", event.target.value)}
-                                onBlur={() => handleReviewCompletionMetaSave(row)}
-                                placeholder="실제입금자명"
-                                disabled={updatingRowId === row.id || !canVerifyDeposit}
-                              />
-                            </td>
-                          </>
-                        ) : (
-                          <>
-                            <td>{row.deposited_at || "-"}</td>
-                            <td>{row.actual_depositor_name || "-"}</td>
-                          </>
-                        ))}
-                      {showPurchaseActions && (
-                        <td>
-                          <div className="table-cell-actions">
-                            {row.isEditing && (
-                              <button
-                                type="button"
-                                className="admin-small-button"
-                                onClick={() => handleSaveRow(row)}
-                                disabled={updatingRowId === row.id || (!row.isDirty && !row.isNew)}
-                              >
-                                {row.isNew ? "추가" : "저장"}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="admin-small-button"
-                              data-row-editor-toggle-id={row.id}
-                              onClick={() => {
-                                if (row.isEditing && !row.isNew && !row.isDirty) {
-                                  closeRowEditor(row.id);
-                                  return;
-                                }
-
-                                openRowEditor(row.id);
-                              }}
-                              disabled={updatingRowId === row.id}
-                            >
-                              구매정보
-                            </button>
-                            <button
-                              type="button"
-                              className="admin-danger-button"
-                              onClick={() => handleDeleteRow(row)}
-                              disabled={updatingRowId === row.id}
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                    {showPurchaseActions && row.isEditing && (
-                      <tr className="review-receive-inline-fill-row" data-row-editor-id={row.id}>
-                        <td colSpan={16}>
-                          <div className="review-receive-inline-fill-box">
-                            <label className="review-receive-inline-fill-label" htmlFor={`inline-purchase-info-${row.id}`}>
-                              구매정보 빠른입력
-                            </label>
-                            <input
-                              id={`inline-purchase-info-${row.id}`}
-                              className="review-receive-inline-fill-input"
-                              value={row.inlinePurchaseInfoInput ?? ""}
-                              onChange={(event) => handleInlinePurchaseInfoChange(row.id, event.target.value)}
-                              placeholder={
-                                row.isNew
-                                  ? "주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액 또는 배정명 / 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액"
-                                  : "주문번호 / 구매자 / 수취인 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액 또는 주문번호 / 구매자 / 수취인 / 구매계정 / 연락처 / 주소 / 은행 계좌번호 입금주 / 금액"
-                              }
-                            />
-                            {row.inlinePurchaseInfoMessage && (
-                              <p className={`review-receive-bulk-message is-${row.inlinePurchaseInfoMessageType}`}>
-                                {row.inlinePurchaseInfoMessage}
-                              </p>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))
-              )}
-              {showAddRow && (
-                <tr className="review-receive-add-row">
-                  <td colSpan={15}>
-                    <button
-                      type="button"
-                      className="review-receive-add-row-button"
-                      onClick={handleAddRow}
-                      aria-label="구매완료 행 추가"
-                    >
-                      +
-                    </button>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-    );
+  const submissionSectionContext = {
+    activeProduct,
+    rowNumberMap,
+    plannedDepositorName,
+    sectionSearchQueries,
+    collapsedSections,
+    sectionColumnFilters,
+    selectedRowIds,
+    handleSectionExcelDownload,
+    toggleSectionCollapsed,
+    handleCopyPurchaseBuyers,
+    openPurchaseAssignModal,
+    openReviewFeeBatchDialog,
+    filteredPurchaseSectionRows,
+    openPhotoReviewBatchModal,
+    photoReviewBatchTargetRows,
+    openPurchaseBulkModal,
+    openReviewBatchModal,
+    canVerifyDeposit,
+    filteredReviewCompletedRows,
+    toggleRowsSelection,
+    openSelectedRowsDeleteDialog,
+    handleSectionSearchChange,
+    openSectionColumnFilterKey,
+    setOpenSectionColumnFilterKey,
+    handleSectionColumnFilterChange,
+    handleSectionColumnFilterReset,
+    sectionColumnFilterRef,
+    handleRowClick,
+    handleFieldChange,
+    openPhotoViewer,
+    updatingRowId,
+    handleReviewVerifiedChange,
+    handleDepositVerifiedChange,
+    handleReviewCompletionMetaSave,
+    handleSaveRow,
+    closeRowEditor,
+    openRowEditor,
+    handleDeleteRow,
+    handleInlinePurchaseInfoChange,
+    handleAddRow
   };
 
+  const renderSection = (sectionKey, title, description, totalRows, filteredRows, options = {}) => (
+    <AdminReviewReceiveSubmissionSection
+      sectionKey={sectionKey}
+      title={title}
+      description={description}
+      totalRows={totalRows}
+      filteredRows={filteredRows}
+      options={options}
+      context={submissionSectionContext}
+    />
+  );
   const allProductsPanelBodyId = "review-receive-all-products-panel-body";
 
   return (

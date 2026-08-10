@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05 완료·M-01 1차·2차(목록)·3차(상세/공개 상단 UI) 완료 / 다음 단계(M-01 4차) 승인 대기
+상태: H-01·H-02·H-03·H-04·H-05 완료·M-01 1차·2차(목록)·3차(상세/공개 상단 UI)·4차 1단계(제출 section/table) 완료 / 다음 단계(M-01 4차 2단계 대형 modal) 승인 대기
 
 ## 1. 목표와 범위
 
@@ -149,7 +149,7 @@
 
 ## 4. Medium 우선순위
 
-### M-01. 대형 페이지를 화면·도메인 훅·feature component로 단계적 분리 — 1차·2차(목록)·3차(상세/공개 상단 UI) 완료
+### M-01. 대형 페이지를 화면·도메인 훅·feature component로 단계적 분리 — 1차·2차(목록)·3차(상세/공개 상단 UI)·4차 1단계 완료
 
 - 문제: 한 페이지가 데이터 로딩, 필터, 선택, bulk write, 모달, 테이블, 사진 처리, 화면 렌더를 동시에 책임져 변경 영향과 재렌더 원인을 추적하기 어렵다.
 - 원인: 기능이 성장하는 동안 페이지 파일에 상태와 handler가 누적됐고, page 파일이 다른 page의 재사용 component까지 보유한다.
@@ -163,8 +163,10 @@
   - src/components/admin/review-receive/ReviewReceiveProductFilterHeader.jsx
   - src/components/admin/review-receive/AdminReviewReceiveAllProductsPanel.jsx
   - src/components/admin/review-receive/AdminReviewReceiveProductItems.jsx
+  - src/components/admin/review-receive/AdminReviewReceiveSubmissionSection.jsx
   - src/components/public/PublicReviewReceiveProductSummary.jsx
   - src/components/public/PublicReviewReceiveLookupPanel.jsx
+  - src/utils/reviewReceiveDetailTable.js
 - 적용할 Skill/rule: review-manager-development의 reuse-first·page/service/utils 책임 분리·상태 분리, review-manager-ui, react-best-practices의 rerender-split-combined-hooks, rerender-no-inline-components, rerender-memo.
 - 예상 변경 내용:
   - 먼저 순수 변환/validation과 데이터 접근을 page 밖으로 이동한다.
@@ -175,7 +177,8 @@
 - 회귀 위험: modal open state, 선택 상태, 확장 row, 입력 debounce, DOM selector, CSS cascade가 깨질 수 있다. 매 단계 build/test와 성공·실패·빈 상태·중복 제출을 검증한다.
 - 실행 결과(1차): `ProductOverviewTable`과 `ProductOverviewSection`을 `src/components/admin/product-overview/`로 이동하고, `AdminProductOverviewPage`는 조회·선택·쓰기 상태와 화면 조합만 담당하도록 줄였다. `AdminBulkEditPage`는 페이지 파일을 경유하지 않고 같은 테이블 feature component를 직접 재사용한다. 기존 테이블 markup, CSS class, 필터 dropdown, 사진 뷰어 callback, 행 선택·무한 스크롤 props는 그대로 유지했다. `npm test` 17개 통과, `npm run build` 성공을 확인했다. Playwright로 상품전체보기의 사진 필터·행 선택과 일괄수정의 `T1-P02` 필터 결과 20건을 확인했다. 브라우저의 capability 컬럼 조회 400 fallback 로그는 기존 원격 스키마 상태와 동일하게 남았으며 이번 분리에서 새 오류는 발생하지 않았다. 리뷰받기 목록·상세와 공개 상세의 추가 분리는 다음 M-01 2차에서 진행한다.
   - 실행 결과(2차 목록): `ReviewReceiveProductList`와 `ReviewReceiveProductFilterHeader`를 `src/components/admin/review-receive/`로 이동하고, 목록 전용 날짜·번들·완료현황·링크 표시 로직을 `src/utils/reviewReceiveProductList.js`로 분리했다. `AdminReviewReceivePage`에는 조회·필터·페이지네이션·삭제/수정/복사 상태와 callback 조합만 남겼다. 기존 상태 탭, 필터 popover 및 입력 이벤트, 번들 확장 행, 관리 메뉴, 공개 URL/리뷰작성 복사, 빈 상태, IntersectionObserver sentinel, CSS selector는 유지했다. `npm test` 17개 통과와 `npm run build` 성공을 확인했다. 상세 페이지와 공개 상세의 추가 분리는 다음 M-01 3차 범위로 남긴다.
-  - 실행 결과(3차 상세/공개 상단 UI): 관리자 상세의 전체 품목 패널과 품목별 bundle 패널을 `src/components/admin/review-receive/`로 분리하고, 공개 상세의 상품 요약과 이름 조회 폼을 `src/components/public/`으로 분리했다. 페이지에는 조회·제출·사진·모달 상태와 기존 상세 section renderer callback을 유지해 행 필터, 제출 수정/삭제, 사진 처리, 엑셀 다운로드 동작을 바꾸지 않았다. 기존 `hidden`, `aria-expanded`, `aria-controls`, CSS class와 공통 ProductLinkCopy/AppAlertDialog 계약을 유지했다. `npm test` 17개 통과, `npm run build` 성공, Playwright로 관리자 상세의 전체 품목 접기·품목 펼치기·제출 섹션 표시와 공개 상세의 상품 요약·빈 조회 오류·조회 기준 placeholder 변경을 확인했다. 상세 제출 테이블/행 필터와 대형 모달의 추가 분리는 다음 M-01 4차 범위로 남긴다.
+   - 실행 결과(3차 상세/공개 상단 UI): 관리자 상세의 전체 품목 패널과 품목별 bundle 패널을 `src/components/admin/review-receive/`로 분리하고, 공개 상세의 상품 요약과 이름 조회 폼을 `src/components/public/`으로 분리했다. 페이지에는 조회·제출·사진·모달 상태와 기존 상세 section renderer callback을 유지해 행 필터, 제출 수정/삭제, 사진 처리, 엑셀 다운로드 동작을 바꾸지 않았다. 기존 `hidden`, `aria-expanded`, `aria-controls`, CSS class와 공통 ProductLinkCopy/AppAlertDialog 계약을 유지했다. `npm test` 17개 통과, `npm run build` 성공, Playwright로 관리자 상세의 전체 품목 접기·품목 펼치기·제출 섹션 표시와 공개 상세의 상품 요약·빈 조회 오류·조회 기준 placeholder 변경을 확인했다. 상세 제출 테이블/행 필터와 대형 모달의 추가 분리는 다음 M-01 4차 범위로 남긴다.
+   - 실행 결과(4차 1단계 제출 section/table): `AdminReviewReceiveSubmissionSection`으로 제출 section toolbar, 열 필터 헤더, 테이블 열 정의, 행 선택·인라인 편집·사진 셀·완료 체크·행 추가/삭제 UI를 이동하고, `reviewReceiveDetailTable`로 열 필터 정의·초기화·순수 필터 로직을 분리했다. 페이지는 조회·상태·쓰기 callback 조합을 유지하고 기존 `renderSection` callback 계약, CSS class, `hidden`/`aria-expanded`/`aria-controls`, 입력 이벤트를 유지했다. `npm test` 17개 통과, `npm run build` 성공, Playwright로 관리자 상세의 순번 필터 입력(20건 중 11건), 품목 펼치기, 구매완료 section·행 추가·구매정보 빠른입력 진입을 확인했다. 브라우저에서 확인된 capability 컬럼 조회 400 오류는 기존 원격 스키마 fallback 로그이며 이번 분리로 새로 발생한 오류는 아니다. 대형 modal 분리는 다음 M-01 4차 2단계로 남긴다.
 
 ### M-02. Product Overview의 렌더 hot path와 파생 상태 최적화
 
