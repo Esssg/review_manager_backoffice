@@ -1,4 +1,11 @@
 import { supabase } from "../lib/supabase";
+import { fetchAllRowsInChunks } from "./paginatedQuery";
+import {
+  buildSubmissionLookup,
+  createFileUploadResult,
+  finalizeFileUploadResult,
+  getSubmissionLookupResult
+} from "../utils/fileUploadPersistence.js";
 
 const FILE_UPLOAD_PRODUCT_SELECT =
   "id,manager_id,title,product_name,deposit_date,company_name,option_name,review_type,planned_depositor_name,is_real_shipping,created_at";
@@ -59,24 +66,27 @@ async function createUploadProduct(product) {
     .single();
 }
 
-async function findSubmissionByOrderNumber(orderNumber) {
-  if (!orderNumber) {
+async function fetchExistingSubmissions(orderNumbers) {
+  const uniqueOrderNumbers = Array.from(new Set(orderNumbers.filter(Boolean)));
+
+  if (uniqueOrderNumbers.length === 0) {
     return {
-      data: null,
+      data: [],
       error: null
     };
   }
 
-  return supabase
-    .from("submissions")
-    .select("id,order_number")
-    .eq("order_number", orderNumber)
-    .maybeSingle();
+  return fetchAllRowsInChunks(uniqueOrderNumbers, (orderNumberChunk) =>
+    supabase
+      .from("submissions")
+      .select("id,order_number")
+      .in("order_number", orderNumberChunk)
+  );
 }
 
-async function saveUploadSubmission(submission, productId) {
+async function saveUploadSubmission(submission, productId, submissionLookup) {
   const payload = normalizeSubmissionPayload(submission.payload, productId);
-  const existingSubmissionResult = await findSubmissionByOrderNumber(payload.order_number);
+  const existingSubmissionResult = getSubmissionLookupResult(submissionLookup, payload.order_number);
 
   if (existingSubmissionResult.error) {
     return {
@@ -114,12 +124,13 @@ async function saveUploadSubmission(submission, productId) {
 
 export async function uploadFileUploadData(parseResult) {
   const products = parseResult?.products ?? [];
-  const result = {
-    createdProducts: [],
-    insertedSubmissions: [],
-    updatedSubmissions: [],
-    errors: []
-  };
+  const orderNumbers = products.flatMap((product) =>
+    (product.submissions ?? []).map((submission) => submission.payload.order_number).filter(Boolean)
+  );
+  const existingSubmissionsResult = await fetchExistingSubmissions(orderNumbers);
+  const submissionLookup = buildSubmissionLookup(existingSubmissionsResult.data ?? []);
+
+  const result = createFileUploadResult();
 
   for (const product of products) {
     const productResult = await createUploadProduct(product);
@@ -143,7 +154,13 @@ export async function uploadFileUploadData(parseResult) {
     });
 
     for (const submission of product.submissions ?? []) {
-      const submissionResult = await saveUploadSubmission(submission, productResult.data.id);
+      const submissionResult = existingSubmissionsResult.error
+        ? {
+            action: "failed",
+            data: null,
+            error: existingSubmissionsResult.error
+          }
+        : await saveUploadSubmission(submission, productResult.data.id, submissionLookup);
       const issueContext = {
         sourceRowNumber: submission.sourceRowNumber,
         productTitle,
@@ -171,17 +188,15 @@ export async function uploadFileUploadData(parseResult) {
         result.updatedSubmissions.push(savedSubmission);
       } else {
         result.insertedSubmissions.push(savedSubmission);
+        if (submission.payload.order_number) {
+          submissionLookup.set(String(submission.payload.order_number), {
+            data: submissionResult.data,
+            error: null
+          });
+        }
       }
     }
   }
 
-  return {
-    ...result,
-    summary: {
-      createdProductCount: result.createdProducts.length,
-      insertedSubmissionCount: result.insertedSubmissions.length,
-      updatedSubmissionCount: result.updatedSubmissions.length,
-      errorCount: result.errors.length
-    }
-  };
+  return finalizeFileUploadResult(result);
 }

@@ -5,6 +5,7 @@ import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { useAppToast } from "../../hooks/useAppToast";
 import { uploadFileUploadData } from "../../services/fileUpload";
 import { buildUploadableFileUploadResult } from "../../utils/fileUploadParser.js";
+import { buildFileUploadFailureResult } from "../../utils/fileUploadPersistence.js";
 import { downloadFileUploadTemplate } from "../../utils/fileUploadTemplate";
 import { FILE_UPLOAD_COLUMNS } from "../../utils/fileUploadValidation";
 import { getLocalStorageValue } from "../../utils/browserStorage";
@@ -239,27 +240,7 @@ export default function AdminFileUploadPage() {
         showToast("DB 반영이 완료되었습니다.");
       }
     } catch (error) {
-      const fallbackResult = {
-        createdProducts: [],
-        insertedSubmissions: [],
-        updatedSubmissions: [],
-        errors: [
-          {
-            rowNumber: null,
-            column: "",
-            code: "UPLOAD_FAILED",
-            message: error?.message ?? "DB 반영 중 오류가 발생했습니다."
-          }
-        ],
-        summary: {
-          createdProductCount: 0,
-          insertedSubmissionCount: 0,
-          updatedSubmissionCount: 0,
-          errorCount: 1
-        }
-      };
-
-      setUploadResult(fallbackResult);
+      setUploadResult(buildFileUploadFailureResult(error));
       showToast("DB 반영 중 오류가 발생했습니다.", "error");
     } finally {
       setIsUploading(false);

@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09 완료 / 다음 단계(M-10) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10 완료 / 다음 단계(L-01) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -331,6 +331,7 @@
   - source row 순서, 중복 주문번호 우선 규칙, 상품별 처리 순서, 성공/실패 보고를 유지한다.
   - 대량 처리 최적화 전 parser와 write result를 분리해 순수 테스트를 만든다.
 - 회귀 위험: 중복 주문번호, 존재하지 않는 상품, 기존 submission update/insert 판정, partial failure 메시지가 바뀔 위험이 높다. 계약 테스트 후에만 최적화한다.
+- 실행 결과: 파일 업로드의 submission별 `maybeSingle` 주문번호 조회를 제거하고, 허용 목록의 `submissions`만 주문번호 chunk 조회(`fetchAllRowsInChunks`)한 뒤 lookup으로 update/insert를 판정하도록 변경했다. DB에 같은 주문번호가 여러 건이면 기존의 저장 실패 경계를 유지하고, 업로드 중 새로 insert된 주문번호도 lookup에 반영해 source row 순서와 부분 성공 결과를 보존했다. 결과 배열·summary·예외 fallback은 `fileUploadPersistence` 순수 유틸 계약으로 통합했다. 일괄수정은 기존에도 submission ID chunk 조회와 단일 원자 RPC를 사용하고 있어 추가 쿼리 변경 없이 계약을 재확인했다. lookup·부분 결과 테스트를 추가해 `npm test` 30개와 `npm run build`를 통과했다. Playwright로 일괄수정 목록 300/719건과 업로드 모달·file input을 확인했고, 파일 업로드 직접 접근은 테스트 계정의 메뉴 권한에 따라 `/admin`으로 거부되는 기존 경계를 확인했다. 실제 DB 반영/일괄수정 적용은 실행하지 않았다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었다.
 
 ## 5. Low 우선순위
 
