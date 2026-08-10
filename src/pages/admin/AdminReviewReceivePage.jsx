@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import StepTabList from "../../components/admin/product-detail/StepTabList";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
 import ProductLinkCopy from "../../components/common/ProductLinkCopy";
+import ReviewReceiveProductList from "../../components/admin/review-receive/ReviewReceiveProductList";
 import { useAppToast } from "../../hooks/useAppToast";
 import { useBackdropDismiss } from "../../hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "../../hooks/useModalEnterConfirm";
@@ -15,8 +15,7 @@ import {
   REVIEW_FEE_DEPOSIT_PARTY_OPTIONS,
   buildProductDepositGb,
   getProductDepositGbPartLabels,
-  getProductDepositGbPartValues,
-  REVIEW_RECEIVE_STATUS_TABS
+  getProductDepositGbPartValues
 } from "../../constants/admin";
 import {
   createAdminReviewReceiveProduct,
@@ -33,41 +32,19 @@ import {
 } from "../../utils/reviewReceiveProductReviewerBulkInput";
 import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
-import { sortReviewReceiveRowsByCreatedAt, splitReviewReceiveRows } from "../../utils/reviewReceiveRows";
+import { sortReviewReceiveRowsByCreatedAt } from "../../utils/reviewReceiveRows";
 import { getDeletionErrorMessage } from "../../utils/deletionContract";
+import {
+  REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS,
+  formatDateInputValue,
+  getBundleItems,
+  getBundleKey,
+  isMultiProductBundleRow
+} from "../../utils/reviewReceiveProductList";
 
 function normalizeOptionalValue(value) {
   const trimmedValue = value.trim();
   return trimmedValue ? trimmedValue : null;
-}
-
-function formatDateInputValue(value) {
-  if (!value) {
-    return "";
-  }
-
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    return value.slice(0, 10);
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
-  return localDate.toISOString().slice(0, 10);
-}
-
-function formatDisplayDate(value) {
-  const inputValue = formatDateInputValue(value);
-
-  if (!inputValue) {
-    return "-";
-  }
-
-  return new Date(`${inputValue}T00:00:00`).toLocaleDateString("ko-KR");
 }
 
 function createInitialProductForm() {
@@ -86,155 +63,6 @@ function createInitialProductForm() {
     productLink: "",
     description: ""
   };
-}
-
-function getBundleKey(product) {
-  return product?.bundle_id ?? product?.id;
-}
-
-function getBundleItems(product) {
-  return Array.isArray(product?.bundleItems) && product.bundleItems.length > 0 ? product.bundleItems : [product];
-}
-
-function isBundleShellProduct(product) {
-  return [
-    product?.title,
-    product?.product_name,
-    product?.option_name,
-    product?.review_type,
-    product?.description,
-    product?.product_link,
-    product?.planned_depositor_name
-  ].every((value) => !String(value ?? "").trim());
-}
-
-function getBundleVisibleItems(product) {
-  return getBundleItems(product).filter((item) => !isBundleShellProduct(item));
-}
-
-function isMultiProductBundleRow(product) {
-  return Boolean(product?.isMultiProductBundle);
-}
-
-const UNREGISTERED_PRODUCT_ITEM_TEXT = "품목 미등록";
-
-function hasRegisteredBundleItem(product) {
-  if (!isMultiProductBundleRow(product)) {
-    return true;
-  }
-
-  return Array.isArray(product?.bundleVisibleItems) && product.bundleVisibleItems.length > 0;
-}
-
-function formatProductItemCell(product, value, emptyText = "-") {
-  if (!hasRegisteredBundleItem(product)) {
-    return UNREGISTERED_PRODUCT_ITEM_TEXT;
-  }
-
-  const text = String(value ?? "").trim();
-  return text ? value : emptyText;
-}
-
-function formatProductLinkPreview(value) {
-  const text = String(value ?? "").trim();
-
-  if (!text) {
-    return "";
-  }
-
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(line) ? line : `https://${line}`);
-        const hasRemainder = url.pathname !== "/" || Boolean(url.search || url.hash);
-        return `${url.host}/${hasRemainder ? "..." : ""}`;
-      } catch {
-        const textWithoutProtocol = line.replace(/^[a-z][a-z\d+.-]*:\/\//i, "");
-        const firstSlashIndex = textWithoutProtocol.indexOf("/");
-
-        if (firstSlashIndex === -1) {
-          return textWithoutProtocol;
-        }
-
-        const hasRemainder = firstSlashIndex < textWithoutProtocol.length - 1;
-        return `${textWithoutProtocol.slice(0, firstSlashIndex + 1)}${hasRemainder ? "..." : ""}`;
-      }
-    })
-    .join("\n");
-}
-
-function renderProductLinkCopy(value) {
-  return <ProductLinkCopy value={value} displayValue={formatProductLinkPreview(value)} />;
-}
-
-function renderProductItemLinkCell(product, value) {
-  if (!hasRegisteredBundleItem(product)) {
-    return UNREGISTERED_PRODUCT_ITEM_TEXT;
-  }
-
-  return renderProductLinkCopy(value);
-}
-
-function renderClampedCell(value) {
-  return <span className="review-receive-clamp-cell">{value ?? "-"}</span>;
-}
-
-const REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE = 13;
-const REVIEW_RECEIVE_NOWRAP_MIN_FONT_SIZE = 10;
-
-function ReviewReceiveNoWrapFitCell({ value }) {
-  const cellRef = useRef(null);
-  const text = value ?? "-";
-  const [fontSize, setFontSize] = useState(REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE);
-
-  useEffect(() => {
-    const element = cellRef.current;
-
-    if (!element) {
-      return undefined;
-    }
-
-    const updateFontSize = () => {
-      element.style.fontSize = `${REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE}px`;
-
-      const availableWidth = element.clientWidth;
-      const requiredWidth = element.scrollWidth;
-      const nextFontSize =
-        availableWidth > 0 && requiredWidth > availableWidth
-          ? Math.max(
-              REVIEW_RECEIVE_NOWRAP_MIN_FONT_SIZE,
-              Math.floor((REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE * availableWidth) / requiredWidth)
-            )
-          : REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE;
-
-      setFontSize(nextFontSize);
-    };
-
-    updateFontSize();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateFontSize);
-      return () => window.removeEventListener("resize", updateFontSize);
-    }
-
-    const resizeObserver = new ResizeObserver(updateFontSize);
-    resizeObserver.observe(element);
-
-    return () => resizeObserver.disconnect();
-  }, [text]);
-
-  return (
-    <span ref={cellRef} className="review-receive-nowrap-fit-cell" style={{ fontSize }}>
-      {text}
-    </span>
-  );
-}
-
-function renderNoWrapFitCell(value) {
-  return <ReviewReceiveNoWrapFitCell value={value} />;
 }
 
 function getPlannedDepositorNameForSave(productForm) {
@@ -397,17 +225,6 @@ function getProductPayload(productForm, adminId, options = {}) {
   };
 }
 
-function getReviewReceiveSubmissionSummary(product) {
-  if (product?.submission_count != null) {
-    return `${Number(product.purchase_count ?? 0)}/${Number(product.review_count ?? 0)}/${Number(product.complete_count ?? 0)}/(총 ${Number(product.submission_count ?? 0)}개)`;
-  }
-
-  const submissions = Array.isArray(product?.submissions) ? product.submissions : [];
-  const { purchaseRows, reviewRows, completeRows } = splitReviewReceiveRows(submissions);
-
-  return `${purchaseRows.length}/${reviewRows.length}/${completeRows.length}/(총 ${submissions.length}개)`;
-}
-
 function buildReviewVerifiedClipboardText(submissions) {
   const sortedSubmissions = sortReviewReceiveRowsByCreatedAt(
     Array.isArray(submissions) ? submissions : []
@@ -441,27 +258,6 @@ function getPublicReviewReceiveUrl(productId) {
   return `${window.location.origin}${publicPath}`;
 }
 
-const REVIEW_RECEIVE_ROW_NUMBER_COLUMN_WIDTH_RATIO = 5;
-const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY = [
-  { key: "registered_date", label: "등록일", type: "dateRange", widthRatio: 5 },
-  { key: "company_name", label: "업체명", type: "text", widthRatio: 10 },
-  { key: "product_name", label: "품명", type: "text", widthRatio: 20 },
-  { key: "option_name", label: "옵션", type: "text", widthRatio: 10 },
-  { key: "review_type", label: "리뷰형태", type: "text", widthRatio: 10 },
-  { key: "product_fee_deposit_GB", label: "제품비 입금구분", type: "text", widthRatio: 5 },
-  { key: "review_fee_deposit_GB", label: "리뷰비 입금구분", type: "text", widthRatio: 5 }
-];
-const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY = [
-  { key: "product_link", label: "링크", type: "text", widthRatio: 10 },
-  { key: "manager_id", label: "담당자", type: "text", widthRatio: 5 }
-];
-const REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS = [
-  ...REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY,
-  ...REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY
-];
-const REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO = 10;
-const REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO = 5;
-const REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT = REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.length + 3;
 const REVIEW_RECEIVE_PRODUCT_FILTERS_STORAGE_KEY = "review_manager_review_receive_product_filters";
 const REVIEW_RECEIVE_PRODUCT_FILTER_DEBOUNCE_MS = 400;
 
@@ -540,108 +336,6 @@ function hasActiveReviewReceiveProductFilters(filters) {
 
     return String(value ?? "").trim() !== "";
   });
-}
-
-function FilterIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-      <path d="M2 3h12l-4.7 5.4v3.2L6.7 13V8.4L2 3Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function ReviewReceiveProductFilterHeader({
-  column,
-  filterValue,
-  isOpen,
-  onOpenChange,
-  onFilterChange,
-  onFilterReset,
-  menuRef
-}) {
-  const isDateRange = column.type === "dateRange";
-  const isActive = isDateRange ? Boolean(filterValue?.start || filterValue?.end) : String(filterValue ?? "").trim() !== "";
-  const handleTextFilterInput = (event) => {
-    onFilterChange(column.key, event.currentTarget.value);
-  };
-
-  return (
-    <th
-      className={`review-receive-filterable-header${isDateRange ? " is-date-range" : ""}${isOpen ? " is-open" : ""}${isActive ? " is-filtered" : ""}`}
-    >
-      <div className="review-receive-column-filter" ref={isOpen ? menuRef : null}>
-        <span className="review-receive-column-label">{column.label}</span>
-        <button
-          type="button"
-          className="review-receive-column-filter-button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenChange(isOpen ? "" : column.key);
-          }}
-          aria-label={`${column.label} 필터 열기`}
-          aria-haspopup="dialog"
-          aria-expanded={isOpen}
-        >
-          <FilterIcon />
-        </button>
-        {isOpen && (
-          <div className="review-receive-column-filter-popover" role="dialog" aria-label={`${column.label} 필터`}>
-            <div className="review-receive-column-filter-title">{column.label} 필터</div>
-            {isDateRange ? (
-              <div className="review-receive-date-filter-fields">
-                <label>
-                  <span>시작일</span>
-                  <input
-                    type="date"
-                    className="table-cell-input"
-                    value={filterValue?.start ?? ""}
-                    onChange={(event) =>
-                      onFilterChange(column.key, {
-                        ...(filterValue ?? { start: "", end: "" }),
-                        start: event.target.value
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>종료일</span>
-                  <input
-                    type="date"
-                    className="table-cell-input"
-                    value={filterValue?.end ?? ""}
-                    onChange={(event) =>
-                      onFilterChange(column.key, {
-                        ...(filterValue ?? { start: "", end: "" }),
-                        end: event.target.value
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            ) : (
-              <input
-                type="text"
-                className="table-cell-input"
-                value={filterValue ?? ""}
-                onInput={handleTextFilterInput}
-                onChange={handleTextFilterInput}
-                placeholder={`${column.label} 검색`}
-                autoFocus
-              />
-            )}
-            <div className="review-receive-column-filter-actions">
-              <button type="button" className="admin-secondary-button" onClick={() => onFilterReset(column.key)}>
-                초기화
-              </button>
-              <button type="button" className="admin-primary-button" onClick={() => onOpenChange("")}>
-                닫기
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </th>
-  );
 }
 
 export default function AdminReviewReceivePage({ viewMode = "all" }) {
@@ -1427,214 +1121,35 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         </div>
       </header>
 
-      <section className="dashboard-panel review-receive-product-list-panel" aria-label="리뷰받기 상품 목록">
-        <div className="product-overview-status-tab-list">
-          <StepTabList
-            activeTab={viewMode}
-            onTabChange={(nextTab) => navigate(getReviewReceiveStatusPath(nextTab))}
-            tabs={REVIEW_RECEIVE_STATUS_TABS}
-            ariaLabel="리뷰받기 상태 선택"
-          />
-        </div>
-        {isLoading && <p className="login-message">리뷰받기 상품 데이터를 불러오는 중...</p>}
-        {!isLoading && errorMessage && <p className="login-error">{errorMessage}</p>}
-        {!isLoading && !errorMessage && (
-          <div className="review-receive-product-list-scroll" ref={productListScrollRef}>
-            <table className="review-receive-product-list-table">
-              <colgroup>
-                <col style={{ width: `${REVIEW_RECEIVE_ROW_NUMBER_COLUMN_WIDTH_RATIO}%` }} />
-                {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY.map((column) => (
-                  <col key={column.key} style={{ width: `${column.widthRatio}%` }} />
-                ))}
-                <col style={{ width: `${REVIEW_RECEIVE_SUMMARY_COLUMN_WIDTH_RATIO}%` }} />
-                {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY.map((column) => (
-                  <col key={column.key} style={{ width: `${column.widthRatio}%` }} />
-                ))}
-                <col style={{ width: `${REVIEW_RECEIVE_ACTIONS_COLUMN_WIDTH_RATIO}%` }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th className="review-receive-row-number-column">No.</th>
-                  {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_BEFORE_SUMMARY.map((column) => (
-                    <ReviewReceiveProductFilterHeader
-                      key={column.key}
-                      column={column}
-                      filterValue={productFilters[column.key]}
-                      isOpen={openProductFilterKey === column.key}
-                      onOpenChange={setOpenProductFilterKey}
-                      onFilterChange={handleProductFilterChange}
-                      onFilterReset={handleProductFilterReset}
-                      menuRef={productFilterRef}
-                    />
-                  ))}
-                  <th className="review-receive-summary-column">완료현황</th>
-                  {REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS_AFTER_SUMMARY.map((column) => (
-                    <ReviewReceiveProductFilterHeader
-                      key={column.key}
-                      column={column}
-                      filterValue={productFilters[column.key]}
-                      isOpen={openProductFilterKey === column.key}
-                      onOpenChange={setOpenProductFilterKey}
-                      onFilterChange={handleProductFilterChange}
-                      onFilterReset={handleProductFilterReset}
-                      menuRef={productFilterRef}
-                    />
-                  ))}
-                  <th className="review-receive-actions-column">관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProducts.length === 0 ? (
-                  <tr>
-                    <td colSpan={REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT}>
-                      {products.length === 0
-                        ? hasActiveProductFilters
-                          ? "선택한 필터 조건에 맞는 리뷰받기 상품이 없습니다."
-                          : "등록된 리뷰받기 상품이 없습니다."
-                        : hasActiveProductFilters
-                          ? "선택한 필터 조건에 맞는 리뷰받기 상품이 없습니다."
-                          : "선택한 보기 조건에 맞는 리뷰받기 상품이 없습니다."}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProducts.map((product, productIndex) => {
-                    const isMultiProductBundle = isMultiProductBundleRow(product);
-                    const bundleKey = getBundleKey(product);
-                    const visibleItems = getBundleVisibleItems(product);
-                    const isExpanded = expandedBundleKey === bundleKey;
-
-                    return (
-                    <Fragment key={bundleKey}>
-                    <tr
-                      className="clickable-row"
-                      onClick={() => navigate(`/admin/review-receive/specific/${product.id}`)}
-                    >
-                      <td className="review-receive-row-number-cell">{productIndex + 1}</td>
-                      <td>{renderClampedCell(formatDisplayDate(product.product_date ?? product.created_at))}</td>
-                      <td>{renderNoWrapFitCell(product.company_name)}</td>
-                      <td>{renderClampedCell(formatProductItemCell(product, product.product_name))}</td>
-                      <td>{renderClampedCell(formatProductItemCell(product, product.option_name))}</td>
-                      <td>{renderClampedCell(formatProductItemCell(product, product.review_type))}</td>
-                      <td>{renderNoWrapFitCell(formatProductItemCell(product, getProductDepositGbPartLabels(product.deposit_GB).productFee))}</td>
-                      <td>{renderNoWrapFitCell(formatProductItemCell(product, getProductDepositGbPartLabels(product.deposit_GB).reviewFee))}</td>
-                      <td className="review-receive-summary-cell">{renderClampedCell(getReviewReceiveSubmissionSummary(product))}</td>
-                      <td>{renderProductItemLinkCell(product, product.product_link)}</td>
-                      <td>{renderNoWrapFitCell(product.manager_id)}</td>
-                      <td className="review-receive-actions-cell">
-                        <div className="review-receive-row-actions">
-                          <button
-                            type="button"
-                            className="review-receive-kebab-button"
-                            aria-label={`${product.title ?? product.product_name ?? "리뷰받기 상품"} 관리 메뉴 열기`}
-                            aria-expanded={activeActionProductId === product.id}
-                            disabled={actionProductId === product.id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setActiveActionProductId((prev) => (prev === product.id ? null : product.id));
-                            }}
-                          >
-                            <span aria-hidden="true">⋮</span>
-                          </button>
-                          {activeActionProductId === product.id && (
-                            <div className="review-receive-row-action-menu" onClick={(event) => event.stopPropagation()}>
-                              <button type="button" onClick={() => handleCopyPublicUrl(product)}>
-                                URL 복사하기
-                              </button>
-                              {isMultiProductBundle ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setExpandedBundleKey((prev) => (prev === bundleKey ? null : bundleKey));
-                                    setActiveActionProductId(null);
-                                  }}
-                                >
-                                  {isExpanded ? "접기" : "펼치기"}
-                                </button>
-                              ) : (
-                                <>
-                                  <button type="button" onClick={() => handleCopyReviewVerifiedRows(product)}>
-                                    리뷰작성복사
-                                  </button>
-                                  <button type="button" onClick={() => openEditModal(product)}>
-                                    수정하기
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                type="button"
-                                className="is-danger"
-                                onClick={() => openDeleteDialog(product)}
-                                disabled={actionProductId === product.id}
-                              >
-                                {actionProductId === product.id ? "삭제 중..." : "삭제하기"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {isMultiProductBundle && isExpanded && (
-                      <tr className="review-receive-bundle-expanded-row">
-                        <td colSpan={REVIEW_RECEIVE_PRODUCT_LIST_COLUMN_COUNT}>
-                          {visibleItems.length === 0 ? (
-                            <div className="review-receive-bundle-empty">등록된 품목이 없습니다. 상세 화면에서 품목을 추가해주세요.</div>
-                          ) : (
-                            <div className="review-receive-bundle-expanded-panel">
-                              <table>
-                                <thead>
-                                  <tr>
-                                    <th>상품 제목</th>
-                                    <th>업체명</th>
-                                    <th>품명</th>
-                                    <th>옵션</th>
-                                    <th>리뷰형태</th>
-                                    <th>설명</th>
-                                    <th>링크</th>
-                                    <th>제품비 입금구분</th>
-                                    <th>리뷰비 입금구분</th>
-                                    <th>완료현황</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {visibleItems.map((item) => (
-                                    <tr key={item.id}>
-                                      <td>{renderClampedCell(item.title)}</td>
-                                      <td>{renderNoWrapFitCell(item.company_name)}</td>
-                                      <td>{renderClampedCell(item.product_name)}</td>
-                                      <td>{renderClampedCell(item.option_name)}</td>
-                                      <td>{renderClampedCell(item.review_type)}</td>
-                                      <td>{renderClampedCell(item.description)}</td>
-                                      <td>{renderProductLinkCopy(item.product_link)}</td>
-                                      <td>{renderNoWrapFitCell(getProductDepositGbPartLabels(item.deposit_GB).productFee)}</td>
-                                      <td>{renderNoWrapFitCell(getProductDepositGbPartLabels(item.deposit_GB).reviewFee)}</td>
-                                      <td>{renderClampedCell(getReviewReceiveSubmissionSummary(item))}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-            <div ref={productListLoadMoreRef} className="review-receive-list-load-more" aria-live="polite">
-              {isLoadingMore
-                ? "추가 데이터를 불러오는 중..."
-                : listPageInfo.hasMore
-                  ? "아래로 스크롤하면 다음 리뷰받기 상품을 불러옵니다."
-                  : filteredProducts.length > 0
-                    ? "모든 리뷰받기 상품을 불러왔습니다."
-                    : ""}
-            </div>
-          </div>
-        )}
-      </section>
+      <ReviewReceiveProductList
+        viewMode={viewMode}
+        onViewModeChange={(nextTab) => navigate(getReviewReceiveStatusPath(nextTab))}
+        isLoading={isLoading}
+        errorMessage={errorMessage}
+        productListScrollRef={productListScrollRef}
+        productListLoadMoreRef={productListLoadMoreRef}
+        productFilters={productFilters}
+        openProductFilterKey={openProductFilterKey}
+        onProductFilterOpenChange={setOpenProductFilterKey}
+        onProductFilterChange={handleProductFilterChange}
+        onProductFilterReset={handleProductFilterReset}
+        productFilterRef={productFilterRef}
+        products={products}
+        filteredProducts={filteredProducts}
+        hasActiveProductFilters={hasActiveProductFilters}
+        expandedBundleKey={expandedBundleKey}
+        setExpandedBundleKey={setExpandedBundleKey}
+        activeActionProductId={activeActionProductId}
+        setActiveActionProductId={setActiveActionProductId}
+        actionProductId={actionProductId}
+        onNavigate={navigate}
+        onCopyPublicUrl={handleCopyPublicUrl}
+        onCopyReviewVerifiedRows={handleCopyReviewVerifiedRows}
+        onOpenEditModal={openEditModal}
+        onOpenDeleteDialog={openDeleteDialog}
+        isLoadingMore={isLoadingMore}
+        hasMore={listPageInfo.hasMore}
+      />
 
       {isProductReviewerBulkModalOpen && (
         <div className="review-receive-modal-backdrop" role="presentation" {...productReviewerBulkBackdropDismissProps}>

@@ -8,7 +8,7 @@
 이 프로젝트는 리뷰 운영자를 위한 백오피스 프런트엔드입니다.  
 기술적으로는 `Vite + React + React Router + Supabase` 조합으로 구성되어 있고, 별도 서버 없이 클라이언트에서 직접 Supabase 데이터를 조회하고 수정하는 구조입니다.
 
-2026-04-23 기준으로 1차 구조 리팩터링이 반영되어, 현재는 라우팅 엔트리, 페이지, 공통 레이아웃, 상품 상세 하위 컴포넌트, Supabase 서비스, 순수 유틸, 스타일 레이어가 기본적으로 분리된 상태입니다.
+2026-04-23 기준으로 1차 구조 리팩터링이 반영되어, 현재는 라우팅 엔트리, 페이지, 공통 레이아웃, 상품 상세 하위 컴포넌트, Supabase 서비스, 순수 유틸, 스타일 레이어가 기본적으로 분리된 상태입니다. 2026-08-11 기준으로 상품전체보기와 리뷰받기 목록의 feature component 경계를 추가로 정리했습니다.
 
 현재 확인된 핵심 기능은 아래와 같습니다.
 
@@ -96,6 +96,10 @@ src/
       ProductOverviewTable.jsx
       ProductOverviewSection.jsx
                           상품전체보기·일괄수정 공용 테이블 및 섹션 UI
+    admin/review-receive/
+      ReviewReceiveProductFilterHeader.jsx
+      ReviewReceiveProductList.jsx
+                          리뷰받기 목록의 필터 헤더·상태 탭·번들 행·무한 스크롤 UI
     common/
       ProductLinkCopy.jsx 상품 링크 3줄 말줄임 표시 및 전체 복사 버튼
     public/
@@ -150,6 +154,8 @@ src/
                          상품전체보기 평탄화/정렬/필터 유틸
     submissionParser.js   제출 문자열 파싱 유틸
     reviewReceiveRows.js  리뷰받기 섹션 분리/정렬 유틸
+    reviewReceiveProductList.js
+                         리뷰받기 목록 컬럼·날짜·번들·완료현황 표시 유틸
     exportColumns.js      내보내기 컬럼·프리셋·행 변환
     exportDateFilters.js  내보내기 날짜 필터 기본값/빠른 범위 유틸
     exportFile.js         xlsx 기반 Excel 다운로드
@@ -217,6 +223,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
 - `상품전체보기` 화면은 페이지의 조회·선택·쓰기 상태, 조회 서비스, 행 변환 유틸, `admin/product-overview` feature component로 분리돼 있습니다.
 - `일괄수정하기` 화면은 페이지 파일을 경유하지 않고 상품전체보기의 읽기 전용 필터 테이블 feature component를 직접 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
+- `리뷰받기` 목록 화면은 페이지가 조회·필터·페이지네이션·쓰기 상태를 보유하고, `admin/review-receive` feature component가 상태 탭·필터 헤더·상품/번들 행·무한 스크롤 표시를 담당합니다. 목록 전용 날짜·번들·완료현황 파생 로직은 `reviewReceiveProductList` 순수 유틸에 둡니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
 - 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
