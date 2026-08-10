@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04 완료 / 다음 단계(M-05) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05 완료 / 다음 단계(M-06) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -248,6 +248,7 @@
   - pagination/chunk 제한, 에러 우선순위, 부분 데이터 반환 여부를 기존과 동일하게 유지한다.
   - exportPhotos처럼 실제 의존성이 있는 products → submissions → photos 순서는 병렬화하지 않는다.
 - 회귀 위험: 요청 동시성 증가로 rate limit, 에러 메시지 우선순위, 부분 결과가 달라질 수 있다. 결과 집합과 에러 계약을 테스트하고 Supabase 요청 수/순서를 계측한다.
+- 실행 결과: `dashboardMetrics`에서 products 이후 submissions/applications/company members를 `Promise.all`로 시작하고, evidence는 submissions가 성공한 뒤에만 조회하도록 분리했다. `exportData`도 submissions와 applications만 병렬화하고 evidence와 에러 우선순위는 기존 순서를 유지했다. `exportPhotos`의 products→submissions→evidence 의존 순서는 변경하지 않았다. `npm test` 21개와 `npm run build`를 통과했으며, Playwright로 대시보드와 상품별 내보내기 화면을 확인했다. 네트워크에서 export submissions/applications 요청이 evidence 요청 전에 함께 시작되고, 허용 목록 테이블만 조회되는 것을 확인했다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었다.
 
 ### M-06. 사진 ZIP 다운로드의 bounded concurrency 도입 검토
 

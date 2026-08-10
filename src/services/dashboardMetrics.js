@@ -55,75 +55,64 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
   const products = productsResult.data ?? [];
   const productIds = products.map((product) => product.id);
 
-  let submissions = [];
-  let submissionsError = null;
-  let applications = [];
-  let applicationsError = null;
+  const submissionsPromise =
+    productIds.length > 0
+      ? fetchAllRowsInChunks(productIds, (productIdChunk) =>
+          supabase
+            .from("submissions")
+            .select(DASHBOARD_SUBMISSIONS_SELECT)
+            .in("product_id", productIdChunk)
+        )
+      : Promise.resolve({ data: [], error: null });
+  const applicationsPromise =
+    productIds.length > 0
+      ? fetchAllRowsInChunks(productIds, (productIdChunk) =>
+          supabase
+            .from("applications")
+            .select(DASHBOARD_APPLICATIONS_SELECT)
+            .in("product_id", productIdChunk)
+        )
+      : Promise.resolve({ data: [], error: null });
+  const companyMembersPromise =
+    scope.includeCompanyData && scope.companyName
+      ? fetchAllRows(
+          () =>
+            supabase
+              .from("admins")
+              .select(DASHBOARD_COMPANY_MEMBERS_SELECT)
+              .eq("company", scope.companyName),
+          { cursorColumn: "login_id" }
+        )
+      : Promise.resolve({ data: [], error: null });
+  const [submissionsResult, applicationsResult, companyMembersResult] = await Promise.all([
+    submissionsPromise,
+    applicationsPromise,
+    companyMembersPromise
+  ]);
+
+  const submissions = submissionsResult.error ? [] : submissionsResult.data ?? [];
+  const applications = applicationsResult.error ? [] : applicationsResult.data ?? [];
+  const companyMembers = companyMembersResult.error ? [] : companyMembersResult.data ?? [];
+  const submissionsError = submissionsResult.error ?? null;
+  const applicationsError = applicationsResult.error ?? null;
+  const companyMembersError = companyMembersResult.error ?? null;
   let evidencePhotos = [];
   let evidencePhotosError = null;
 
-  if (productIds.length > 0) {
-    const submissionsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
+  const submissionIds = submissions.map((submission) => submission.id);
+
+  if (!submissionsError && submissionIds.length > 0) {
+    const evidencePhotosResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
       supabase
-        .from("submissions")
-        .select(DASHBOARD_SUBMISSIONS_SELECT)
-        .in("product_id", productIdChunk)
+        .from("evidence_photos")
+        .select(DASHBOARD_EVIDENCE_PHOTOS_SELECT)
+        .in("submission_id", submissionIdChunk)
     );
 
-    if (submissionsResult.error) {
-      submissionsError = submissionsResult.error;
+    if (evidencePhotosResult.error) {
+      evidencePhotosError = evidencePhotosResult.error;
     } else {
-      submissions = submissionsResult.data ?? [];
-    }
-
-    const applicationsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
-      supabase
-        .from("applications")
-        .select(DASHBOARD_APPLICATIONS_SELECT)
-        .in("product_id", productIdChunk)
-    );
-
-    if (applicationsResult.error) {
-      applicationsError = applicationsResult.error;
-    } else {
-      applications = applicationsResult.data ?? [];
-    }
-
-    const submissionIds = submissions.map((submission) => submission.id);
-
-    if (submissionIds.length > 0) {
-      const evidencePhotosResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
-        supabase
-          .from("evidence_photos")
-          .select(DASHBOARD_EVIDENCE_PHOTOS_SELECT)
-          .in("submission_id", submissionIdChunk)
-      );
-
-      if (evidencePhotosResult.error) {
-        evidencePhotosError = evidencePhotosResult.error;
-      } else {
-        evidencePhotos = evidencePhotosResult.data ?? [];
-      }
-    }
-  }
-
-  let companyMembers = [];
-  let companyMembersError = null;
-
-  if (scope.includeCompanyData && scope.companyName) {
-    const companyMembersResult = await fetchAllRows(
-      () =>
-        supabase
-          .from("admins")
-          .select(DASHBOARD_COMPANY_MEMBERS_SELECT)
-          .eq("company", scope.companyName),
-      { cursorColumn: "login_id" }
-    );
-
-    if (companyMembersResult.error) {
-      companyMembersError = companyMembersResult.error;
-    } else {
-      companyMembers = companyMembersResult.data ?? [];
+      evidencePhotos = evidencePhotosResult.data ?? [];
     }
   }
 

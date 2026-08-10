@@ -98,7 +98,7 @@ export async function fetchAdminExportData(adminId, options = {}) {
     return buildEmptyExportResult(scope);
   }
 
-  const submissionsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) => {
+  const submissionsPromise = fetchAllRowsInChunks(productIds, (productIdChunk) => {
     const query = supabase
       .from("submissions")
       .select(EXPORT_SUBMISSIONS_SELECT)
@@ -110,6 +110,15 @@ export async function fetchAdminExportData(adminId, options = {}) {
       depositOnly
     });
   });
+  const applicationsPromise = includeApplications
+    ? fetchAllRowsInChunks(productIds, (productIdChunk) =>
+        supabase
+          .from("applications")
+          .select(EXPORT_APPLICATIONS_SELECT)
+          .in("product_id", productIdChunk)
+      )
+    : Promise.resolve(null);
+  const [submissionsResult, applicationsResult] = await Promise.all([submissionsPromise, applicationsPromise]);
 
   if (submissionsResult.error) {
     return buildEmptyExportResult(scope, submissionsResult.error);
@@ -145,12 +154,6 @@ export async function fetchAdminExportData(adminId, options = {}) {
   let applications = [];
 
   if (includeApplications) {
-    const applicationsResult = await fetchAllRowsInChunks(productIds, (productIdChunk) =>
-      supabase
-        .from("applications")
-        .select(EXPORT_APPLICATIONS_SELECT)
-        .in("product_id", productIdChunk)
-    );
 
     if (applicationsResult.error) {
       return {
