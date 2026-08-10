@@ -4,7 +4,7 @@ import AppToast from "../../components/common/AppToast";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { useAppToast } from "../../hooks/useAppToast";
 import { uploadFileUploadData } from "../../services/fileUpload";
-import { buildUploadableFileUploadResult, parseFileUploadFile } from "../../utils/fileUploadParser.js";
+import { buildUploadableFileUploadResult } from "../../utils/fileUploadParser.js";
 import { downloadFileUploadTemplate } from "../../utils/fileUploadTemplate";
 import { FILE_UPLOAD_COLUMNS } from "../../utils/fileUploadValidation";
 
@@ -165,6 +165,7 @@ export default function AdminFileUploadPage() {
     setIsParsing(true);
 
     try {
+      const { parseFileUploadFile } = await import("../../utils/fileUploadExcel.js");
       const result = await parseFileUploadFile(file, { adminId });
       setParseResult(result);
 
@@ -178,6 +179,14 @@ export default function AdminFileUploadPage() {
       showToast("파일을 읽지 못했습니다.", "error");
     } finally {
       setIsParsing(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      await downloadFileUploadTemplate();
+    } catch (error) {
+      showToast(error?.message ?? "샘플 양식을 만들지 못했습니다.", "error");
     }
   };
 
@@ -264,7 +273,7 @@ export default function AdminFileUploadPage() {
           <p>Excel 파일을 읽고 상품과 제출 데이터로 들어갈 내용을 미리 확인합니다.</p>
         </div>
         <div className="admin-header-actions">
-          <button type="button" className="admin-secondary-button" onClick={downloadFileUploadTemplate}>
+          <button type="button" className="admin-secondary-button" onClick={handleDownloadTemplate}>
             샘플 양식 다운로드
           </button>
           <button type="button" className="admin-primary-button" onClick={handlePrepareClick} disabled={!canPrepareUpload}>

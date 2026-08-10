@@ -1,7 +1,7 @@
 # Review Manager Backoffice 프로젝트 분석
 
 작성일: 2026-04-23  
-최종 갱신일: 2026-08-10
+최종 갱신일: 2026-08-11
 
 ## 1. 프로젝트 개요
 
@@ -152,11 +152,13 @@ src/
     productLink.js        상품 설명/링크 분리 유틸
     plannedDepositorName.js
                          등록일·업체명 기반 예정 입금자명 생성 유틸
-    fileUploadParser.js   Excel 파일 업로드 행 파싱/상품 블록 변환
+    fileUploadParser.js   Excel 파일 업로드 행 파싱/상품 블록 변환 순수 로직
+    fileUploadExcel.js    xlsx 기반 workbook 변환 adapter(파일 선택 시 lazy import)
     fileUploadValidation.js
                           파일 업로드 날짜/금액/계좌/상태값 검증 유틸
     fileUploadTemplate.js 파일 업로드 샘플 Excel 다운로드 유틸
     bulkEditExcel.js      일괄수정 Excel 열 계약, 파싱, 차이 계산 유틸
+    loadXlsx.js           xlsx dynamic import promise 공유 loader
   styles/
     base.css              공통 토큰/전역 UI 규칙
     login.css             로그인 화면 전용 스타일
@@ -201,7 +203,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 
 현재 구조의 핵심 특징은 아래와 같습니다.
 
-- `src/App.jsx`는 라우팅 엔트리 역할만 담당합니다.
+- `src/App.jsx`는 라우팅 엔트리 역할만 담당하며 관리자·공개 페이지는 route 단위 `React.lazy`로 분할됩니다. 공통 `Suspense` fallback은 chunk 로딩 중에만 표시되고, `AdminLayout`의 권한 경계는 정적으로 유지됩니다.
 - 페이지 단위 컴포넌트는 `src/pages/admin/*`, `src/pages/public/*` 아래로 분리되어 있습니다.
 - Supabase 접근은 `src/services/*`에서 관리합니다.
 - 순수 파싱/정렬 로직은 `src/utils/*`와 `src/constants/*`로 이동했습니다.
@@ -212,6 +214,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
 - 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
+- 초기 JavaScript에는 모든 페이지와 `xlsx`를 넣지 않습니다. 페이지 chunk는 실제 route가 렌더링될 때 로드되고, `xlsx` chunk는 Excel 읽기·템플릿 생성·내보내기 실행 시점에만 로드됩니다. 기능별 CSS는 현재 전역 로딩을 유지해 route 전환 중 스타일 깜박임을 방지합니다.
 - 리뷰받기 목록은 `get_admin_review_receive_product_summaries` RPC가 `bundle_id` 단위로 상품을 묶고 submission 원본 row 대신 구매/리뷰/완료/총 개수와 진행/완료 상태만 집계해 반환합니다. 전체/진행중/완료 보기, 열 필터, 커서 기반 다음 페이지 제한도 DB에서 처리하며, 화면은 처음 50건을 렌더링하고 스크롤 하단 진입 시 같은 조건으로 다음 50건을 이어 불러옵니다.
 - 상품전체보기 목록은 `get_admin_product_overview_rows` RPC가 관리자 범위, 상태 탭(`all`, `purchase`, `review`, `complete`), 열 필터, 리뷰 사진 집계, 커서 기반 다음 페이지 제한을 DB에서 처리합니다. 화면은 처음 300건을 렌더링하고, 스크롤 하단 진입 시 같은 조건으로 다음 300건을 이어 불러옵니다. 헤더 전체선택은 로드된 행만이 아니라 현재 서버 필터 결과 전체를 선택하는 상태로 관리하고, 실제 작업 시 필요한 경우 해당 조건의 모든 페이지를 다시 조회합니다.
 

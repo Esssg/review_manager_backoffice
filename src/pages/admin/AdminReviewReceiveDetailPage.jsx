@@ -1099,7 +1099,7 @@ export default function AdminReviewReceiveDetailPage() {
     setSelectedDeleteTargetRows(rowsToDelete);
   };
 
-  const handleSectionExcelDownload = (sectionKey, title, targetRows, options = {}) => {
+  const handleSectionExcelDownload = async (sectionKey, title, targetRows, options = {}) => {
     const {
       sectionRowNumberMap = rowNumberMap,
       sectionPlannedDepositorName = plannedDepositorName,
@@ -1113,10 +1113,14 @@ export default function AdminReviewReceiveDetailPage() {
       getPlannedDepositorName: getSectionPlannedDepositorName
     });
 
-    downloadExcel(buildExportFilename(`구매상세_${productLabel}_${title}`), {
-      name: title,
-      rows: exportRows
-    });
+    try {
+      await downloadExcel(buildExportFilename(`구매상세_${productLabel}_${title}`), {
+        name: title,
+        rows: exportRows
+      });
+    } catch (error) {
+      showToast(error?.message ?? "Excel 파일을 만들지 못했습니다.", "error");
+    }
   };
 
   const toggleRowsSelection = (targetRows) => {

@@ -200,14 +200,19 @@ export default function AdminBulkEditPage() {
       return;
     }
 
-    downloadExcel(buildExportFilename("일괄수정하기"), {
-      name: "일괄수정",
-      headers: BULK_EDIT_HEADERS,
-      leadingRows: BULK_EDIT_EXCEL_GUIDE_ROWS,
-      rows: buildBulkEditExcelRows(exportRows)
-    });
-    showToast(`${exportRows.length.toLocaleString()}건을 엑셀로 내보냈습니다.`, "success");
-    setIsExporting(false);
+    try {
+      await downloadExcel(buildExportFilename("일괄수정하기"), {
+        name: "일괄수정",
+        headers: BULK_EDIT_HEADERS,
+        leadingRows: BULK_EDIT_EXCEL_GUIDE_ROWS,
+        rows: buildBulkEditExcelRows(exportRows)
+      });
+      showToast(`${exportRows.length.toLocaleString()}건을 엑셀로 내보냈습니다.`, "success");
+    } catch (error) {
+      showToast(error?.message ?? "Excel 파일을 만들지 못했습니다.", "error");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleFileChange = async (event) => {

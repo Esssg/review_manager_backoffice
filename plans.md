@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-04 완료 / 다음 단계(H-03) 승인 대기
+상태: H-01·H-02·H-03·H-04 완료 / 다음 단계(H-05) 승인 대기
 
 ## 1. 목표와 범위
 
@@ -83,7 +83,7 @@
 - 회귀 위험: 로그인 직후 메뉴 로딩 순서, 설정 직접 접근, 권한 거부 화면이 달라질 수 있다. 인증됨/미인증/권한 없음/로딩 상태를 각각 브라우저로 확인한다.
 - 실행 결과: AdminLayout과 AdminSettingPage의 인증 child 경계를 분리했고, npm test 11개 통과, npm run build 성공, 미인증 설정 경로의 로그인 redirect와 인증 후 설정 로딩/돌아가기 navigation을 브라우저에서 확인했다.
 
-### H-03. 라우트·대형 의존성 코드 분할
+### H-03. 라우트·대형 의존성 코드 분할 — 완료
 
 - 문제: 로그인 직후 사용하지 않는 모든 관리자 화면, 공개 화면, export 기능이 초기 번들에 들어간다. xlsx도 초기 로드에 포함될 가능성이 높다.
 - 원인: App.jsx의 정적 페이지 import와 유틸리티의 정적 xlsx import, 기능 CSS의 전역 import 때문이다.
@@ -105,6 +105,7 @@
   - 테스트·서비스에서 사용하는 순수 계약은 유지하고, browser-only loading adapter를 별도로 둔다.
   - 분할 뒤에도 권한 없는 route가 페이지 모듈을 불필요하게 실행하지 않는지 확인한다.
 - 회귀 위험: 첫 진입 loading UI, CSS 적용 시점, export/upload 오류 처리, deep link refresh가 달라질 수 있다. build의 chunk 결과와 주요 route의 실제 화면·권한·엑셀 동작을 함께 검증한다.
+- 실행 결과: `src/App.jsx`의 관리자·공개 페이지를 `React.lazy`와 공통 `Suspense` fallback으로 전환했다. 관리자 레이아웃은 정적으로 유지해 권한 확인이 끝난 뒤에만 하위 페이지 chunk가 렌더링되도록 했고, 권한 없는 파일 업로드 직접 접근은 기존처럼 대시보드로 redirect되면서 파일 업로드 page chunk가 요청되지 않는 것을 확인했다. `xlsx`는 `loadXlsx` 단일 promise loader로 export·템플릿·일괄수정 실행 시점에 로드하도록 바꾸고, 파일 업로드 Excel adapter도 파일 선택 시점의 dynamic import로 분리했다. `fileUploadParser`는 행 변환 순수 로직으로 남겼으며, 다운로드 실패는 기존 화면의 성공 흐름을 바꾸지 않고 오류 메시지로 안내한다. 기능별 CSS는 route 전환 중 스타일 깜박임을 피하기 위해 이번 단계에서는 전역 로딩을 유지했다. 빌드 결과 entry JS는 400.20kB(gzip 118.47kB), `xlsx`는 별도 429.03kB(gzip 143.08kB) chunk로 분리되었고, `npm test` 14개 통과 및 `npm run build` 성공을 확인했다. Playwright로 로그인→대시보드, export deep link, export 화면 초기 xlsx 미요청, Excel 다운로드 시 xlsx chunk 요청·파일 생성, bulk-edit 화면, 권한 없는 file-upload redirect를 확인했다. 브라우저 콘솔에 남은 `admins` capability 컬럼 조회 400은 H-04에서 확인한 현재 원격 스키마 호환 fallback 로그이며 H-03 변경으로 새로 발생한 오류는 아니다.
 
 ### H-04. 관리자 scope/capability 로딩 정책 일원화 — 완료
 

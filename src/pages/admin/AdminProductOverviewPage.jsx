@@ -1390,13 +1390,18 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       return;
     }
 
-    downloadExcel(buildExportFilename(`상품전체보기_${scopeLabel}`), {
-      name: scopeLabel,
-      rows: buildProductOverviewExcelRows(exportRows, exportColumnKeys)
-    });
-    showToast(`${exportRows.length}건을 엑셀로 내보냈습니다.`, "success");
-    setIsExportingProductOverview(false);
-    closeExportModal();
+    try {
+      await downloadExcel(buildExportFilename(`상품전체보기_${scopeLabel}`), {
+        name: scopeLabel,
+        rows: buildProductOverviewExcelRows(exportRows, exportColumnKeys)
+      });
+      showToast(`${exportRows.length}건을 엑셀로 내보냈습니다.`, "success");
+      closeExportModal();
+    } catch (error) {
+      showToast(error?.message ?? "Excel 파일을 만들지 못했습니다.", "error");
+    } finally {
+      setIsExportingProductOverview(false);
+    }
   };
 
   const handleDeleteSelectedRows = async () => {

@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { loadXlsx } from "./loadXlsx.js";
 
 function sanitizeSheetName(sheetName) {
   return String(sheetName || "내보내기")
@@ -27,7 +27,8 @@ export function buildExportFilename(menuLabel, date = new Date()) {
   return `리뷰매니저_${menuLabel}_${timestamp}.xlsx`;
 }
 
-export function downloadExcel(filename, sheets) {
+export async function downloadExcel(filename, sheets) {
+  const XLSX = await loadXlsx();
   const workbook = XLSX.utils.book_new();
   const normalizedSheets = Array.isArray(sheets) ? sheets : [sheets];
 

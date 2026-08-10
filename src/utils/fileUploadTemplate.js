@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import { loadXlsx } from "./loadXlsx.js";
 
 const TEMPLATE_HEADERS = [
   "날짜",
@@ -94,7 +94,8 @@ function buildTemplateFilename(date = new Date()) {
   return `리뷰매니저_파일업로드_샘플_${timestamp}.xlsx`;
 }
 
-export function downloadFileUploadTemplate() {
+export async function downloadFileUploadTemplate() {
+  const XLSX = await loadXlsx();
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet(TEMPLATE_ROWS);
 

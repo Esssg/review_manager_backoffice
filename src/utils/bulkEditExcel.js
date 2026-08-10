@@ -1,10 +1,10 @@
-import * as XLSX from "xlsx";
 import {
   normalizeCellText,
   parseFileUploadAmount,
   parseFileUploadBoolean,
   parseFileUploadDate
 } from "./fileUploadValidation.js";
+import { loadXlsx } from "./loadXlsx.js";
 
 export const BULK_EDIT_COLUMNS = [
   { key: "assign_name", label: "배정명", type: "text" },
@@ -110,6 +110,7 @@ export async function parseBulkEditExcelFile(file) {
     throw new Error("업로드할 Excel 파일을 선택해주세요.");
   }
 
+  const XLSX = await loadXlsx();
   const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
   const sheetName = workbook.SheetNames[0];
 

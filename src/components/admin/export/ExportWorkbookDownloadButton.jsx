@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { downloadExcel } from "../../../utils/exportFile";
 
 export default function ExportWorkbookDownloadButton({
@@ -9,15 +10,22 @@ export default function ExportWorkbookDownloadButton({
   emptyMessage = "내보낼 데이터가 없습니다.",
   disabledMessage = ""
 }) {
+  const [downloadErrorMessage, setDownloadErrorMessage] = useState("");
   const hasRows = Array.isArray(sheets) && sheets.some((sheet) => Array.isArray(sheet?.rows) && sheet.rows.length > 0);
   const canDownload = !disabled && !isLoading && hasRows;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!canDownload) {
       return;
     }
 
-    downloadExcel(filename, sheets);
+    setDownloadErrorMessage("");
+
+    try {
+      await downloadExcel(filename, sheets);
+    } catch (error) {
+      setDownloadErrorMessage(error?.message ?? "Excel 파일을 만들지 못했습니다.");
+    }
   };
 
   return (
@@ -30,6 +38,7 @@ export default function ExportWorkbookDownloadButton({
       ) : !isLoading && !hasRows ? (
         <p className="login-message">{emptyMessage}</p>
       ) : null}
+      {downloadErrorMessage && <p className="login-error">{downloadErrorMessage}</p>}
     </div>
   );
 }
