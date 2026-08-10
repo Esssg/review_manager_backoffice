@@ -175,64 +175,64 @@ export function buildDashboardSummary({
   const startOfToday = getStartOfDay(now);
   const startOfMonth = getStartOfMonth(now);
   const todayKey = getDayKey(startOfToday);
+  const startOfYesterday = getStartOfDay(new Date(startOfToday.getTime() - MS_PER_DAY));
 
   const evidencePhotoIndex = buildEvidencePhotoIndex(evidencePhotos);
 
-  const productsToday = products.filter((product) => isOnOrAfterStartOfDay(product.created_at, startOfToday)).length;
-  const productsThisMonth = products.filter((product) => isOnOrAfterStartOfDay(product.created_at, startOfMonth)).length;
+  let productsToday = 0;
+  let productsThisMonth = 0;
 
-  const submissionsToday = submissions.filter((submission) =>
-    isOnOrAfterStartOfDay(submission.created_at, startOfToday)
-  ).length;
-
-  const submissionsYesterday = submissions.filter((submission) => {
-    const createdDate = toDate(submission.created_at);
-
-    if (!createdDate) {
-      return false;
+  products.forEach((product) => {
+    if (isOnOrAfterStartOfDay(product.created_at, startOfToday)) {
+      productsToday += 1;
     }
 
-    const yesterday = new Date(startOfToday.getTime() - MS_PER_DAY);
-    const startOfYesterday = getStartOfDay(yesterday);
-    return (
-      createdDate.getTime() >= startOfYesterday.getTime() && createdDate.getTime() < startOfToday.getTime()
-    );
-  }).length;
-
-  const reviewVerifiedTotal = submissions.filter((submission) => submission.is_review_verified).length;
-
-  const depositVerifiedToday = submissions.filter((submission) => {
-    if (!submission.is_deposit_verified) {
-      return false;
+    if (isOnOrAfterStartOfDay(product.created_at, startOfMonth)) {
+      productsThisMonth += 1;
     }
-
-    return getDayKey(submission.deposited_at) === todayKey;
   });
-  const depositVerifiedTodayCount = depositVerifiedToday.length;
-  const depositVerifiedTodayAmountSum = depositVerifiedToday.reduce(
-    (acc, submission) => acc + safeNumber(submission.review_fee),
-    0
-  );
 
-  const applicationsToday = applications.filter((application) =>
-    isOnOrAfterStartOfDay(application.created_at, startOfToday)
-  );
-  const applicationsTodayCount = applicationsToday.length;
-  const applicationsTodayConfirmedCount = applicationsToday.filter((application) => application.is_confirmed).length;
-  const applicationsTodayPendingCount = applicationsTodayCount - applicationsTodayConfirmedCount;
-
-  const photosToday = evidencePhotos.filter((photo) => isOnOrAfterStartOfDay(photo.created_at, startOfToday));
-  const photosTodayCount = photosToday.length;
-  const photosTodayReviewCount = photosToday.filter((photo) => photo.photo_type === "review").length;
-  const photosTodayPurchaseCount = photosToday.filter((photo) => photo.photo_type === "purchase").length;
-
+  let submissionsToday = 0;
+  let submissionsYesterday = 0;
+  let reviewVerifiedTotal = 0;
+  let depositVerifiedTodayCount = 0;
+  let depositVerifiedTodayAmountSum = 0;
   let purchaseCount = 0;
   let reviewCount = 0;
   let completeCount = 0;
   let unassignedCount = 0;
   let pendingDepositLongCount = 0;
+  let missingReviewPhotoCount = 0;
+  let expectedDepositSum = 0;
 
   submissions.forEach((submission) => {
+    if (!submission) {
+      return;
+    }
+
+    if (isOnOrAfterStartOfDay(submission.created_at, startOfToday)) {
+      submissionsToday += 1;
+    }
+
+    const createdDate = toDate(submission.created_at);
+
+    if (
+      createdDate &&
+      createdDate.getTime() >= startOfYesterday.getTime() &&
+      createdDate.getTime() < startOfToday.getTime()
+    ) {
+      submissionsYesterday += 1;
+    }
+
+    if (submission.is_review_verified) {
+      reviewVerifiedTotal += 1;
+    }
+
+    if (submission.is_deposit_verified && getDayKey(submission.deposited_at) === todayKey) {
+      depositVerifiedTodayCount += 1;
+      depositVerifiedTodayAmountSum += safeNumber(submission.review_fee);
+    }
+
     const status = classifySubmissionStatus(submission);
 
     if (status === SUBMISSION_STATUS.PURCHASE) {
@@ -254,19 +254,51 @@ export function buildDashboardSummary({
         pendingDepositLongCount += 1;
       }
     }
-  });
 
-  const missingReviewPhotoCount = countSubmissionsMissingReviewPhoto(submissions, evidencePhotoIndex);
+    const reviewPhotoCount = evidencePhotoIndex.bySubmission.get(submission.id)?.review ?? 0;
 
-  const expectedDepositSum = submissions.reduce((acc, submission) => {
-    const status = classifySubmissionStatus(submission);
-
-    if (status === SUBMISSION_STATUS.COMPLETE) {
-      return acc;
+    if (!submission.is_review_verified && reviewPhotoCount === 0) {
+      missingReviewPhotoCount += 1;
     }
 
-    return acc + safeNumber(submission.review_fee);
-  }, 0);
+    if (status !== SUBMISSION_STATUS.COMPLETE) {
+      expectedDepositSum += safeNumber(submission.review_fee);
+    }
+  });
+
+  let applicationsTodayCount = 0;
+  let applicationsTodayConfirmedCount = 0;
+
+  applications.forEach((application) => {
+    if (!isOnOrAfterStartOfDay(application.created_at, startOfToday)) {
+      return;
+    }
+
+    applicationsTodayCount += 1;
+
+    if (application.is_confirmed) {
+      applicationsTodayConfirmedCount += 1;
+    }
+  });
+
+  const applicationsTodayPendingCount = applicationsTodayCount - applicationsTodayConfirmedCount;
+  let photosTodayCount = 0;
+  let photosTodayReviewCount = 0;
+  let photosTodayPurchaseCount = 0;
+
+  evidencePhotos.forEach((photo) => {
+    if (!isOnOrAfterStartOfDay(photo.created_at, startOfToday)) {
+      return;
+    }
+
+    photosTodayCount += 1;
+
+    if (photo.photo_type === "review") {
+      photosTodayReviewCount += 1;
+    } else if (photo.photo_type === "purchase") {
+      photosTodayPurchaseCount += 1;
+    }
+  });
 
   return {
     today: {
@@ -356,7 +388,7 @@ export function buildDailyTrend({
   return buckets;
 }
 
-function buildProductActivityIndex(submissions = []) {
+export function buildProductActivityIndex(submissions = []) {
   const index = new Map();
 
   submissions.forEach((submission) => {
@@ -390,8 +422,13 @@ function buildProductActivityIndex(submissions = []) {
   return index;
 }
 
-export function pickTopProductsByPurchase({ products = [], submissions = [], limit = 5 } = {}) {
-  const activityIndex = buildProductActivityIndex(submissions);
+export function pickTopProductsByPurchase({
+  products = [],
+  submissions = [],
+  limit = 5,
+  activityIndex: providedActivityIndex = null
+} = {}) {
+  const activityIndex = providedActivityIndex ?? buildProductActivityIndex(submissions);
 
   return products
     .map((product) => {
@@ -413,8 +450,13 @@ export function pickTopProductsByPurchase({ products = [], submissions = [], lim
     .slice(0, limit);
 }
 
-export function pickTopProductsByReviewWaiting({ products = [], submissions = [], limit = 5 } = {}) {
-  const activityIndex = buildProductActivityIndex(submissions);
+export function pickTopProductsByReviewWaiting({
+  products = [],
+  submissions = [],
+  limit = 5,
+  activityIndex: providedActivityIndex = null
+} = {}) {
+  const activityIndex = providedActivityIndex ?? buildProductActivityIndex(submissions);
 
   return products
     .map((product) => {
@@ -485,32 +527,62 @@ export function aggregateCompanyMembers({ members = [], products = [], submissio
     acc.get(product.manager_id).push(product);
     return acc;
   }, new Map());
+  const managersByProductId = products.reduce((acc, product) => {
+    if (!product?.manager_id) {
+      return acc;
+    }
+
+    if (!acc.has(product.id)) {
+      acc.set(product.id, new Set());
+    }
+
+    acc.get(product.id).add(product.manager_id);
+    return acc;
+  }, new Map());
+  const submissionMetricsByManager = new Map();
+
+  submissions.forEach((submission) => {
+    const managerIds = managersByProductId.get(submission?.product_id);
+
+    if (!managerIds) {
+      return;
+    }
+
+    managerIds.forEach((managerId) => {
+      if (!submissionMetricsByManager.has(managerId)) {
+        submissionMetricsByManager.set(managerId, {
+          activeSubmissionCount: 0,
+          completeSubmissionCount: 0,
+          submissionCount: 0
+        });
+      }
+
+      const metrics = submissionMetricsByManager.get(managerId);
+      metrics.submissionCount += 1;
+
+      if (classifySubmissionStatus(submission) === SUBMISSION_STATUS.COMPLETE) {
+        metrics.completeSubmissionCount += 1;
+      } else {
+        metrics.activeSubmissionCount += 1;
+      }
+    });
+  });
 
   return members.map((member) => {
     const managedProducts = productsByManager.get(member.login_id) ?? [];
-    const managedProductIds = new Set(managedProducts.map((product) => product.id));
-    const managedSubmissions = submissions.filter((submission) => managedProductIds.has(submission.product_id));
-
-    let activeSubmissionCount = 0;
-    let completeSubmissionCount = 0;
-
-    managedSubmissions.forEach((submission) => {
-      const status = classifySubmissionStatus(submission);
-
-      if (status === SUBMISSION_STATUS.COMPLETE) {
-        completeSubmissionCount += 1;
-      } else {
-        activeSubmissionCount += 1;
-      }
-    });
+    const submissionMetrics = submissionMetricsByManager.get(member.login_id) ?? {
+      activeSubmissionCount: 0,
+      completeSubmissionCount: 0,
+      submissionCount: 0
+    };
 
     return {
       loginId: member.login_id,
       username: member.username ?? null,
       productCount: managedProducts.length,
-      activeSubmissionCount,
-      completeSubmissionCount,
-      submissionCount: managedSubmissions.length
+      activeSubmissionCount: submissionMetrics.activeSubmissionCount,
+      completeSubmissionCount: submissionMetrics.completeSubmissionCount,
+      submissionCount: submissionMetrics.submissionCount
     };
   });
 }
@@ -535,6 +607,7 @@ export function buildDashboardMetrics({
     pendingDepositThresholdDays,
     now
   });
+  const activityIndex = buildProductActivityIndex(submissions);
 
   const dailyTrend = buildDailyTrend({
     products,
@@ -547,12 +620,14 @@ export function buildDashboardMetrics({
   const topProductsByPurchase = pickTopProductsByPurchase({
     products,
     submissions,
-    limit: topProductLimit
+    limit: topProductLimit,
+    activityIndex
   });
   const topProductsByReviewWaiting = pickTopProductsByReviewWaiting({
     products,
     submissions,
-    limit: topProductLimit
+    limit: topProductLimit,
+    activityIndex
   });
 
   const recentProducts = pickRecentProducts({ products, limit: recentLimit });
