@@ -58,6 +58,7 @@ import {
 } from "../../utils/reviewReceiveProductReviewerBulkInput";
 import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "../../utils/photoItems";
+import { getDeletionErrorMessage } from "../../utils/deletionContract";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
@@ -674,6 +675,7 @@ export default function AdminReviewReceiveDetailPage() {
   const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [updatingRowId, setUpdatingRowId] = useState(null);
   const [editingRowId, setEditingRowId] = useState(null);
   const [deleteTargetRow, setDeleteTargetRow] = useState(null);
@@ -839,7 +841,11 @@ export default function AdminReviewReceiveDetailPage() {
     };
 
     loadDetail();
-  }, [adminId, adminProfile, isLoadingCapabilities, productId]);
+  }, [adminId, adminProfile, detailReloadKey, isLoadingCapabilities, productId]);
+
+  const requestDetailReload = () => {
+    setDetailReloadKey((value) => value + 1);
+  };
 
   useEffect(() => {
     if (!editingRowId) {
@@ -1601,13 +1607,18 @@ export default function AdminReviewReceiveDetailPage() {
     setIsDeletingProductItem(true);
     setErrorMessage("");
 
-    const { error } = await deleteAdminReviewReceiveProduct(deleteTargetProductItem.id, adminId, {
+    const result = await deleteAdminReviewReceiveProduct(deleteTargetProductItem.id, adminId, {
       scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
       adminProfile
     });
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (result.error) {
+      if (result.partial) {
+        requestDetailReload();
+        setDeleteTargetProductItem(null);
+      }
+
+      setErrorMessage(getDeletionErrorMessage(result));
       setIsDeletingProductItem(false);
       return;
     }
@@ -1993,10 +2004,15 @@ export default function AdminReviewReceiveDetailPage() {
     setUpdatingRowId(row.id);
     setErrorMessage("");
 
-    const { error } = await deleteReviewReceiveSubmission(row.id);
+    const result = await deleteReviewReceiveSubmission(row.id);
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (result.error) {
+      if (result.partial) {
+        requestDetailReload();
+        setDeleteTargetRow(null);
+      }
+
+      setErrorMessage(getDeletionErrorMessage(result));
       setUpdatingRowId(null);
       return;
     }
@@ -2027,16 +2043,21 @@ export default function AdminReviewReceiveDetailPage() {
         continue;
       }
 
-      const { error } = await deleteReviewReceiveSubmission(row.id);
+      const result = await deleteReviewReceiveSubmission(row.id);
 
-      if (error) {
+      if (result.error) {
         if (deletedRowIds.size > 0) {
           setRows((prev) => prev.filter((item) => !deletedRowIds.has(item.id)));
           setSelectedRowIds((prev) => new Set(Array.from(prev).filter((rowId) => !deletedRowIds.has(rowId))));
         }
 
+        if (result.partial) {
+          requestDetailReload();
+          setSelectedDeleteTargetRows([]);
+        }
+
         setErrorMessage(
-          `${index + 1}번째 선택 행 삭제 중 오류가 발생했습니다. ${deletedRowIds.size}건만 삭제되었습니다.`
+          `${index + 1}번째 선택 행 삭제 중 오류가 발생했습니다. ${deletedRowIds.size}건만 삭제되었습니다. ${getDeletionErrorMessage(result)}`
         );
         setIsDeletingSelectedRows(false);
         return;

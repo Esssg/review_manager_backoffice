@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { ADMIN_SCOPE_POLICY } from "../constants/adminScope";
+import { deleteSubmissionsWithEvidencePhotos } from "./adminDeletion";
 import { resolveAdminManagerScope } from "./adminScope";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
@@ -166,5 +167,5 @@ export async function updateReviewReceiveSubmission(submissionId, payload) {
 }
 
 export async function deleteReviewReceiveSubmission(submissionId) {
-  return supabase.from("submissions").delete().eq("id", submissionId);
+  return deleteSubmissionsWithEvidencePhotos([submissionId]);
 }

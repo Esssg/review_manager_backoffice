@@ -88,21 +88,6 @@ export async function updateSubmissionVerified(submissionId, targetColumn, check
     .eq("id", submissionId);
 }
 
-export async function deleteEvidenceRows(submissionId) {
-  const { error } = await supabase
-    .from("evidence_photos")
-    .delete()
-    .eq("submission_id", submissionId);
-
-  if (error) {
-    throw error;
-  }
-}
-
-export async function deleteSubmission(submissionId) {
-  return supabase.from("submissions").delete().eq("id", submissionId);
-}
-
 export async function setProductStepEnabled(productId, stepNumber, checked) {
   if (checked) {
     return supabase

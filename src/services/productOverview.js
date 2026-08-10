@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
-import { chunkValues, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
+import { deleteSubmissionsWithEvidencePhotos } from "./adminDeletion";
+import { fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 import { sliceProductOverviewPage } from "../utils/productOverviewPagination";
 
 const PRODUCT_OVERVIEW_ROWS_RPC = "get_admin_product_overview_rows";
@@ -106,15 +107,6 @@ function buildProductOverviewCursor(row) {
     submissionCreatedAt: row.submission_created_at ?? null,
     submissionId: Number(row.submission_id)
   };
-}
-
-async function deleteRowsInChunks(tableName, columnName, values) {
-  for (const chunk of chunkValues(values)) {
-    const { error } = await supabase.from(tableName).delete().in(columnName, chunk);
-    if (error) return error;
-  }
-
-  return null;
 }
 
 export async function fetchAdminProductOverview(adminId, options = {}) {
@@ -337,21 +329,5 @@ export async function deleteAdminProductOverviewSubmissions(submissionIds, admin
     };
   }
 
-  const photosError = await deleteRowsInChunks("evidence_photos", "submission_id", allowedSubmissionIds);
-
-  if (photosError) {
-    return {
-      data: [],
-      error: photosError,
-      scope
-    };
-  }
-
-  const deleteError = await deleteRowsInChunks("submissions", "id", allowedSubmissionIds);
-
-  return {
-    data: allowedSubmissionIds,
-    error: deleteError,
-    scope
-  };
+  return deleteSubmissionsWithEvidencePhotos(allowedSubmissionIds, scope);
 }

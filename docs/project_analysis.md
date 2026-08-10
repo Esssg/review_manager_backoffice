@@ -129,7 +129,8 @@ src/
     adminProducts.js      관리자 상품 목록 조회, 리뷰받기 목록 RPC 조회
     dashboardMetrics.js   대시보드 데이터 조회
     productOverview.js    상품전체보기 목록 RPC 조회 및 선택 작업용 전체 조건 조회
-    productDetail.js      상품 상세 관련 조회/수정/삭제
+    productDetail.js      상품 상세 관련 조회/수정
+    adminDeletion.js      허용 테이블의 삭제 순서·부분 성공 결과 계약
     reviewReceivePublic.js
                           구매자용 리뷰받기 조회 + 사진 업로드 함수 호출 서비스
     reviewReceive.js      리뷰받기 상세 조회/수정/삭제
@@ -206,6 +207,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - `src/App.jsx`는 라우팅 엔트리 역할만 담당하며 관리자·공개 페이지는 route 단위 `React.lazy`로 분할됩니다. 공통 `Suspense` fallback은 chunk 로딩 중에만 표시되고, `AdminLayout`의 권한 경계는 정적으로 유지됩니다.
 - 페이지 단위 컴포넌트는 `src/pages/admin/*`, `src/pages/public/*` 아래로 분리되어 있습니다.
 - Supabase 접근은 `src/services/*`에서 관리합니다.
+- 허용된 관련 데이터 삭제는 `adminDeletion.js`에서 `evidence_photos → submissions → applications → product_steps → products` 순서를 명시적으로 실행합니다. 요청이 여러 chunk로 나뉘므로 중간 오류 시 실제 완료 ID와 `partial`, `completedSteps`, `failedStep`을 함께 반환하고, 화면은 완료된 상태를 반영하거나 최신 데이터를 재조회합니다. 원자적 transaction/RPC는 아직 도입하지 않았습니다.
 - 순수 파싱/정렬 로직은 `src/utils/*`와 `src/constants/*`로 이동했습니다.
 - 대시보드는 실제 `products`, `submissions`, `applications`, `evidence_photos`, `admins` 데이터를 서비스/유틸/훅으로 분리해 조회·집계합니다.
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.

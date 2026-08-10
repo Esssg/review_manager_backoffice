@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { STEP_NUMBER_BY_TAB } from "../constants/admin";
 import { deleteEvidencePhoto } from "../services/evidencePhotos";
+import { deleteSubmissionsWithEvidencePhotos } from "../services/adminDeletion";
 import {
   createSubmission,
-  deleteEvidenceRows,
-  deleteSubmission,
   fetchApplications,
   fetchEvidencePhotos,
   fetchProductMeta,
@@ -16,6 +15,7 @@ import {
 } from "../services/productDetail";
 import { sortApplicationsByConfirmedAndCreatedAt } from "../utils/applicationRows";
 import { getPhotoId, removePhotoById } from "../utils/photoItems";
+import { getDeletionErrorMessage } from "../utils/deletionContract";
 import { parseSubmissionText } from "../utils/submissionParser";
 
 export function useAdminProductDetail({ adminId, productId }) {
@@ -168,19 +168,20 @@ export function useAdminProductDetail({ adminId, productId }) {
 
   const handleDeleteSubmission = async (submissionId) => {
     setErrorMessage("");
-    try {
-      await deleteEvidenceRows(submissionId);
+    const result = await deleteSubmissionsWithEvidencePhotos([submissionId]);
 
-      const { error } = await deleteSubmission(submissionId);
-      if (error) {
-        setErrorMessage(error.message);
-        return;
+    if (result.error) {
+      if (result.partial && result.deletedEvidenceSubmissionIds.includes(Number(submissionId))) {
+        setRows((prev) =>
+          prev.map((row) => (row.id === submissionId ? { ...row, photos: [] } : row))
+        );
       }
 
-      setRows((prev) => prev.filter((row) => row.id !== submissionId));
-    } catch (error) {
-      setErrorMessage(error?.message ?? "삭제 중 오류가 발생했습니다.");
+      setErrorMessage(getDeletionErrorMessage(result));
+      return;
     }
+
+    setRows((prev) => prev.filter((row) => row.id !== submissionId));
   };
 
   const handleDeletePhoto = async (photo) => {

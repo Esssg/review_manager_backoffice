@@ -37,6 +37,7 @@ import {
   replaceProductOverviewRows
 } from "../../utils/productOverviewRows";
 import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
+import { getDeletionErrorMessage } from "../../utils/deletionContract";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "../../utils/photoItems";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
@@ -1413,14 +1414,26 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
     setIsDeletingSelectedRows(true);
 
-    const { data: deletedSubmissionIds, error } = await deleteAdminProductOverviewSubmissions(
+    const result = await deleteAdminProductOverviewSubmissions(
       targetSubmissionIds,
       adminId,
       { scopePolicy, adminProfile }
     );
+    const deletedSubmissionIds = result.data ?? [];
 
-    if (error) {
-      showToast(error.message, "error");
+    if (result.error) {
+      if (result.partial) {
+        if (deletedSubmissionIds.length > 0) {
+          setRows((prev) => prev.filter((row) => !deletedSubmissionIds.includes(row.submission_id)));
+          clearSelectedRows(deletedSubmissionIds);
+        }
+
+        setSelectedDeleteTargetRows([]);
+        resetCurrentSelection();
+        requestOverviewReload();
+      }
+
+      showToast(getDeletionErrorMessage(result), "error");
       setIsDeletingSelectedRows(false);
       return;
     }

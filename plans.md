@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04 완료 / 다음 단계(H-05) 승인 대기
+상태: H-01·H-02·H-03·H-04·H-05 완료 / 다음 단계(M-01) 승인 대기
 
 ## 1. 목표와 범위
 
@@ -129,7 +129,7 @@
 - 회귀 위험: 노출되는 제품·리뷰 데이터와 쓰기 대상이 달라질 수 있는 고위험 영역이다. 권한 의미를 추측해 바꾸지 않고 현재 운영 결과를 기준으로 fixture와 브라우저 검증을 먼저 만든다.
 - 실행 결과: `AdminAccessContext`를 인증된 관리자 레이아웃 경계에 추가해 capability/profile을 하위 화면에서 공유하고, capability 컬럼이 없는 현재 DB에서도 `login_id,company` fallback profile을 재사용하도록 했다. `personal`, `company`, `review_receive_detail`, `bulk_edit` named scope policy를 추가하고 목록·대시보드·export·사진 export·상품전체보기·일괄수정 서비스에 명시적으로 전달했다. 리뷰받기 상세와 일괄수정의 기존 회사 범위는 고정 policy로 유지했다. scope policy 단위 테스트 3개를 추가했고 npm test 14개 통과, npm run build 성공을 확인했다. Playwright로 관리자 로그인 후 대시보드, 리뷰받기 목록/상세, 상품전체보기, 일괄수정 경로를 확인했고, 상품전체보기 RPC의 개인/회사 토글 요청이 각각 `p_include_company_data=false/true`로 전달되는 것을 확인했다. 상세의 회사 관리자 scope와 `evidence_photos` 요청 200도 확인했다. 현재 원격 DB에 capability 컬럼이 없어 capability 조회의 400 fallback 오류 로그 2건이 브라우저에 남는 것은 기존 스키마 상태에 따른 것이며, fallback 자체는 정상 동작했다.
 
-### H-05. 삭제 흐름의 부분 성공·데이터 무결성 계약 정리
+### H-05. 삭제 흐름의 부분 성공·데이터 무결성 계약 정리 — 완료
 
 - 문제: 제품 삭제가 evidence_photos, submissions, applications, product_steps, products를 여러 요청으로 순차 삭제한다. 중간 실패 시 일부만 삭제된 상태가 남을 수 있다.
 - 원인: 여러 허용 테이블에 대한 transaction 경계가 서비스 호출 단위에 없고, 두 화면에 삭제 구현이 나뉘어 있다.
@@ -145,6 +145,7 @@
   - RPC/마이그레이션을 도입하는 경우 최종 스키마 재조회와 docs/guide_db.md 동기화를 같은 작업에 포함한다.
   - 권한 없음, 대상 없음, 중간 실패, 재시도 결과를 테스트한다.
 - 회귀 위험: 실패 시 사용자에게 보이는 결과와 재시도 가능성이 달라질 수 있고, DB 변경을 수반할 수 있다. 사용자 확인과 운영 DB 검증 전에는 RPC·마이그레이션을 만들지 않는다.
+- 실행 결과: 허용된 `evidence_photos → submissions → applications → product_steps → products` 순서를 `src/services/adminDeletion.js`의 공통 서비스로 통합했다. 삭제 결과는 실제 chunk 성공분만 `data`와 세부 ID 목록에 반영하고, `partial`, `completedSteps`, `failedStep`으로 중간 실패를 호출부에 전달하도록 했다. 상품 목록·상품 개요·상품 상세·리뷰받기 상세의 호출부는 부분 성공 시 완료된 행을 반영하거나 최신 상세/목록을 재조회하고, 재시도 안내가 포함된 오류를 표시한다. 삭제 단계의 테이블 이름은 허용 목록의 명시적인 참조만 사용하며 RPC·마이그레이션·스키마 변경은 수행하지 않았다. 삭제 오류 메시지 계약 단위 테스트를 추가해 총 17개 테스트 통과, `npm run build` 성공을 확인했다. Playwright로 로그인 후 삭제 다이얼로그 진입·취소를 확인했으며, 실제 삭제 확정은 공유 운영 DB 보호를 위해 수행하지 않았다. 따라서 `docs/guide_db.md` 갱신 대상인 DB 계약 변경은 없었다.
 
 ## 4. Medium 우선순위
 

@@ -34,6 +34,7 @@ import {
 import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import { sortReviewReceiveRowsByCreatedAt, splitReviewReceiveRows } from "../../utils/reviewReceiveRows";
+import { getDeletionErrorMessage } from "../../utils/deletionContract";
 
 function normalizeOptionalValue(value) {
   const trimmedValue = value.trim();
@@ -1365,7 +1366,12 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     const { error } = result;
 
     if (error) {
-      showToast(error.message, "error");
+      if (result.partial) {
+        requestProductListReload();
+        setDeleteTargetProduct(null);
+      }
+
+      showToast(getDeletionErrorMessage(result), "error");
       setActionProductId(null);
       return;
     }

@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { resolveAdminManagerScope } from "./adminScope";
-import { chunkValues, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
+import { deleteProductsWithRelatedData } from "./adminDeletion";
+import { fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE =
@@ -110,15 +111,6 @@ function buildMissingProductColumnError(error) {
   }
 
   return new Error("products.product_date 컬럼이 아직 없습니다. product_date 추가 마이그레이션을 먼저 적용해주세요.");
-}
-
-async function deleteRowsInChunks(tableName, columnName, values) {
-  for (const chunk of chunkValues(values)) {
-    const { error } = await supabase.from(tableName).delete().in(columnName, chunk);
-    if (error) return error;
-  }
-
-  return null;
 }
 
 export async function fetchAdminProducts(adminId) {
@@ -297,40 +289,12 @@ export async function deleteAdminReviewReceiveProduct(productId, adminId, option
 
   const submissionIds = (submissions ?? []).map((submission) => submission.id);
 
-  if (submissionIds.length > 0) {
-    const photosError = await deleteRowsInChunks("evidence_photos", "submission_id", submissionIds);
-
-    if (photosError) {
-      return {
-        error: photosError,
-        scope
-      };
-    }
-  }
-
-  const relatedTables = ["submissions", "applications", "product_steps"];
-
-  for (const tableName of relatedTables) {
-    const { error } = await supabase.from(tableName).delete().eq("product_id", productId);
-
-    if (error) {
-      return {
-        error,
-        scope
-      };
-    }
-  }
-
-  const { error: deleteError } = await supabase
-    .from("products")
-    .delete()
-    .eq("id", productId)
-    .in("manager_id", scope.managerIds);
-
-  return {
-    error: deleteError,
+  return deleteProductsWithRelatedData({
+    productIds: [productId],
+    submissionIds,
+    managerIds: scope.managerIds,
     scope
-  };
+  });
 }
 
 export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, options = {}) {
@@ -390,48 +354,10 @@ export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, o
 
   const submissionIds = (submissions ?? []).map((submission) => submission.id);
 
-  if (submissionIds.length > 0) {
-    const photosError = await deleteRowsInChunks("evidence_photos", "submission_id", submissionIds);
-
-    if (photosError) {
-      return {
-        error: photosError,
-        scope
-      };
-    }
-  }
-
-  const relatedTables = ["submissions", "applications", "product_steps"];
-
-  for (const tableName of relatedTables) {
-    const error = await deleteRowsInChunks(tableName, "product_id", productIds);
-
-    if (error) {
-      return {
-        error,
-        scope
-      };
-    }
-  }
-
-  let deleteError = null;
-
-  for (const productIdChunk of chunkValues(productIds)) {
-    const { error } = await supabase
-      .from("products")
-      .delete()
-      .in("id", productIdChunk)
-      .in("manager_id", scope.managerIds);
-
-    if (error) {
-      deleteError = error;
-      break;
-    }
-  }
-
-  return {
-    error: deleteError,
-    scope,
-    deletedProductIds: productIds
-  };
+  return deleteProductsWithRelatedData({
+    productIds,
+    submissionIds,
+    managerIds: scope.managerIds,
+    scope
+  });
 }
