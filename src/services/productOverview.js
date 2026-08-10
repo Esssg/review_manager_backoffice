@@ -152,7 +152,7 @@ export async function fetchAdminProductOverview(adminId, options = {}) {
   const cursor = options.cursor ?? null;
   const result = await supabase.rpc(PRODUCT_OVERVIEW_ROWS_RPC, {
     p_admin_id: adminId,
-    p_include_company_data: Boolean(options.includeCompanyData),
+    p_include_company_data: scope.includeCompanyData,
     p_status: options.status ?? "all",
     p_filters: options.filters ?? {},
     p_page_size: pageSize,

@@ -16,6 +16,8 @@ export default function useAdminExportData(options = {}) {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
+    adminProfile,
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
@@ -70,7 +72,8 @@ export default function useAdminExportData(options = {}) {
       }
 
       const result = await fetchAdminExportData(adminId, {
-        includeCompanyData,
+        scopePolicy,
+        adminProfile,
         forcePersonalScope,
         includeApplications,
         dateFilter,
@@ -122,10 +125,12 @@ export default function useAdminExportData(options = {}) {
     forcePersonalScope,
     includeApplications,
     includeCompanyData,
+    adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
     productId,
-    refreshKey
+    refreshKey,
+    scopePolicy
   ]);
 
   const refreshExportData = useCallback(() => {

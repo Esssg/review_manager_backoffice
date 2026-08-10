@@ -7,7 +7,18 @@ import {
 import { fetchAllRows } from "./paginatedQuery";
 
 const ADMIN_MENU_PERMISSIONS_SELECT = "id,admin_id,menu_number,menu_label";
-const ADMIN_CAPABILITIES_SELECT = "login_id,include_company_data_include,can_verify_deposit";
+const ADMIN_CAPABILITIES_SELECT = "login_id,company,include_company_data_include,can_verify_deposit";
+
+function normalizeAdminProfile(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    loginId: row.login_id ?? null,
+    company: row.company ?? null
+  };
+}
 
 export async function validateAdminCredentials(loginId, password) {
   return supabase
@@ -37,6 +48,7 @@ export async function fetchAdminCapabilities(adminId) {
   if (!adminId) {
     return {
       capabilities: getFallbackAdminCapabilities(adminId),
+      adminProfile: null,
       error: new Error("로그인 정보가 없습니다. 다시 로그인해주세요.")
     };
   }
@@ -48,8 +60,15 @@ export async function fetchAdminCapabilities(adminId) {
     .maybeSingle();
 
   if (error && isAdminCapabilitiesColumnError(error)) {
+    const profileResult = await supabase
+      .from("admins")
+      .select("login_id,company")
+      .eq("login_id", adminId)
+      .maybeSingle();
+
     return {
       capabilities: getFallbackAdminCapabilities(adminId),
+      adminProfile: normalizeAdminProfile(profileResult.data),
       error: null
     };
   }
@@ -57,12 +76,14 @@ export async function fetchAdminCapabilities(adminId) {
   if (error) {
     return {
       capabilities: getFallbackAdminCapabilities(adminId),
+      adminProfile: null,
       error
     };
   }
 
   return {
     capabilities: normalizeAdminCapabilities(adminId, data),
+    adminProfile: normalizeAdminProfile(data),
     error: null
   };
 }

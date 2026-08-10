@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ADMIN_MENU_NUMBER,
@@ -7,6 +7,8 @@ import {
   getAdminMenuItemByNumber
 } from "../../constants/admin";
 import { fetchAdminMenuPermissions, logoutAdmin } from "../../services/adminAuth";
+import { useAdminCapabilities } from "../../hooks/useAdminCapabilities";
+import { AdminAccessContext } from "../../contexts/AdminAccessContext";
 import AppAlertDialog from "../common/AppAlertDialog";
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "review_manager_admin_sidebar_collapsed";
@@ -40,6 +42,12 @@ export default function AdminLayout() {
 }
 
 function AuthenticatedAdminLayout({ adminId }) {
+  const {
+    capabilities,
+    adminProfile,
+    isLoadingCapabilities,
+    capabilitiesErrorMessage
+  } = useAdminCapabilities(adminId);
   const location = useLocation();
   const navigate = useNavigate();
   const [allowedMenus, setAllowedMenus] = useState([]);
@@ -139,12 +147,24 @@ function AuthenticatedAdminLayout({ adminId }) {
     setLogoutAlert({ isOpen: false, isLoading: false });
   };
 
+  const adminAccessValue = useMemo(
+    () => ({
+      adminId,
+      capabilities,
+      adminProfile,
+      isLoadingCapabilities,
+      capabilitiesErrorMessage
+    }),
+    [adminId, adminProfile, capabilities, capabilitiesErrorMessage, isLoadingCapabilities]
+  );
+
   if (!isLoadingMenus && !menuErrorMessage && !hasCurrentPathPermission && fallbackMenuPath) {
     return <Navigate to={fallbackMenuPath} replace />;
   }
 
   return (
-    <main className={`admin-page${isSidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+    <AdminAccessContext.Provider value={adminAccessValue}>
+      <main className={`admin-page${isSidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <aside
         className={`admin-sidebar${isSidebarCollapsed ? " is-collapsed" : ""}`}
         aria-label="관리자 메뉴"
@@ -281,6 +301,7 @@ function AuthenticatedAdminLayout({ adminId }) {
         onCancel={handleCancelLogout}
         variant="danger"
       />
-    </main>
+      </main>
+    </AdminAccessContext.Provider>
   );
 }

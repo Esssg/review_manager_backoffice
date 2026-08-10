@@ -52,7 +52,13 @@ src/
   App.jsx                 최상위 라우팅 엔트리
   constants/
     admin.js              관리자 저장 키, 탭/스텝 상수
+    adminScope.js         personal/company 및 feature 고정 scope policy
+  contexts/
+    AdminAccessContext.jsx
+                          인증된 관리자 capability/profile 공유 경계
   hooks/
+    useAdminCapabilities.js
+                          capability/profile 조회 및 회사 범위 토글 상태 관리
     useAdminDashboard.js     대시보드 조회/집계/범위 토글 상태 관리
     useAdminExportData.js    내보내기 데이터 조회/범위 토글/행 변환
     useExportColumnSelection.js
@@ -118,7 +124,8 @@ src/
                           구매자용 리뷰받기 상세 페이지
   lib/supabase.ts         Supabase 클라이언트 생성
   services/
-    adminAuth.js          관리자 로그인 조회
+    adminAuth.js          관리자 로그인·메뉴 권한·capability/profile 조회
+    adminScope.js         관리자 profile 기반 manager scope 해석
     adminProducts.js      관리자 상품 목록 조회, 리뷰받기 목록 RPC 조회
     dashboardMetrics.js   대시보드 데이터 조회
     productOverview.js    상품전체보기 목록 RPC 조회 및 선택 작업용 전체 조건 조회
@@ -261,7 +268,7 @@ Node 스크립트용 대체 키도 지원합니다.
 - 공개 페이지나 구매자 페이지에는 `/admin/*` 네임스페이스를 사용하지 않습니다.
 
 현재는 관리자 백오피스와, 이름 입력 후 본인 배정 submission을 조회하고 구매완료 섹션에서 사진을 실제 업로드할 수 있는 구매자용 공개 리뷰받기 페이지가 함께 구현되어 있습니다. 공개 리뷰받기 페이지는 URL로 들어온 상품과 같은 `bundle_id`의 품목을 함께 보여주고, 같은 묶음의 submissions를 한 번에 검색합니다.
-관리자 대시보드는 `admins.include_company_data_include` 기준으로 페이지 진입/이동 때마다 회사 데이터 포함 여부를 초기화하고, 현재 페이지 안에서는 체크박스로 본인 데이터와 같은 회사 소속 관리자 데이터를 전환할 수 있습니다.
+관리자 레이아웃은 인증된 관리자 진입 시 capability와 `login_id/company` profile을 한 번 해석하고 `AdminAccessContext`로 하위 화면에 공유합니다. `useAdminIncludeCompanyData`는 페이지 진입/이동 때 `admins.include_company_data_include` 기준으로 회사 데이터 포함 여부를 초기화하고, 현재 페이지 안에서는 체크박스로 본인 데이터와 같은 회사 소속 관리자 데이터를 전환합니다. 각 서비스는 `adminScope`의 named policy와 공유 profile을 받아 manager scope를 계산하므로, 같은 관리자 profile을 feature마다 다시 조회하지 않습니다.
 `admins.include_company_data_include`는 회사 데이터 포함 적용 기준값에 사용하고, `admins.can_verify_deposit`는 상품전체보기/리뷰받기 상세의 입금완료 처리 권한에 사용합니다. 새 컬럼이 아직 없는 DB에서는 프런트 fallback 정책으로 `hyejin2054`만 회사 데이터 포함 기준값을 켜고, `aram2525`, `kimhanbi77`만 입금완료 처리를 막습니다.
 관리자 백오피스에는 `admin_menu_permissions.menu_number = 4` 권한으로 제어되는 `상품전체보기` 메뉴가 추가되어, 왼쪽 메뉴의 하위 선택 메뉴에서 `전체보기`와 `상태별보기` 경로로 나뉘어 `products` + `submissions` 기반 행을 서버 필터 기준으로 조회하고 일괄 처리할 수 있습니다.
 `admin_menu_permissions.menu_number = 3`인 `리뷰받기` 메뉴도 하위 선택 메뉴를 가지며, `전체보기`, `진행중보기`, `완료보기` 경로에서 DB RPC가 `bundle_id` 단위 submission 집계 상태를 기준으로 필터링한 목록을 보여줍니다.
@@ -289,13 +296,14 @@ Node 스크립트용 대체 키도 지원합니다.
 
 ### 대시보드
 
-1. `localStorage`에서 관리자 ID를 읽고, 페이지 진입/이동 때마다 `admins.include_company_data_include` 기준으로 회사 데이터 포함 상태를 초기화합니다.
-2. `resolveAdminManagerScope`로 본인 또는 회사 단위 `managerIds` 범위를 결정합니다.
-3. `src/services/dashboardMetrics.js`가 `products`, `submissions`, `applications`, `evidence_photos`를 필요한 컬럼만 조회합니다.
+1. 인증된 `AdminLayout`이 `localStorage`의 관리자 ID를 기준으로 capability와 profile을 조회하고 하위 화면에 공유합니다.
+2. 페이지 진입/이동 때 `admins.include_company_data_include` 기준으로 회사 데이터 포함 상태를 초기화하고, `personal` 또는 `company` scope policy를 선택합니다.
+3. `resolveAdminManagerScope`가 공유 profile을 사용해 본인 또는 회사 단위 `managerIds` 범위를 결정합니다. 리뷰받기 상세와 일괄수정은 현재 동작을 보존하는 고정 회사 scope policy를 사용합니다.
+4. `src/services/dashboardMetrics.js`가 `products`, `submissions`, `applications`, `evidence_photos`를 필요한 컬럼만 조회합니다.
    각 테이블은 1,000행 제한에 잘리지 않도록 고유 키 커서로 끝까지 조회하고, 연관 ID 조건은 100개 단위로 분할합니다.
-4. 회사 데이터 포함이 켜져 있고 회사명이 있으면 같은 회사의 `admins` 목록도 조회합니다.
-5. `src/utils/dashboardMetrics.js`가 오늘/누적 KPI, 알림 조건, 기간별 추이, 상위 상품, 최근 활동, 회사 멤버 비교 데이터를 순수 함수로 집계합니다.
-6. `src/hooks/useAdminDashboard.js`가 로딩/오류/새로고침/회사 데이터 포함 토글 상태를 관리하고, `src/components/admin/dashboard/*` 컴포넌트가 각 섹션을 렌더링합니다.
+5. 회사 데이터 포함이 켜져 있고 회사명이 있으면 같은 회사의 `admins` 목록도 조회합니다.
+6. `src/utils/dashboardMetrics.js`가 오늘/누적 KPI, 알림 조건, 기간별 추이, 상위 상품, 최근 활동, 회사 멤버 비교 데이터를 순수 함수로 집계합니다.
+7. `src/hooks/useAdminDashboard.js`가 로딩/오류/새로고침/회사 데이터 포함 토글 상태를 관리하고, `src/components/admin/dashboard/*` 컴포넌트가 각 섹션을 렌더링합니다.
 
 ### 상품 상세
 

@@ -43,7 +43,9 @@ export default function AdminBulkEditPage() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const {
     capabilities,
+    adminProfile,
     includeCompanyData,
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
@@ -98,7 +100,8 @@ export default function AdminBulkEditPage() {
       }
 
       const result = await fetchAdminProductOverview(adminId, {
-        includeCompanyData,
+        scopePolicy,
+        adminProfile,
         status: "all",
         filters: debouncedFilters,
         pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
@@ -120,7 +123,7 @@ export default function AdminBulkEditPage() {
     return () => {
       isMounted = false;
     };
-  }, [adminId, capabilitiesErrorMessage, debouncedFilters, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities, reloadKey]);
+  }, [adminId, adminProfile, capabilitiesErrorMessage, debouncedFilters, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities, reloadKey, scopePolicy]);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -133,7 +136,8 @@ export default function AdminBulkEditPage() {
       setIsLoadingMore(true);
 
       const result = await fetchAdminProductOverview(adminId, {
-        includeCompanyData,
+        scopePolicy,
+        adminProfile,
         status: "all",
         filters: debouncedFilters,
         cursor: pageInfo.nextCursor,
@@ -153,7 +157,7 @@ export default function AdminBulkEditPage() {
 
     observer.observe(target);
     return () => observer.disconnect();
-  }, [adminId, debouncedFilters, includeCompanyData, isLoading, isLoadingMore, pageInfo.hasMore, pageInfo.nextCursor]);
+  }, [adminId, adminProfile, debouncedFilters, includeCompanyData, isLoading, isLoadingMore, pageInfo.hasMore, pageInfo.nextCursor, scopePolicy]);
 
   const resetFilters = () => setFilters(createEmptyProductOverviewFilters());
   const handleFilterChange = (key, value) => setFilters((previousFilters) => ({ ...previousFilters, [key]: value }));
@@ -176,7 +180,8 @@ export default function AdminBulkEditPage() {
   const handleExport = async () => {
     setIsExporting(true);
     const result = await fetchAllAdminProductOverviewRows(adminId, {
-      includeCompanyData,
+      scopePolicy,
+      adminProfile,
       status: "all",
       filters: debouncedFilters,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
@@ -220,7 +225,9 @@ export default function AdminBulkEditPage() {
       let changes = [];
 
       if (errors.length === 0) {
-        const currentResult = await fetchBulkEditCurrentRows(adminId, parsed.rows.map((row) => row.submissionId));
+        const currentResult = await fetchBulkEditCurrentRows(adminId, parsed.rows.map((row) => row.submissionId), {
+          adminProfile
+        });
 
         if (currentResult.error) {
           errors.push({ rowNumber: null, column: "", message: currentResult.error.message ?? "현재 DB 데이터를 확인하지 못했습니다." });

@@ -8,6 +8,8 @@ export default function useAdminDashboard() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
+    adminProfile,
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
@@ -70,7 +72,7 @@ export default function useAdminDashboard() {
         return;
       }
 
-      const result = await fetchAdminDashboardData(adminId, { includeCompanyData });
+      const result = await fetchAdminDashboardData(adminId, { scopePolicy, adminProfile });
 
       if (!isMounted) {
         return;
@@ -122,9 +124,11 @@ export default function useAdminDashboard() {
     adminId,
     capabilitiesErrorMessage,
     includeCompanyData,
+    adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
-    refreshKey
+    refreshKey,
+    scopePolicy
   ]);
 
   const refreshDashboard = useCallback(() => {

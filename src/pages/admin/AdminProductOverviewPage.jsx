@@ -517,7 +517,9 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const {
     capabilities,
+    adminProfile,
     includeCompanyData,
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
@@ -778,7 +780,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         rowsResult: { data: rowData, error: rowError },
         pageInfo: nextPageInfo
       } = await fetchAdminProductOverview(adminId, {
-        includeCompanyData,
+        scopePolicy,
+        adminProfile,
         status: currentQueryStatus,
         filters: debouncedFilters,
         pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
@@ -822,9 +825,11 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     currentQueryStatus,
     debouncedFilters,
     includeCompanyData,
+    adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
-    listReloadKey
+    listReloadKey,
+    scopePolicy
   ]);
 
   const requestOverviewReload = () => {
@@ -854,7 +859,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       rowsResult: { data: nextRows, error: rowError },
       pageInfo: nextPageInfo
     } = await fetchAdminProductOverview(adminId, {
-      includeCompanyData,
+      scopePolicy,
+      adminProfile,
       status: currentQueryStatus,
       filters: debouncedFilters,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE,
@@ -1035,7 +1041,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     }
 
     const result = await fetchAllAdminProductOverviewRows(adminId, {
-      includeCompanyData,
+      scopePolicy,
+      adminProfile,
       status: currentQueryStatus,
       filters: debouncedFilters,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
@@ -1362,7 +1369,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     const scopeLabel = getProductOverviewExportScopeLabel(exportModal.scopeKey);
     setIsExportingProductOverview(true);
     const result = await fetchAllAdminProductOverviewRows(adminId, {
-      includeCompanyData,
+      scopePolicy,
+      adminProfile,
       status: exportModal.scopeKey,
       filters: debouncedFilters,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
@@ -1403,7 +1411,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     const { data: deletedSubmissionIds, error } = await deleteAdminProductOverviewSubmissions(
       targetSubmissionIds,
       adminId,
-      { includeCompanyData }
+      { scopePolicy, adminProfile }
     );
 
     if (error) {

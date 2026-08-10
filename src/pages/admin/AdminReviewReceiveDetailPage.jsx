@@ -17,6 +17,7 @@ import {
   getProductDepositGbPartLabels,
   getProductDepositGbPartValues
 } from "../../constants/admin";
+import { ADMIN_SCOPE_POLICY } from "../../constants/adminScope";
 import {
   createAdminReviewReceiveProduct,
   deleteAdminReviewReceiveProduct,
@@ -657,7 +658,12 @@ function ReviewReceiveRowFilterHeader({
 export default function AdminReviewReceiveDetailPage() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const { productId } = useParams();
-  const { capabilities, capabilitiesErrorMessage, isLoadingCapabilities } = useAdminCapabilities(adminId);
+  const {
+    capabilities,
+    adminProfile,
+    capabilitiesErrorMessage,
+    isLoadingCapabilities
+  } = useAdminCapabilities(adminId);
   const canVerifyDeposit =
     !isLoadingCapabilities && !capabilitiesErrorMessage && capabilities.canVerifyDeposit;
   const [product, setProduct] = useState(null);
@@ -761,6 +767,10 @@ export default function AdminReviewReceiveDetailPage() {
   const { toast, showToast } = useAppToast();
 
   useEffect(() => {
+    if (isLoadingCapabilities) {
+      return;
+    }
+
     const loadDetail = async () => {
       setIsLoading(true);
       setErrorMessage("");
@@ -769,7 +779,7 @@ export default function AdminReviewReceiveDetailPage() {
         productResult: { data: productData, error: productError },
         productsResult: { data: productItemsData, error: productItemsError },
         submissionsResult: { data: submissionData, error: submissionsError }
-      } = await fetchReviewReceiveDetail(productId, adminId);
+      } = await fetchReviewReceiveDetail(productId, adminId, { adminProfile });
 
       if (productError || productItemsError || submissionsError) {
         setErrorMessage(
@@ -829,7 +839,7 @@ export default function AdminReviewReceiveDetailPage() {
     };
 
     loadDetail();
-  }, [adminId, productId]);
+  }, [adminId, adminProfile, isLoadingCapabilities, productId]);
 
   useEffect(() => {
     if (!editingRowId) {
@@ -1433,7 +1443,8 @@ export default function AdminReviewReceiveDetailPage() {
       const reusableShellProduct = reusableShellProducts.shift() ?? null;
       const productResult = reusableShellProduct
         ? await updateAdminReviewReceiveProduct(reusableShellProduct.id, adminId, groupPayloads[groupIndex].productPayload, {
-            includeCompanyData: true
+            scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
+            adminProfile
           })
         : await createAdminReviewReceiveProduct(groupPayloads[groupIndex].productPayload);
 
@@ -1529,7 +1540,10 @@ export default function AdminReviewReceiveDetailPage() {
 
     const isFillingEmptyShell = Boolean(editingProductItem && isProductItemEmptyShell(editingProductItem));
     const result = editingProductItem
-      ? await updateAdminReviewReceiveProduct(editingProductItem.id, adminId, payload, { includeCompanyData: true })
+      ? await updateAdminReviewReceiveProduct(editingProductItem.id, adminId, payload, {
+          scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
+          adminProfile
+        })
       : await createAdminReviewReceiveProduct(payload);
 
     if (result.error || !result.data) {
@@ -1584,7 +1598,8 @@ export default function AdminReviewReceiveDetailPage() {
     setErrorMessage("");
 
     const { error } = await deleteAdminReviewReceiveProduct(deleteTargetProductItem.id, adminId, {
-      includeCompanyData: true
+      scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
+      adminProfile
     });
 
     if (error) {

@@ -648,6 +648,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const navigate = useNavigate();
   const {
     includeCompanyData,
+    adminProfile,
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
@@ -723,7 +725,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       }
 
       const { data, error, scope, pageInfo } = await fetchAdminReviewReceiveProducts(adminId, {
-        includeCompanyData,
+        scopePolicy,
+        adminProfile,
         viewMode,
         filters: debouncedProductFilters,
         pageSize: REVIEW_RECEIVE_SUMMARY_PAGE_SIZE
@@ -758,9 +761,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     capabilitiesErrorMessage,
     debouncedProductFilters,
     includeCompanyData,
+    adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
     listReloadKey,
+    scopePolicy,
     viewMode
   ]);
 
@@ -814,7 +819,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
           setIsLoadingMore(true);
 
           const { data, error, pageInfo } = await fetchAdminReviewReceiveProducts(adminId, {
-            includeCompanyData,
+            scopePolicy,
+            adminProfile,
             viewMode,
             filters: debouncedProductFilters,
             pageSize: REVIEW_RECEIVE_SUMMARY_PAGE_SIZE,
@@ -867,11 +873,13 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     debouncedProductFilters,
     errorMessage,
     includeCompanyData,
+    adminProfile,
     isIncludeCompanyDataReady,
     isLoading,
     isLoadingCapabilities,
     listPageInfo.hasMore,
     listPageInfo.nextCursor,
+    scopePolicy,
     viewMode
   ]);
 
@@ -965,7 +973,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     const {
       productResult: { error: productError },
       submissionsResult: { data: submissions, error: submissionsError }
-    } = await fetchReviewReceiveDetail(product.id, adminId);
+    } = await fetchReviewReceiveDetail(product.id, adminId, { adminProfile });
 
     setActionProductId(null);
 
@@ -1304,7 +1312,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setProductModalErrorMessage("");
 
     const { data, error } = editingProduct
-      ? await updateAdminReviewReceiveProduct(editingProduct.id, adminId, payload, { includeCompanyData })
+      ? await updateAdminReviewReceiveProduct(editingProduct.id, adminId, payload, { scopePolicy, adminProfile })
       : await createAdminReviewReceiveProduct(payload);
 
     if (error) {
@@ -1352,8 +1360,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     const isBundleDelete = isMultiProductBundleRow(product);
     const result = isBundleDelete
-      ? await deleteAdminReviewReceiveProductBundle(getBundleKey(product), adminId, { includeCompanyData })
-      : await deleteAdminReviewReceiveProduct(product.id, adminId, { includeCompanyData });
+      ? await deleteAdminReviewReceiveProductBundle(getBundleKey(product), adminId, { scopePolicy, adminProfile })
+      : await deleteAdminReviewReceiveProduct(product.id, adminId, { scopePolicy, adminProfile });
     const { error } = result;
 
     if (error) {

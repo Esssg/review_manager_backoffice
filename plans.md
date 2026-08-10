@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02 완료 / 다음 단계 승인 대기
+상태: H-01·H-02·H-04 완료 / 다음 단계(H-03) 승인 대기
 
 ## 1. 목표와 범위
 
@@ -106,7 +106,7 @@
   - 분할 뒤에도 권한 없는 route가 페이지 모듈을 불필요하게 실행하지 않는지 확인한다.
 - 회귀 위험: 첫 진입 loading UI, CSS 적용 시점, export/upload 오류 처리, deep link refresh가 달라질 수 있다. build의 chunk 결과와 주요 route의 실제 화면·권한·엑셀 동작을 함께 검증한다.
 
-### H-04. 관리자 scope/capability 로딩 정책 일원화
+### H-04. 관리자 scope/capability 로딩 정책 일원화 — 완료
 
 - 문제: 페이지·서비스·훅마다 관리자 scope와 메뉴 capability를 따로 조회한다. 특히 review receive detail은 includeCompanyData: true를 고정하고, 목록 화면은 사용자 토글을 사용해 직접 URL별 데이터 범위가 일관되게 보장되는지 추적하기 어렵다.
 - 원인: resolveAdminManagerScope, useAdminCapabilities, useAdminIncludeCompanyData가 공통 정책 계층 없이 각 feature에서 조합된다.
@@ -126,6 +126,7 @@
   - detail의 회사 데이터 포함 여부처럼 현재 동작이 고정된 부분은 먼저 의도를 계약으로 기록한 뒤 named policy와 테스트로 고정한다.
   - 메뉴 노출, 직접 URL, personal/company scope, write action을 같은 매트릭스로 검증한다.
 - 회귀 위험: 노출되는 제품·리뷰 데이터와 쓰기 대상이 달라질 수 있는 고위험 영역이다. 권한 의미를 추측해 바꾸지 않고 현재 운영 결과를 기준으로 fixture와 브라우저 검증을 먼저 만든다.
+- 실행 결과: `AdminAccessContext`를 인증된 관리자 레이아웃 경계에 추가해 capability/profile을 하위 화면에서 공유하고, capability 컬럼이 없는 현재 DB에서도 `login_id,company` fallback profile을 재사용하도록 했다. `personal`, `company`, `review_receive_detail`, `bulk_edit` named scope policy를 추가하고 목록·대시보드·export·사진 export·상품전체보기·일괄수정 서비스에 명시적으로 전달했다. 리뷰받기 상세와 일괄수정의 기존 회사 범위는 고정 policy로 유지했다. scope policy 단위 테스트 3개를 추가했고 npm test 14개 통과, npm run build 성공을 확인했다. Playwright로 관리자 로그인 후 대시보드, 리뷰받기 목록/상세, 상품전체보기, 일괄수정 경로를 확인했고, 상품전체보기 RPC의 개인/회사 토글 요청이 각각 `p_include_company_data=false/true`로 전달되는 것을 확인했다. 상세의 회사 관리자 scope와 `evidence_photos` 요청 200도 확인했다. 현재 원격 DB에 capability 컬럼이 없어 capability 조회의 400 fallback 오류 로그 2건이 브라우저에 남는 것은 기존 스키마 상태에 따른 것이며, fallback 자체는 정상 동작했다.
 
 ### H-05. 삭제 흐름의 부분 성공·데이터 무결성 계약 정리
 

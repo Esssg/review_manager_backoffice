@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { ADMIN_SCOPE_POLICY } from "../constants/adminScope";
 import { resolveAdminManagerScope } from "./adminScope";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
@@ -69,7 +70,9 @@ export async function fetchAdminExportData(adminId, options = {}) {
   } = options;
 
   const scope = await resolveAdminManagerScope(adminId, {
-    includeCompanyData: forcePersonalScope ? false : includeCompanyData
+    ...options,
+    scopePolicy: forcePersonalScope ? ADMIN_SCOPE_POLICY.PERSONAL : options.scopePolicy,
+    adminProfile: options.adminProfile
   });
 
   if (scope.error || scope.managerIds.length === 0) {

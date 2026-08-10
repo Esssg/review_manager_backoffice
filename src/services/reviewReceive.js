@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { ADMIN_SCOPE_POLICY } from "../constants/adminScope";
 import { resolveAdminManagerScope } from "./adminScope";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "./paginatedQuery";
 
@@ -46,8 +47,11 @@ async function fetchBundleProducts(product, managerIds) {
   );
 }
 
-export async function fetchReviewReceiveDetail(productId, adminId) {
-  const scope = await resolveAdminManagerScope(adminId, { includeCompanyData: true });
+export async function fetchReviewReceiveDetail(productId, adminId, options = {}) {
+  const scope = await resolveAdminManagerScope(adminId, {
+    ...options,
+    scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL
+  });
 
   if (scope.error) {
     return {

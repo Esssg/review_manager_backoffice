@@ -23,9 +23,7 @@ function buildEmptyResult(scope) {
 }
 
 export async function fetchAdminDashboardData(adminId, options = {}) {
-  const { includeCompanyData = false } = options;
-
-  const scope = await resolveAdminManagerScope(adminId, { includeCompanyData });
+  const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {
     return buildEmptyResult(scope);
@@ -112,7 +110,7 @@ export async function fetchAdminDashboardData(adminId, options = {}) {
   let companyMembers = [];
   let companyMembersError = null;
 
-  if (includeCompanyData && scope.companyName) {
+  if (scope.includeCompanyData && scope.companyName) {
     const companyMembersResult = await fetchAllRows(
       () =>
         supabase

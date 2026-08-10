@@ -159,7 +159,7 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
   const cursor = options.cursor ?? null;
   const result = await supabase.rpc(REVIEW_RECEIVE_SUMMARY_RPC, {
     p_admin_id: adminId,
-    p_include_company_data: Boolean(options.includeCompanyData),
+    p_include_company_data: scope.includeCompanyData,
     p_view_mode: options.viewMode ?? "all",
     p_filters: options.filters ?? {},
     p_page_size: pageSize,

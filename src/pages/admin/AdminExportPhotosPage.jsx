@@ -154,6 +154,8 @@ export default function AdminExportPhotosPage() {
   const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
+    adminProfile,
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
@@ -213,7 +215,7 @@ export default function AdminExportPhotosPage() {
         return;
       }
 
-      const result = await fetchAdminPhotoExportData(adminId, { includeCompanyData });
+      const result = await fetchAdminPhotoExportData(adminId, { scopePolicy, adminProfile });
 
       if (!isMounted) {
         return;
@@ -253,9 +255,11 @@ export default function AdminExportPhotosPage() {
     adminId,
     capabilitiesErrorMessage,
     includeCompanyData,
+    adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
-    refreshKey
+    refreshKey,
+    scopePolicy
   ]);
 
   const productRows = useMemo(

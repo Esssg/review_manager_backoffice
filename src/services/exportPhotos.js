@@ -48,8 +48,7 @@ async function fetchEvidencePhotos(submissionIds) {
 }
 
 export async function fetchAdminPhotoExportData(adminId, options = {}) {
-  const { includeCompanyData = false } = options;
-  const scope = await resolveAdminManagerScope(adminId, { includeCompanyData });
+  const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error || scope.managerIds.length === 0) {
     return buildEmptyPhotoExportResult(scope);
