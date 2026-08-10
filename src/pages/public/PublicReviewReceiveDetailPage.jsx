@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerModal";
 import PublicPhotoUploadModal from "../../components/public/PublicPhotoUploadModal";
+import PublicReviewReceiveLookupPanel from "../../components/public/PublicReviewReceiveLookupPanel";
+import PublicReviewReceiveProductSummary from "../../components/public/PublicReviewReceiveProductSummary";
 import PublicReviewReceiveSection from "../../components/public/PublicReviewReceiveSection";
 import {
   fetchPublicReviewReceiveEvidencePhotos,
@@ -632,6 +634,16 @@ export default function PublicReviewReceiveDetailPage() {
     setLookupVersion((prev) => prev + 1);
   };
 
+  const handleLookupTypeChange = (nextLookupType) => {
+    setLookupType(nextLookupType);
+    setFormErrorMessage("");
+  };
+
+  const handleLookupNameChange = (nextLookupName) => {
+    setLookupName(nextLookupName);
+    setFormErrorMessage("");
+  };
+
   const openPhotoViewer = (photos, activeIndex) => {
     setPhotoViewer({
       isOpen: true,
@@ -882,78 +894,28 @@ export default function PublicReviewReceiveDetailPage() {
           </div>
         </header>
 
-        {!isProductLoading && !productErrorMessage && product && (
-          <section className="dashboard-panel public-review-products-panel" aria-label="리뷰받기 상품 정보">
-            <div className="detail-summary-grid">
-              <div className="detail-summary-item">
-                <span className="detail-summary-label">구매일자</span>
-                <strong>{formatPublicDisplayDate(product.product_date)}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-label">업체명</span>
-                <strong>{product.company_name || "-"}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-label">제품비 입금자명</span>
-                <strong>{publicDepositorNames.productFeeDepositorName}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-label">리뷰비 입금자명</span>
-                <strong>{publicDepositorNames.reviewFeeDepositorName}</strong>
-              </div>
-            </div>
-          </section>
-        )}
+        <PublicReviewReceiveProductSummary
+          isProductLoading={isProductLoading}
+          productErrorMessage={productErrorMessage}
+          product={product}
+          publicDepositorNames={publicDepositorNames}
+          formatDisplayDate={formatPublicDisplayDate}
+        />
 
-        <section className="dashboard-panel public-review-lookup-panel" aria-label="이름 조회">
-          {isProductLoading && <p className="login-message">상품 정보를 확인하는 중...</p>}
-          {!isProductLoading && productErrorMessage && <p className="login-error">{productErrorMessage}</p>}
-          {!isProductLoading && !productErrorMessage && (
-            <>
-              <form className="public-review-lookup-form" onSubmit={handleSubmit}>
-                <label className="public-review-field">
-                  <span>양식 제출 시 입력한 예금주로 구매 내역 검색</span>
-                  <div className="public-review-input-combo">
-                    <select
-                      className="public-review-lookup-type-select"
-                      value={lookupType}
-                      onChange={(event) => {
-                        setLookupType(event.target.value);
-                        setFormErrorMessage("");
-                      }}
-                      aria-label="조회 기준"
-                    >
-                      {PUBLIC_LOOKUP_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      className="public-review-input public-review-input-combo-field"
-                      value={lookupName}
-                      onChange={(event) => {
-                        setLookupName(event.target.value);
-                        setFormErrorMessage("");
-                      }}
-                      placeholder={getLookupTypePlaceholder(lookupType)}
-                      autoComplete={lookupType === "assign_name" ? "name" : "off"}
-                    />
-                  </div>
-                </label>
-                <button type="submit" className="admin-primary-button">
-                  조회하기
-                </button>
-              </form>
-
-              {formErrorMessage && <p className="login-error">{formErrorMessage}</p>}
-              {activeName && !formErrorMessage && (
-                <p className="public-review-active-name">{`현재 조회 ${activeLookupTypeLabel}: ${activeName}`}</p>
-              )}
-            </>
-          )}
-        </section>
+        <PublicReviewReceiveLookupPanel
+          isProductLoading={isProductLoading}
+          productErrorMessage={productErrorMessage}
+          lookupType={lookupType}
+          lookupOptions={PUBLIC_LOOKUP_OPTIONS}
+          lookupName={lookupName}
+          onLookupTypeChange={handleLookupTypeChange}
+          onLookupNameChange={handleLookupNameChange}
+          getLookupTypePlaceholder={getLookupTypePlaceholder}
+          onSubmit={handleSubmit}
+          formErrorMessage={formErrorMessage}
+          activeName={activeName}
+          activeLookupTypeLabel={activeLookupTypeLabel}
+        />
 
         {!isProductLoading && !productErrorMessage && product && activeName && (
           <div className="public-review-section-stack">

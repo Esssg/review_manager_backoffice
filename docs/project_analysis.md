@@ -99,12 +99,17 @@ src/
     admin/review-receive/
       ReviewReceiveProductFilterHeader.jsx
       ReviewReceiveProductList.jsx
-                          리뷰받기 목록의 필터 헤더·상태 탭·번들 행·무한 스크롤 UI
+      AdminReviewReceiveAllProductsPanel.jsx
+      AdminReviewReceiveProductItems.jsx
+                          리뷰받기 목록과 관리자 상세의 필터·상태 탭·번들·품목 UI
     common/
       ProductLinkCopy.jsx 상품 링크 3줄 말줄임 표시 및 전체 복사 버튼
     public/
       PublicReviewReceiveSection.jsx
                           구매자용 리뷰받기 읽기 전용 섹션 컴포넌트
+      PublicReviewReceiveProductSummary.jsx
+      PublicReviewReceiveLookupPanel.jsx
+                          구매자용 상품 요약·조회 폼 UI
       PublicPhotoUploadModal.jsx
                           구매자용 사진 업로드/저장 모달
   pages/
@@ -224,6 +229,8 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - `상품전체보기` 화면은 페이지의 조회·선택·쓰기 상태, 조회 서비스, 행 변환 유틸, `admin/product-overview` feature component로 분리돼 있습니다.
 - `일괄수정하기` 화면은 페이지 파일을 경유하지 않고 상품전체보기의 읽기 전용 필터 테이블 feature component를 직접 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
 - `리뷰받기` 목록 화면은 페이지가 조회·필터·페이지네이션·쓰기 상태를 보유하고, `admin/review-receive` feature component가 상태 탭·필터 헤더·상품/번들 행·무한 스크롤 표시를 담당합니다. 목록 전용 날짜·번들·완료현황 파생 로직은 `reviewReceiveProductList` 순수 유틸에 둡니다.
+- 관리자 리뷰받기 상세는 페이지가 조회·제출·사진·모달 상태를 보유하고, `AdminReviewReceiveAllProductsPanel`과 `AdminReviewReceiveProductItems`가 전체 품목·품목별 요약과 접기/펼치기 UI를 담당합니다. 상세 제출 행 테이블과 내부 section renderer는 기존 callback 계약을 유지한 채 페이지에 남아 있습니다.
+- 구매자용 리뷰받기 상세는 `PublicReviewReceiveProductSummary`, `PublicReviewReceiveLookupPanel`, `PublicReviewReceiveSection`, 사진 모달 컴포넌트로 상단 요약·조회·결과·사진 UI를 분리하고, 페이지는 공개 조회와 사진 초안/저장 상태를 조합합니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
 - 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
