@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05 완료 / 다음 단계(M-01) 승인 대기
+상태: H-01·H-02·H-03·H-04·H-05 완료·M-01 1차 완료 / 다음 단계(M-01 2차) 승인 대기
 
 ## 1. 목표와 범위
 
@@ -149,16 +149,16 @@
 
 ## 4. Medium 우선순위
 
-### M-01. 대형 페이지를 화면·도메인 훅·feature component로 단계적 분리
+### M-01. 대형 페이지를 화면·도메인 훅·feature component로 단계적 분리 — 1차 완료
 
 - 문제: 한 페이지가 데이터 로딩, 필터, 선택, bulk write, 모달, 테이블, 사진 처리, 화면 렌더를 동시에 책임져 변경 영향과 재렌더 원인을 추적하기 어렵다.
 - 원인: 기능이 성장하는 동안 페이지 파일에 상태와 handler가 누적됐고, page 파일이 다른 page의 재사용 component까지 보유한다.
 - 관련 파일:
-  - src/pages/admin/AdminReviewReceiveDetailPage.jsx:657-4643
-  - src/pages/admin/AdminProductOverviewPage.jsx:239-2854
-  - src/pages/admin/AdminReviewReceivePage.jsx:646-2390
+  - src/pages/admin/AdminReviewReceiveDetailPage.jsx:657-4683
+  - src/pages/admin/AdminProductOverviewPage.jsx:1-2540
+  - src/pages/admin/AdminReviewReceivePage.jsx:646-2404
   - src/pages/public/PublicReviewReceiveDetailPage.jsx:382-1001
-  - src/pages/admin/AdminBulkEditPage.jsx:4
+  - src/pages/admin/AdminBulkEditPage.jsx:1-417
 - 적용할 Skill/rule: review-manager-development의 reuse-first·page/service/utils 책임 분리·상태 분리, review-manager-ui, react-best-practices의 rerender-split-combined-hooks, rerender-no-inline-components, rerender-memo.
 - 예상 변경 내용:
   - 먼저 순수 변환/validation과 데이터 접근을 page 밖으로 이동한다.
@@ -167,6 +167,7 @@
   - public detail은 데이터 hook, photo action, item/section UI를 분리한다.
   - 기존 props, CSS class, session persistence, partial-save semantics를 유지하며 한 feature씩 이동한다.
 - 회귀 위험: modal open state, 선택 상태, 확장 row, 입력 debounce, DOM selector, CSS cascade가 깨질 수 있다. 매 단계 build/test와 성공·실패·빈 상태·중복 제출을 검증한다.
+- 실행 결과(1차): `ProductOverviewTable`과 `ProductOverviewSection`을 `src/components/admin/product-overview/`로 이동하고, `AdminProductOverviewPage`는 조회·선택·쓰기 상태와 화면 조합만 담당하도록 줄였다. `AdminBulkEditPage`는 페이지 파일을 경유하지 않고 같은 테이블 feature component를 직접 재사용한다. 기존 테이블 markup, CSS class, 필터 dropdown, 사진 뷰어 callback, 행 선택·무한 스크롤 props는 그대로 유지했다. `npm test` 17개 통과, `npm run build` 성공을 확인했다. Playwright로 상품전체보기의 사진 필터·행 선택과 일괄수정의 `T1-P02` 필터 결과 20건을 확인했다. 브라우저의 capability 컬럼 조회 400 fallback 로그는 기존 원격 스키마 상태와 동일하게 남았으며 이번 분리에서 새 오류는 발생하지 않았다. 리뷰받기 목록·상세와 공개 상세의 추가 분리는 다음 M-01 2차에서 진행한다.
 
 ### M-02. Product Overview의 렌더 hot path와 파생 상태 최적화
 

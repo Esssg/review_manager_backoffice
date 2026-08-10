@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import AppToast from "../../components/common/AppToast";
-import { ProductOverviewTable } from "./AdminProductOverviewPage";
+import { ProductOverviewTable } from "../../components/admin/product-overview/ProductOverviewTable";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import { useAppToast } from "../../hooks/useAppToast";

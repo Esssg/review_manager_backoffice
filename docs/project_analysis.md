@@ -92,6 +92,10 @@ src/
       ExportDownloadButton.jsx
       ExportWorkbookDownloadButton.jsx
                           내보내기 공용 레이아웃·컬럼 선택·미리보기·필터·다운로드 UI
+    admin/product-overview/
+      ProductOverviewTable.jsx
+      ProductOverviewSection.jsx
+                          상품전체보기·일괄수정 공용 테이블 및 섹션 UI
     common/
       ProductLinkCopy.jsx 상품 링크 3줄 말줄임 표시 및 전체 복사 버튼
     public/
@@ -211,8 +215,8 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 순수 파싱/정렬 로직은 `src/utils/*`와 `src/constants/*`로 이동했습니다.
 - 대시보드는 실제 `products`, `submissions`, `applications`, `evidence_photos`, `admins` 데이터를 서비스/유틸/훅으로 분리해 조회·집계합니다.
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
-- `상품전체보기` 화면은 별도 페이지 + 조회 서비스 + 행 변환 유틸로 분리돼 있습니다.
-- `일괄수정하기` 화면은 상품전체보기의 읽기 전용 필터 테이블을 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
+- `상품전체보기` 화면은 페이지의 조회·선택·쓰기 상태, 조회 서비스, 행 변환 유틸, `admin/product-overview` feature component로 분리돼 있습니다.
+- `일괄수정하기` 화면은 페이지 파일을 경유하지 않고 상품전체보기의 읽기 전용 필터 테이블 feature component를 직접 재사용하며, 수정용 Excel의 `submission_id`를 기준으로 현재 DB 값과 차이를 보여준 뒤 적용 RPC를 호출합니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
 - 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
