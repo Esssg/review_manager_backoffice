@@ -439,6 +439,11 @@
   vertical-align: middle;
 }
 
+.product-overview-table tbody > .review-receive-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
 .product-overview-table th:last-child,
 .product-overview-table td:last-child {
   border-right: none;
@@ -501,6 +506,11 @@
   width: 100%;
   min-width: 0;
   table-layout: fixed;
+}
+
+.review-receive-product-list-table tbody > .clickable-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 58px;
 }
 
 .review-receive-product-list-table th,

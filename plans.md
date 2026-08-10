@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02 완료 / 다음 단계(M-03) 승인 대기
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03 완료 / 다음 단계(M-04) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -216,6 +216,7 @@
   - row component memoization과 안전한 content-visibility/contain-intrinsic-size 적용을 우선 검토한다.
   - 효과가 부족할 때만 virtualization을 검토하며, infinite sentinel·확장 row·표의 키보드/스크린리더 semantics를 보존한다.
 - 회귀 위험: row 높이, expanded content, IntersectionObserver, sticky header, print와 접근성이 달라질 수 있다. 브라우저에서 실제 스크롤·확장·키보드 이동을 검증한다.
+- 실행 결과: 상품전체보기 행을 `ProductOverviewTableRow` memo 경계로 분리하고 선택 여부를 primitive prop으로 전달했으며, 페이지의 선택·사진 열기 콜백을 안정화했다. 리뷰받기 목록의 폭 맞춤 셀도 memo 처리했고, 상품전체보기·리뷰받기 목록에는 `content-visibility: auto`와 intrinsic row size를 적용했다. 300행 상품전체보기, 리뷰받기 목록, 리뷰받기 상세를 Playwright로 확인해 행 렌더링·무한 스크롤 표시·선택·상세 진입을 검증했으며 `npm run build`를 통과했다. 기존 capability 조회 400 오류는 계속 재현되었고 이번 변경으로 새 콘솔 오류는 발생하지 않았다. 상세 편집/확장 행에는 content-visibility를 적용하지 않아 기존 상호작용을 보수적으로 보존했다.
 
 ### M-04. Review Receive 필터 header 중복과 이중 입력 이벤트 정리
 

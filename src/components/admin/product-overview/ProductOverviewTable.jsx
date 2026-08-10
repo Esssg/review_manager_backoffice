@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ProductLinkCopy from "../../common/ProductLinkCopy";
 import { PRODUCT_OVERVIEW_PAGE_SIZE } from "../../../services/productOverview";
 import { PRODUCT_OVERVIEW_COLUMNS } from "../../../utils/productOverviewRows";
@@ -39,6 +39,8 @@ const PRODUCT_OVERVIEW_FILTER_DROPDOWN_OPTIONS = {
     { value: "false", label: "아니오" }
   ]
 };
+const EMPTY_SELECTION_IDS = new Set();
+const NOOP = () => {};
 
 function formatCellValue(value, type) {
   if (value == null || value === "") {
@@ -103,15 +105,56 @@ function renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly = false) 
   return formatCellValue(row[column.key], column.type);
 }
 
+const ProductOverviewTableRow = memo(function ProductOverviewTableRow({
+  row,
+  isSelected,
+  showSelection,
+  isReadOnly,
+  onOpenPhotoViewer,
+  onToggleRowSelection
+}) {
+  return (
+    <tr
+      className={`review-receive-row${showSelection ? " clickable-row" : ""}${isSelected ? " is-selected" : ""}`}
+      onClick={showSelection ? () => onToggleRowSelection(row.submission_id) : undefined}
+    >
+      {showSelection && (
+        <td className="product-overview-selection-column">
+          <label
+            className="pretty-checkbox product-overview-selection-control"
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`${row.assign_name || row.order_number || row.submission_id} 행 선택`}
+          >
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleRowSelection(row.submission_id)}
+            />
+            <span className="checkmark" aria-hidden="true" />
+          </label>
+        </td>
+      )}
+      {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
+        <td
+          key={`${row.submission_id}-${column.key}`}
+          className={column.type === "photo" ? "product-overview-photo-cell" : ""}
+        >
+          {renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly)}
+        </td>
+      ))}
+    </tr>
+  );
+});
+
 export function ProductOverviewTable({
   rows,
   filters,
   onFilterChange,
   emptyMessage,
   onOpenPhotoViewer,
-  selectedSubmissionIds = new Set(),
-  onToggleRowSelection = () => {},
-  onToggleAllSelection = () => {},
+  selectedSubmissionIds = EMPTY_SELECTION_IDS,
+  onToggleRowSelection = NOOP,
+  onToggleAllSelection = NOOP,
   showSelection = true,
   isReadOnly = false,
   isAllMatchingSelected = false,
@@ -247,36 +290,15 @@ export function ProductOverviewTable({
             </tr>
           ) : (
             rows.map((row) => (
-              <tr
+              <ProductOverviewTableRow
                 key={`${row.product_id}-${row.submission_id}`}
-                className={`review-receive-row${showSelection ? " clickable-row" : ""}${selectedSubmissionIds.has(row.submission_id) ? " is-selected" : ""}`}
-                onClick={showSelection ? () => onToggleRowSelection(row.submission_id) : undefined}
-              >
-                {showSelection && (
-                  <td className="product-overview-selection-column">
-                    <label
-                      className="pretty-checkbox product-overview-selection-control"
-                      onClick={(event) => event.stopPropagation()}
-                      aria-label={`${row.assign_name || row.order_number || row.submission_id} 행 선택`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedSubmissionIds.has(row.submission_id)}
-                        onChange={() => onToggleRowSelection(row.submission_id)}
-                      />
-                      <span className="checkmark" aria-hidden="true" />
-                    </label>
-                  </td>
-                )}
-                {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
-                  <td
-                    key={`${row.submission_id}-${column.key}`}
-                    className={column.type === "photo" ? "product-overview-photo-cell" : ""}
-                  >
-                    {renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly)}
-                  </td>
-                ))}
-              </tr>
+                row={row}
+                isSelected={selectedSubmissionIds.has(row.submission_id)}
+                showSelection={showSelection}
+                isReadOnly={isReadOnly}
+                onOpenPhotoViewer={onOpenPhotoViewer}
+                onToggleRowSelection={onToggleRowSelection}
+              />
             ))
           )}
         </tbody>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PhotoViewerModal from "../../components/admin/product-detail/PhotoViewerModal";
 import StepTabList from "../../components/admin/product-detail/StepTabList";
 import ProductOverviewSection from "../../components/admin/product-overview/ProductOverviewSection";
@@ -687,7 +687,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     });
   };
 
-  const handleToggleRowSelection = (submissionId) => {
+  const handleToggleRowSelection = useCallback((submissionId) => {
     setSelection((prev) => {
       const baseSelection =
         prev.queryKey === currentSelectionQueryKey
@@ -718,9 +718,9 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
           : [...baseSelection.ids, submissionId]
       };
     });
-  };
+  }, [currentSelectionQueryKey]);
 
-  const handleToggleAllSelection = (targetRows, nextChecked) => {
+  const handleToggleAllSelection = useCallback((targetRows, nextChecked) => {
     if (!nextChecked) {
       setSelection({
         mode: "ids",
@@ -739,7 +739,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       queryKey: currentSelectionQueryKey,
       totalCount: pageInfo.totalCount || targetRows.length
     });
-  };
+  }, [currentSelectionQueryKey, pageInfo.totalCount]);
 
   const resolveSelectedRowsForScope = async (scopeKey) => {
     if (!isAllMatchingSelection || scopeKey !== currentQueryStatus) {
@@ -773,13 +773,13 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     return (result.data ?? []).filter((row) => !excludedIds.has(row.submission_id));
   };
 
-  const openPhotoViewer = (photos, activeIndex) => {
+  const openPhotoViewer = useCallback((photos, activeIndex) => {
     setPhotoViewer({
       isOpen: true,
       photos,
       activeIndex
     });
-  };
+  }, []);
 
   const closePhotoViewer = () => {
     setPhotoViewer({ isOpen: false, photos: [], activeIndex: 0 });

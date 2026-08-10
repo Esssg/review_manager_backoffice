@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useRef, useState } from "react";
 import StepTabList from "../product-detail/StepTabList";
 import ProductLinkCopy from "../../common/ProductLinkCopy";
 import {
@@ -42,7 +42,7 @@ function renderClampedCell(value) {
 const REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE = 13;
 const REVIEW_RECEIVE_NOWRAP_MIN_FONT_SIZE = 10;
 
-function ReviewReceiveNoWrapFitCell({ value }) {
+const ReviewReceiveNoWrapFitCell = memo(function ReviewReceiveNoWrapFitCell({ value }) {
   const cellRef = useRef(null);
   const text = value ?? "-";
   const [fontSize, setFontSize] = useState(REVIEW_RECEIVE_NOWRAP_BASE_FONT_SIZE);
@@ -88,7 +88,7 @@ function ReviewReceiveNoWrapFitCell({ value }) {
       {text}
     </span>
   );
-}
+});
 
 function renderNoWrapFitCell(value) {
   return <ReviewReceiveNoWrapFitCell value={value} />;
