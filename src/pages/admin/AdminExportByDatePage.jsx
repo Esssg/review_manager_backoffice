@@ -1,10 +1,8 @@
 import { useState } from "react";
-import ExportColumnSelector from "../../components/admin/export/ExportColumnSelector";
+import ExportDataSection from "../../components/admin/export/ExportDataSection";
 import ExportDateFilterPanel from "../../components/admin/export/ExportDateFilterPanel";
-import ExportDownloadButton from "../../components/admin/export/ExportDownloadButton";
 import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
-import ExportPreviewTable from "../../components/admin/export/ExportPreviewTable";
-import ExportToolbar from "../../components/admin/export/ExportToolbar";
+import { EXPORT_PAGE_CONFIGS } from "../../constants/exportPages";
 import useAdminExportData from "../../hooks/useAdminExportData";
 import useExportColumnSelection from "../../hooks/useExportColumnSelection";
 import {
@@ -17,14 +15,14 @@ import {
   getExportDateFieldLabel,
   isSameDateFilter
 } from "../../utils/exportDateFilters";
-import { buildExportFilename } from "../../utils/exportFile";
 
 export default function AdminExportByDatePage() {
+  const config = EXPORT_PAGE_CONFIGS.byDate;
   const [draftFilter, setDraftFilter] = useState(() => createDefaultDateFilterState());
   const [appliedFilter, setAppliedFilter] = useState(() => createDefaultDateFilterState());
   const [activeQuickRange, setActiveQuickRange] = useState(DEFAULT_EXPORT_QUICK_RANGE);
   const columnSelection = useExportColumnSelection({
-    storageKey: "review_manager_export_columns_by_date"
+    storageKey: config.columnStorageKey
   });
 
   const validationMessage =
@@ -50,7 +48,6 @@ export default function AdminExportByDatePage() {
     selectedColumnKeys: columnSelection.selectedColumnKeys
   });
 
-  const isColumnEmpty = columnSelection.selectedColumnKeys.length === 0;
   const hasNoSubmissions = !isLoading && !errorMessage && submissionCount === 0;
   const appliedRangeSummary = getAppliedDateRangeSummary(appliedFilter);
   const downloadLabel = `일자별_${getExportDateFieldLabel(appliedFilter.field)}`;
@@ -102,9 +99,10 @@ export default function AdminExportByDatePage() {
 
   return (
     <ExportPageLayout
-      title="일자별 내보내기"
-      description="제출 등록일 또는 입금일 범위로 데이터를 추려서 Excel로 내보냅니다."
+      title={config.title}
+      description={config.description}
       scopeMessage={scopeMessage}
+      showCompanyToggle={config.showCompanyToggle}
       includeCompanyData={includeCompanyData}
       isCompanyScopeAvailable={scopeInfo.isCompanyScopeAvailable}
       onIncludeCompanyDataChange={handleIncludeCompanyDataChange}
@@ -135,36 +133,18 @@ export default function AdminExportByDatePage() {
         errorMessage={validationMessage}
       />
 
-      {errorMessage && <p className="login-error">{errorMessage}</p>}
-      <ExportToolbar
+      <ExportDataSection
+        config={config}
+        exportRows={exportRows}
         productCount={productCount}
         submissionCount={submissionCount}
-        exportRowCount={exportRows.length}
         isLoading={isLoading}
-      >
-        <ExportDownloadButton
-          filename={buildExportFilename(downloadLabel)}
-          sheetName="일자별"
-          rows={exportRows}
-          disabled={isColumnEmpty}
-          isLoading={isLoading}
-          emptyMessage="선택한 기간에 맞는 내보내기 데이터가 없습니다."
-        />
-      </ExportToolbar>
-      {hasNoSubmissions && (
-        <p className="export-empty-hint">
-          선택한 기간({appliedRangeSummary})에 맞는 제출 데이터가 없습니다. 일자 기준을 바꾸거나 기간을 넓혀 다시 조회해 보세요.
-        </p>
-      )}
-      <ExportColumnSelector
-        activePreset={columnSelection.activePreset}
-        selectedColumnKeys={columnSelection.selectedColumnKeys}
-        onPresetSelect={columnSelection.applyPreset}
-        onColumnToggle={columnSelection.toggleColumn}
-        onSelectAll={columnSelection.selectAllColumns}
-        onClear={columnSelection.clearColumns}
+        errorMessage={errorMessage}
+        hasNoRows={hasNoSubmissions}
+        filenameLabel={downloadLabel}
+        emptyHint={`선택한 기간(${appliedRangeSummary})에 맞는 제출 데이터가 없습니다. 일자 기준을 바꾸거나 기간을 넓혀 다시 조회해 보세요.`}
+        columnSelection={columnSelection}
       />
-      <ExportPreviewTable rows={exportRows} />
     </ExportPageLayout>
   );
 }

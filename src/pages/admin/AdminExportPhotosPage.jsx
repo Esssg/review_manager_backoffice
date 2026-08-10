@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
+import { EXPORT_PAGE_CONFIGS } from "../../constants/exportPages";
 import { ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "../../constants/admin";
 import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import { fetchAdminPhotoExportData } from "../../services/exportPhotos";
@@ -154,6 +155,7 @@ function buildPhotoZipPath(target, extension, index) {
 }
 
 export default function AdminExportPhotosPage() {
+  const config = EXPORT_PAGE_CONFIGS.photos;
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
@@ -388,9 +390,10 @@ export default function AdminExportPhotosPage() {
 
   return (
     <ExportPageLayout
-      title="사진내려받기"
-      description="상품을 필터링한 뒤 해당 상품의 모든 submission 증빙 사진을 ZIP으로 내려받습니다."
+      title={config.title}
+      description={config.description}
       scopeMessage={scopeMessage}
+      showCompanyToggle={config.showCompanyToggle}
       includeCompanyData={includeCompanyData}
       isCompanyScopeAvailable={scopeInfo.isCompanyScopeAvailable}
       onIncludeCompanyDataChange={handleIncludeCompanyDataChange}

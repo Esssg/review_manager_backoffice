@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10 완료 / 다음 단계(L-01) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08·M-09·M-10·L-01 완료 / 다음 단계(L-02) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -354,6 +354,7 @@
   - 실제 동일 계약인 export 옵션만 config로 모으고, 각 페이지의 unique filter/permission은 명시적으로 남긴다.
   - column preset, filename, date/status semantics를 데이터로 표현하고 공통 화면에 전달한다.
 - 회귀 위험: export column 순서, filename, 날짜 inclusive/exclusive, 권한별 데이터 범위가 바뀔 수 있다. 모든 export variant별 결과 비교가 필요하다.
+- 실행 결과: 8개 export 화면의 제목·설명·파일명·sheet명·컬럼 storage key·scope 토글 계약을 `src/constants/exportPages.js`의 선언적 config로 이동했다. 동일한 오류·요약·다운로드·빈 상태·컬럼 선택·미리보기 흐름은 `ExportDataSection`으로 공통화하고, 일자·상태·신청자 필터와 상품별/사진내려받기 고유 동작은 각 페이지에 남겼다. 기존 column preset, 날짜 범위, 상태 필터, 개인 scope, 다운로드 라벨은 유지했다. `npm test` 30개와 `npm run build`를 통과했고, Playwright로 7개 export route의 heading·toolbar·컬럼 선택·preview/download 상태와 전체상품 컬럼 선택 해제/복원을 확인했다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었으며, DB 쓰기와 실제 Excel 다운로드는 실행하지 않았다.
 
 ### L-02. CSS 소유권과 공통 token의 점진적 정리
 

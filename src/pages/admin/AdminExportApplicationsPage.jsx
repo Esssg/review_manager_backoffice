@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
-import ExportColumnSelector from "../../components/admin/export/ExportColumnSelector";
-import ExportDownloadButton from "../../components/admin/export/ExportDownloadButton";
+import ExportDataSection from "../../components/admin/export/ExportDataSection";
 import ExportFilterPanel from "../../components/admin/export/ExportFilterPanel";
 import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
-import ExportPreviewTable from "../../components/admin/export/ExportPreviewTable";
-import ExportToolbar from "../../components/admin/export/ExportToolbar";
+import { EXPORT_PAGE_CONFIGS } from "../../constants/exportPages";
 import useAdminExportData from "../../hooks/useAdminExportData";
 import useExportColumnSelection from "../../hooks/useExportColumnSelection";
 import {
@@ -13,7 +11,6 @@ import {
   buildApplicationExportRows,
   getApplicationPresetColumnKeys
 } from "../../utils/exportColumns";
-import { buildExportFilename } from "../../utils/exportFile";
 
 const APPLICATION_STATUS_OPTIONS = [
   { key: "all", label: "전체" },
@@ -28,9 +25,10 @@ const APPLICATION_EXPORT_COLUMN_PRESETS = [
 ];
 
 export default function AdminExportApplicationsPage() {
+  const config = EXPORT_PAGE_CONFIGS.applications;
   const [statusFilter, setStatusFilter] = useState("all");
   const columnSelection = useExportColumnSelection({
-    storageKey: "review_manager_export_columns_applications",
+    storageKey: config.columnStorageKey,
     defaultPreset: APPLICATION_EXPORT_COLUMN_PRESET.BASIC,
     getPresetColumnKeysFn: getApplicationPresetColumnKeys,
     presetKeys: APPLICATION_EXPORT_COLUMN_PRESETS.map((preset) => preset.key)
@@ -73,16 +71,16 @@ export default function AdminExportApplicationsPage() {
     [columnSelection.selectedColumnKeys, exportData.products, filteredApplications]
   );
 
-  const isColumnEmpty = columnSelection.selectedColumnKeys.length === 0;
   const hasNoRows = !isLoading && !errorMessage && filteredApplications.length === 0;
   const confirmedCount = filteredApplications.filter((application) => application.is_confirmed).length;
   const pendingCount = filteredApplications.length - confirmedCount;
 
   return (
     <ExportPageLayout
-      title="신청자 명단 내보내기"
-      description="applications 테이블 중심으로 확정/미확정 신청자 명단을 Excel로 내보냅니다."
+      title={config.title}
+      description={config.description}
       scopeMessage={scopeMessage}
+      showCompanyToggle={config.showCompanyToggle}
       includeCompanyData={includeCompanyData}
       isCompanyScopeAvailable={scopeInfo.isCompanyScopeAvailable}
       onIncludeCompanyDataChange={handleIncludeCompanyDataChange}
@@ -109,8 +107,10 @@ export default function AdminExportApplicationsPage() {
         </div>
       </ExportFilterPanel>
 
-      {errorMessage && <p className="login-error">{errorMessage}</p>}
-      <ExportToolbar
+      <ExportDataSection
+        config={config}
+        exportRows={exportRows}
+        productCount={productCount}
         summaryItems={[
           `상품 ${productCount}건`,
           `신청 ${filteredApplications.length}건`,
@@ -118,28 +118,13 @@ export default function AdminExportApplicationsPage() {
           `미확정 ${pendingCount}건`
         ]}
         isLoading={isLoading}
-      >
-        <ExportDownloadButton
-          filename={buildExportFilename("신청자명단")}
-          sheetName="신청자 명단"
-          rows={exportRows}
-          disabled={isColumnEmpty}
-          isLoading={isLoading}
-          emptyMessage="선택한 조건에 맞는 신청자 데이터가 없습니다."
-        />
-      </ExportToolbar>
-      {hasNoRows && <p className="export-empty-hint">선택한 신청 상태에 맞는 명단이 없습니다.</p>}
-      <ExportColumnSelector
+        errorMessage={errorMessage}
+        hasNoRows={hasNoRows}
+        emptyHint="선택한 신청 상태에 맞는 명단이 없습니다."
         columns={APPLICATION_EXPORT_COLUMNS}
         presets={APPLICATION_EXPORT_COLUMN_PRESETS}
-        activePreset={columnSelection.activePreset}
-        selectedColumnKeys={columnSelection.selectedColumnKeys}
-        onPresetSelect={columnSelection.applyPreset}
-        onColumnToggle={columnSelection.toggleColumn}
-        onSelectAll={columnSelection.selectAllColumns}
-        onClear={columnSelection.clearColumns}
+        columnSelection={columnSelection}
       />
-      <ExportPreviewTable rows={exportRows} />
     </ExportPageLayout>
   );
 }

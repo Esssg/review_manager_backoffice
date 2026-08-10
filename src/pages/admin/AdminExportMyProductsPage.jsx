@@ -1,15 +1,13 @@
-import ExportColumnSelector from "../../components/admin/export/ExportColumnSelector";
-import ExportDownloadButton from "../../components/admin/export/ExportDownloadButton";
+import ExportDataSection from "../../components/admin/export/ExportDataSection";
 import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
-import ExportPreviewTable from "../../components/admin/export/ExportPreviewTable";
-import ExportToolbar from "../../components/admin/export/ExportToolbar";
+import { EXPORT_PAGE_CONFIGS } from "../../constants/exportPages";
 import useAdminExportData from "../../hooks/useAdminExportData";
 import useExportColumnSelection from "../../hooks/useExportColumnSelection";
-import { buildExportFilename } from "../../utils/exportFile";
 
 export default function AdminExportMyProductsPage() {
+  const config = EXPORT_PAGE_CONFIGS.myProducts;
   const columnSelection = useExportColumnSelection({
-    storageKey: "review_manager_export_columns_my_products"
+    storageKey: config.columnStorageKey
   });
   const {
     exportRows,
@@ -21,50 +19,30 @@ export default function AdminExportMyProductsPage() {
     isLoading,
     errorMessage
   } = useAdminExportData({
-    forcePersonalScope: true,
+    forcePersonalScope: config.forcePersonalScope,
     selectedColumnKeys: columnSelection.selectedColumnKeys
   });
-  const isColumnEmpty = columnSelection.selectedColumnKeys.length === 0;
   const hasNoSubmissions = !isLoading && !errorMessage && submissionCount === 0;
 
   return (
     <ExportPageLayout
-      title="내상품 내보내기"
-      description="로그인한 관리자 본인(manager_id)으로 등록된 상품과 관련 제출만 Excel로 내보냅니다. 회사 데이터 토글은 이 화면에 표시되지 않습니다."
+      title={config.title}
+      description={config.description}
       scopeMessage={scopeMessage}
-      showCompanyToggle={false}
+      showCompanyToggle={config.showCompanyToggle}
       lastUpdatedAt={lastUpdatedAt}
       onRefresh={refreshExportData}
     >
-      {errorMessage && <p className="login-error">{errorMessage}</p>}
-      <ExportToolbar
+      <ExportDataSection
+        config={config}
+        exportRows={exportRows}
         productCount={productCount}
         submissionCount={submissionCount}
-        exportRowCount={exportRows.length}
         isLoading={isLoading}
-      >
-        <ExportDownloadButton
-          filename={buildExportFilename("내상품")}
-          sheetName="내상품"
-          rows={exportRows}
-          disabled={isColumnEmpty}
-          isLoading={isLoading}
-        />
-      </ExportToolbar>
-      {hasNoSubmissions && (
-        <p className="export-empty-hint">
-          내보낼 제출 데이터가 없습니다. 본인 계정으로 등록된 상품이 없거나 아직 제출이 없을 수 있습니다.
-        </p>
-      )}
-      <ExportColumnSelector
-        activePreset={columnSelection.activePreset}
-        selectedColumnKeys={columnSelection.selectedColumnKeys}
-        onPresetSelect={columnSelection.applyPreset}
-        onColumnToggle={columnSelection.toggleColumn}
-        onSelectAll={columnSelection.selectAllColumns}
-        onClear={columnSelection.clearColumns}
+        errorMessage={errorMessage}
+        hasNoRows={hasNoSubmissions}
+        columnSelection={columnSelection}
       />
-      <ExportPreviewTable rows={exportRows} />
     </ExportPageLayout>
   );
 }

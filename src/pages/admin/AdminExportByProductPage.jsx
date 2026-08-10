@@ -5,6 +5,7 @@ import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
 import ExportPreviewTable from "../../components/admin/export/ExportPreviewTable";
 import ExportToolbar from "../../components/admin/export/ExportToolbar";
 import ExportWorkbookDownloadButton from "../../components/admin/export/ExportWorkbookDownloadButton";
+import { EXPORT_PAGE_CONFIGS } from "../../constants/exportPages";
 import useAdminExportData from "../../hooks/useAdminExportData";
 import useExportColumnSelection from "../../hooks/useExportColumnSelection";
 import {
@@ -42,12 +43,13 @@ function formatProductOptionLabel(product) {
 }
 
 export default function AdminExportByProductPage() {
+  const config = EXPORT_PAGE_CONFIGS.byProduct;
   const [selectedProductId, setSelectedProductId] = useState("");
   const submissionColumnSelection = useExportColumnSelection({
-    storageKey: "review_manager_export_columns_by_product_submissions"
+    storageKey: config.submissionColumnStorageKey
   });
   const applicationColumnSelection = useExportColumnSelection({
-    storageKey: "review_manager_export_columns_by_product_applications",
+    storageKey: config.applicationColumnStorageKey,
     defaultPreset: APPLICATION_EXPORT_COLUMN_PRESET.BASIC,
     getPresetColumnKeysFn: getApplicationPresetColumnKeys,
     presetKeys: APPLICATION_EXPORT_COLUMN_PRESETS.map((preset) => preset.key)
@@ -151,9 +153,10 @@ export default function AdminExportByProductPage() {
 
   return (
     <ExportPageLayout
-      title="상품별 내보내기"
-      description="특정 상품 1건을 골라 그 상품의 제출 데이터와 신청자 명단을 같은 워크북으로 내보냅니다."
+      title={config.title}
+      description={config.description}
       scopeMessage={scopeMessage}
+      showCompanyToggle={config.showCompanyToggle}
       includeCompanyData={includeCompanyData}
       isCompanyScopeAvailable={scopeInfo.isCompanyScopeAvailable}
       onIncludeCompanyDataChange={handleIncludeCompanyDataChange}
@@ -198,7 +201,7 @@ export default function AdminExportByProductPage() {
         isLoading={isLoading}
       >
         <ExportWorkbookDownloadButton
-          filename={buildExportFilename("상품별")}
+          filename={buildExportFilename(config.filenameLabel)}
           sheets={workbookSheets}
           disabled={disableWorkbookDownload}
           isLoading={isLoading}

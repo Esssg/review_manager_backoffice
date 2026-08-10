@@ -1,14 +1,11 @@
 import { useMemo, useState } from "react";
-import ExportColumnSelector from "../../components/admin/export/ExportColumnSelector";
-import ExportDownloadButton from "../../components/admin/export/ExportDownloadButton";
+import ExportDataSection from "../../components/admin/export/ExportDataSection";
 import ExportFilterPanel from "../../components/admin/export/ExportFilterPanel";
 import ExportPageLayout from "../../components/admin/export/ExportPageLayout";
-import ExportPreviewTable from "../../components/admin/export/ExportPreviewTable";
-import ExportToolbar from "../../components/admin/export/ExportToolbar";
+import { EXPORT_PAGE_CONFIGS } from "../../constants/exportPages";
 import useAdminExportData from "../../hooks/useAdminExportData";
 import useExportColumnSelection from "../../hooks/useExportColumnSelection";
 import { buildSubmissionExportRows, getSubmissionStageLabel } from "../../utils/exportColumns";
-import { buildExportFilename } from "../../utils/exportFile";
 
 const STATUS_OPTIONS = [
   { key: "purchase", label: "구매완료" },
@@ -19,9 +16,10 @@ const STATUS_OPTIONS = [
 const DEFAULT_SELECTED_STATUS_KEYS = STATUS_OPTIONS.map((option) => option.key);
 
 export default function AdminExportByStatusPage() {
+  const config = EXPORT_PAGE_CONFIGS.byStatus;
   const [selectedStatusKeys, setSelectedStatusKeys] = useState(DEFAULT_SELECTED_STATUS_KEYS);
   const columnSelection = useExportColumnSelection({
-    storageKey: "review_manager_export_columns_by_status"
+    storageKey: config.columnStorageKey
   });
 
   const {
@@ -71,7 +69,6 @@ export default function AdminExportByStatusPage() {
   const selectedStatusLabels = STATUS_OPTIONS.filter((option) => selectedStatusKeys.includes(option.key)).map(
     (option) => option.label
   );
-  const isColumnEmpty = columnSelection.selectedColumnKeys.length === 0;
   const hasNoStatuses = selectedStatusKeys.length === 0;
   const hasNoRows = !isLoading && !errorMessage && filteredSubmissions.length === 0;
 
@@ -83,9 +80,10 @@ export default function AdminExportByStatusPage() {
 
   return (
     <ExportPageLayout
-      title="상태별 내보내기"
-      description="구매완료, 리뷰완료, 전체완료 단계 기준으로 제출을 묶어 Excel로 내보냅니다."
+      title={config.title}
+      description={config.description}
       scopeMessage={scopeMessage}
+      showCompanyToggle={config.showCompanyToggle}
       includeCompanyData={includeCompanyData}
       isCompanyScopeAvailable={scopeInfo.isCompanyScopeAvailable}
       onIncludeCompanyDataChange={handleIncludeCompanyDataChange}
@@ -116,8 +114,10 @@ export default function AdminExportByStatusPage() {
         </div>
       </ExportFilterPanel>
 
-      {errorMessage && <p className="login-error">{errorMessage}</p>}
-      <ExportToolbar
+      <ExportDataSection
+        config={config}
+        exportRows={exportRows}
+        productCount={productCount}
         summaryItems={[
           `상품 ${productCount}건`,
           `선택 상태 ${selectedStatusLabels.length}개`,
@@ -125,30 +125,12 @@ export default function AdminExportByStatusPage() {
           `내보내기 행 ${exportRows.length}건`
         ]}
         isLoading={isLoading}
-      >
-        <ExportDownloadButton
-          filename={buildExportFilename("상태별")}
-          sheetName="상태별"
-          rows={exportRows}
-          disabled={isColumnEmpty || hasNoStatuses}
-          isLoading={isLoading}
-          emptyMessage="선택한 상태에 맞는 내보내기 데이터가 없습니다."
-        />
-      </ExportToolbar>
-      {hasNoRows && (
-        <p className="export-empty-hint">
-          선택한 상태({selectedStatusLabels.join(", ") || "없음"})에 맞는 제출 데이터가 없습니다.
-        </p>
-      )}
-      <ExportColumnSelector
-        activePreset={columnSelection.activePreset}
-        selectedColumnKeys={columnSelection.selectedColumnKeys}
-        onPresetSelect={columnSelection.applyPreset}
-        onColumnToggle={columnSelection.toggleColumn}
-        onSelectAll={columnSelection.selectAllColumns}
-        onClear={columnSelection.clearColumns}
+        errorMessage={errorMessage}
+        hasNoRows={hasNoRows}
+        disabled={hasNoStatuses}
+        emptyHint={`선택한 상태(${selectedStatusLabels.join(", ") || "없음"})에 맞는 제출 데이터가 없습니다.`}
+        columnSelection={columnSelection}
       />
-      <ExportPreviewTable rows={exportRows} />
     </ExportPageLayout>
   );
 }
