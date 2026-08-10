@@ -1,5 +1,6 @@
 export const ADMIN_STORAGE_KEY = "review_manager_admin_id";
 export const ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY = "review_manager_include_company_data";
+export const ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY = "review_manager_admin_sidebar_collapsed";
 
 export const ADMIN_MENU_NUMBER = {
   DASHBOARD: 1,

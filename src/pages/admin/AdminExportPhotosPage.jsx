@@ -4,6 +4,7 @@ import { ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "../../constant
 import { useAdminIncludeCompanyData } from "../../hooks/useAdminCapabilities";
 import { fetchAdminPhotoExportData } from "../../services/exportPhotos";
 import { runWithConcurrency } from "../../utils/asyncPool";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 import { buildZipBlob, downloadBlob, getExtensionFromUrl, sanitizeZipPathSegment } from "../../utils/zipFile";
 
 const PHOTO_EXPORT_FILTER_COLUMNS = [
@@ -153,7 +154,7 @@ function buildPhotoZipPath(target, extension, index) {
 }
 
 export default function AdminExportPhotosPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
     adminProfile,

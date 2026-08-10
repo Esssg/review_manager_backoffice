@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { fetchAdminProducts } from "../../services/adminProducts";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 
 export default function AdminProductsPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);

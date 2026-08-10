@@ -3,9 +3,10 @@ import { ADMIN_STORAGE_KEY } from "../constants/admin";
 import { useAdminIncludeCompanyData } from "./useAdminCapabilities";
 import { fetchAdminDashboardData } from "../services/dashboardMetrics";
 import { buildDashboardMetrics } from "../utils/dashboardMetrics";
+import { getLocalStorageValue } from "../utils/browserStorage";
 
 export default function useAdminDashboard() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
     adminProfile,

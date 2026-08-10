@@ -43,6 +43,7 @@ import {
 import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
 import { getDeletionErrorMessage } from "../../utils/deletionContract";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "../../utils/photoItems";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
   formatMissingFieldLabels,
@@ -179,7 +180,7 @@ function getVisibleProducts(rows, productMap) {
 }
 
 export default function AdminProductOverviewPage({ viewMode = "all" }) {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
     capabilities,
     adminProfile,

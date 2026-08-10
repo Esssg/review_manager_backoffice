@@ -3,6 +3,7 @@ import { ADMIN_STORAGE_KEY } from "../constants/admin";
 import { useAdminIncludeCompanyData } from "./useAdminCapabilities";
 import { fetchAdminExportData } from "../services/exportData";
 import { buildSubmissionExportRows } from "../utils/exportColumns";
+import { getLocalStorageValue } from "../utils/browserStorage";
 
 export default function useAdminExportData(options = {}) {
   const {
@@ -13,7 +14,7 @@ export default function useAdminExportData(options = {}) {
     depositOnly = false,
     selectedColumnKeys = []
   } = options;
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
     includeCompanyData,
     adminProfile,

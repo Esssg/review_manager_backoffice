@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06 완료 / 다음 단계(M-07) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07 완료 / 다음 단계(M-08) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -282,6 +282,7 @@
   - 기존 key와 legacy column 값은 호환하고, 인증 secret은 저장하지 않는다.
   - 초기 storage read는 필요한 경계에서 한 번만 수행하고, 변경 이벤트는 실제 외부 동기화가 필요할 때만 사용한다.
 - 회귀 위험: 기존 사용자 설정 초기화, 다중 탭 동기화, private mode/quota 예외, 공개 흐름의 session 복원이 달라질 수 있다. legacy key와 잘못된 JSON을 테스트한다.
+- 실행 결과: browser storage 읽기·쓰기·삭제·JSON 파싱과 접근 예외를 `browserStorage` adapter로 통합하고 관리자 ID, 사이드바 상태, export column, 리뷰받기 session filter, 공개 조회값, logout의 모든 직접 접근을 adapter 경계로 이동했다. 기존 key·legacy column normalization·session 값 형식은 유지했다. 잘못된 JSON과 quota/security 예외 테스트를 추가해 `npm test` 25개와 `npm run build`를 통과했고, Playwright로 리뷰받기 필터를 저장 후 재진입해 복원되는 것과 공개 조회 이름/조회 기준 session 저장을 확인했다. 관리자 화면에서는 기존 capability 조회 400 오류가 재현됐고 공개 화면에는 새 콘솔 오류가 없었다.
 
 ### M-08. Admin Setting의 Supabase 접근을 service 경계로 이동
 

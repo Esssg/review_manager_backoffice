@@ -7,6 +7,7 @@ import { uploadFileUploadData } from "../../services/fileUpload";
 import { buildUploadableFileUploadResult } from "../../utils/fileUploadParser.js";
 import { downloadFileUploadTemplate } from "../../utils/fileUploadTemplate";
 import { FILE_UPLOAD_COLUMNS } from "../../utils/fileUploadValidation";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 
 const PREVIEW_LIMIT = 50;
 
@@ -119,7 +120,7 @@ function IssueTable({ title, rows, emptyMessage, rowDataByNumber }) {
 }
 
 export default function AdminFileUploadPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const fileInputRef = useRef(null);
   const [selectedFileName, setSelectedFileName] = useState("");
   const [isParsing, setIsParsing] = useState(false);

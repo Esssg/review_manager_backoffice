@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { supabase } from "../../lib/supabase";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 
 const EMPTY_PASSWORD_FORM = {
   newPassword: "",
@@ -105,7 +106,7 @@ function PasswordInput({
 }
 
 export default function AdminSettingPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
 
   if (!adminId) {
     return <Navigate to="/admin/login" replace />;

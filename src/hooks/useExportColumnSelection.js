@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { EXPORT_COLUMN_PRESET, EXPORT_COLUMN_PRESETS, getPresetColumnKeys } from "../utils/exportColumns";
+import { readLocalStorageJson, writeLocalStorageJson } from "../utils/browserStorage";
 
 const DEFAULT_PRESET_KEYS = EXPORT_COLUMN_PRESETS.map((preset) => preset.key);
 const PRODUCT_DATE_COLUMN_KEY = "products.product_date";
@@ -75,52 +76,47 @@ function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetCol
     };
   }
 
-  try {
-    const storedValue = localStorage.getItem(storageKey);
-    const parsedValue = storedValue ? JSON.parse(storedValue) : null;
+  const parsedValue = readLocalStorageJson(storageKey, null);
 
-    if (Array.isArray(parsedValue)) {
-      const activePreset = resolveActivePreset(parsedValue, presetKeys, resolvePresetColumnKeys);
+  if (Array.isArray(parsedValue)) {
+    const activePreset = resolveActivePreset(parsedValue, presetKeys, resolvePresetColumnKeys);
 
-      if (activePreset) {
-        const nextColumnKeys = normalizeProductDateColumnPosition(parsedValue);
-
-        if (!areColumnKeysEqual(parsedValue, nextColumnKeys)) {
-          localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
-        }
-
-        return {
-          activePreset,
-          selectedColumnKeys: nextColumnKeys
-        };
-      }
-
-      const legacyPreset = resolveLegacyPresetColumnKeys(parsedValue, presetKeys, resolvePresetColumnKeys);
-
-      if (legacyPreset) {
-        const nextColumnKeys = normalizeProductDateColumnPosition(resolvePresetColumnKeys(legacyPreset));
-
-        localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
-
-        return {
-          activePreset: legacyPreset,
-          selectedColumnKeys: nextColumnKeys
-        };
-      }
-
+    if (activePreset) {
       const nextColumnKeys = normalizeProductDateColumnPosition(parsedValue);
 
       if (!areColumnKeysEqual(parsedValue, nextColumnKeys)) {
-        localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
+        writeLocalStorageJson(storageKey, nextColumnKeys);
       }
 
       return {
-        activePreset: "",
+        activePreset,
         selectedColumnKeys: nextColumnKeys
       };
     }
-  } catch {
-    // 저장된 컬럼 설정이 깨졌다면 기본 프리셋으로 복구한다.
+
+    const legacyPreset = resolveLegacyPresetColumnKeys(parsedValue, presetKeys, resolvePresetColumnKeys);
+
+    if (legacyPreset) {
+      const nextColumnKeys = normalizeProductDateColumnPosition(resolvePresetColumnKeys(legacyPreset));
+
+      writeLocalStorageJson(storageKey, nextColumnKeys);
+
+      return {
+        activePreset: legacyPreset,
+        selectedColumnKeys: nextColumnKeys
+      };
+    }
+
+    const nextColumnKeys = normalizeProductDateColumnPosition(parsedValue);
+
+    if (!areColumnKeysEqual(parsedValue, nextColumnKeys)) {
+      writeLocalStorageJson(storageKey, nextColumnKeys);
+    }
+
+    return {
+      activePreset: "",
+      selectedColumnKeys: nextColumnKeys
+    };
   }
 
   return {
@@ -144,7 +140,7 @@ export default function useExportColumnSelection({
   const persistColumnKeys = useCallback(
     (nextColumnKeys) => {
       if (storageKey) {
-        localStorage.setItem(storageKey, JSON.stringify(nextColumnKeys));
+        writeLocalStorageJson(storageKey, nextColumnKeys);
       }
     },
     [storageKey]

@@ -34,6 +34,7 @@ import { normalizeProductDescriptionAndLink } from "../../utils/productLink";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import { sortReviewReceiveRowsByCreatedAt } from "../../utils/reviewReceiveRows";
 import { getDeletionErrorMessage } from "../../utils/deletionContract";
+import { readSessionStorageJson, writeSessionStorageJson, getLocalStorageValue } from "../../utils/browserStorage";
 import {
   REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS,
   formatDateInputValue,
@@ -299,31 +300,16 @@ function normalizeStoredReviewReceiveProductFilters(storedFilters) {
 }
 
 function readStoredReviewReceiveProductFilters(adminId) {
-  if (typeof window === "undefined") {
-    return createEmptyReviewReceiveProductFilters();
-  }
-
-  try {
-    const storedValue = window.sessionStorage.getItem(getReviewReceiveProductFiltersStorageKey(adminId));
-    return normalizeStoredReviewReceiveProductFilters(storedValue ? JSON.parse(storedValue) : null);
-  } catch {
-    return createEmptyReviewReceiveProductFilters();
-  }
+  return normalizeStoredReviewReceiveProductFilters(
+    readSessionStorageJson(getReviewReceiveProductFiltersStorageKey(adminId), null)
+  );
 }
 
 function writeStoredReviewReceiveProductFilters(adminId, filters) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(
-      getReviewReceiveProductFiltersStorageKey(adminId),
-      JSON.stringify(normalizeStoredReviewReceiveProductFilters(filters))
-    );
-  } catch {
-    // sessionStorage can be unavailable in restricted browser contexts.
-  }
+  writeSessionStorageJson(
+    getReviewReceiveProductFiltersStorageKey(adminId),
+    normalizeStoredReviewReceiveProductFilters(filters)
+  );
 }
 
 function hasActiveReviewReceiveProductFilters(filters) {
@@ -339,7 +325,7 @@ function hasActiveReviewReceiveProductFilters(filters) {
 }
 
 export default function AdminReviewReceivePage({ viewMode = "all" }) {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const navigate = useNavigate();
   const {
     includeCompanyData,

@@ -13,6 +13,7 @@ import {
 } from "../../services/reviewReceivePublic";
 import { formatPlannedDepositorName } from "../../utils/plannedDepositorName";
 import { sortReviewReceiveRowsByCreatedAt } from "../../utils/reviewReceiveRows";
+import { getSessionStorageValue, setSessionStorageValue } from "../../utils/browserStorage";
 
 const DEFAULT_LOOKUP_TYPE = "account_holder";
 const PUBLIC_LOOKUP_OPTIONS = [
@@ -75,19 +76,11 @@ function createEmptyPhotoEditor() {
 }
 
 function readStoredAssignName(productId) {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  return window.sessionStorage.getItem(getLookupValueStorageKey(productId)) ?? "";
+  return getSessionStorageValue(getLookupValueStorageKey(productId), "");
 }
 
 function readStoredLookupType(productId) {
-  if (typeof window === "undefined") {
-    return DEFAULT_LOOKUP_TYPE;
-  }
-
-  const storedType = window.sessionStorage.getItem(getLookupTypeStorageKey(productId));
+  const storedType = getSessionStorageValue(getLookupTypeStorageKey(productId));
   return PUBLIC_LOOKUP_OPTIONS.some((option) => option.value === storedType) ? storedType : DEFAULT_LOOKUP_TYPE;
 }
 
@@ -623,8 +616,8 @@ export default function PublicReviewReceiveDetailPage() {
       return;
     }
 
-    window.sessionStorage.setItem(getLookupValueStorageKey(productId), trimmedName);
-    window.sessionStorage.setItem(getLookupTypeStorageKey(productId), lookupType);
+    setSessionStorageValue(getLookupValueStorageKey(productId), trimmedName);
+    setSessionStorageValue(getLookupTypeStorageKey(productId), lookupType);
     setFormErrorMessage("");
     setLookupErrorMessage("");
     setPhotoStatusMessage("");

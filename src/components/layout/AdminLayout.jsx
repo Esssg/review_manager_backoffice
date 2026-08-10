@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ADMIN_MENU_NUMBER,
+  ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY,
   ADMIN_STORAGE_KEY,
   getAdminMenuItemByPathname,
   getAdminMenuItemByNumber
@@ -10,8 +11,7 @@ import { fetchAdminMenuPermissions, logoutAdmin } from "../../services/adminAuth
 import { useAdminCapabilities } from "../../hooks/useAdminCapabilities";
 import { AdminAccessContext } from "../../contexts/AdminAccessContext";
 import AppAlertDialog from "../common/AppAlertDialog";
-
-const SIDEBAR_COLLAPSED_STORAGE_KEY = "review_manager_admin_sidebar_collapsed";
+import { getLocalStorageValue, setLocalStorageValue } from "../../utils/browserStorage";
 
 function getExpandableMenuNumbersForPath(pathname) {
   const openMenuNumbers = [];
@@ -32,7 +32,7 @@ function getExpandableMenuNumbersForPath(pathname) {
 }
 
 export default function AdminLayout() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
 
   if (!adminId) {
     return <Navigate to="/admin/login" replace />;
@@ -54,7 +54,7 @@ function AuthenticatedAdminLayout({ adminId }) {
   const [isLoadingMenus, setIsLoadingMenus] = useState(true);
   const [menuErrorMessage, setMenuErrorMessage] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+    return getLocalStorageValue(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
   });
   const [openMenuNumbers, setOpenMenuNumbers] = useState(() => getExpandableMenuNumbersForPath(location.pathname));
   const [logoutAlert, setLogoutAlert] = useState({
@@ -98,7 +98,7 @@ function AuthenticatedAdminLayout({ adminId }) {
   }, [adminId]);
 
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(isSidebarCollapsed));
+    setLocalStorageValue(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY, String(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
 
   useEffect(() => {

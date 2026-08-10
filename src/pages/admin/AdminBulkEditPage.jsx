@@ -23,6 +23,7 @@ import {
 } from "../../utils/bulkEditExcel";
 import { createEmptyProductOverviewFilters } from "../../utils/productOverviewRows";
 import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 
 function createEmptyPageInfo() {
   return {
@@ -40,7 +41,7 @@ function BulkEditPreviewValue({ value, column }) {
 }
 
 export default function AdminBulkEditPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
     capabilities,
     adminProfile,

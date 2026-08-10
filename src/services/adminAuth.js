@@ -1,10 +1,16 @@
 import { supabase } from "../lib/supabase";
 import {
+  ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY,
+  ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY,
+  ADMIN_STORAGE_KEY
+} from "../constants/admin";
+import {
   getFallbackAdminCapabilities,
   isAdminCapabilitiesColumnError,
   normalizeAdminCapabilities
 } from "../utils/adminCapabilities";
 import { fetchAllRows } from "./paginatedQuery";
+import { removeLocalStorageValue } from "../utils/browserStorage";
 
 const ADMIN_MENU_PERMISSIONS_SELECT = "id,admin_id,menu_number,menu_label";
 const ADMIN_CAPABILITIES_SELECT = "login_id,company,include_company_data_include,can_verify_deposit";
@@ -89,7 +95,7 @@ export async function fetchAdminCapabilities(adminId) {
 }
 
 export function logoutAdmin() {
-  localStorage.removeItem("review_manager_admin_id");
-  localStorage.removeItem("review_manager_include_company_data");
-  localStorage.removeItem("review_manager_admin_sidebar_collapsed");
+  removeLocalStorageValue(ADMIN_STORAGE_KEY);
+  removeLocalStorageValue(ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY);
+  removeLocalStorageValue(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY);
 }

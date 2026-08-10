@@ -73,6 +73,7 @@ import {
   getMissingRequiredFieldLabels
 } from "../../utils/reviewVerifyValidation";
 import { buildExportFilename, downloadExcel } from "../../utils/exportFile";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 
 function parseAmount(value) {
   const digits = String(value ?? "").replace(/[^\d]/g, "");
@@ -422,7 +423,7 @@ function buildReviewReceiveDetailExportRows(rows, options = {}) {
 }
 
 export default function AdminReviewReceiveDetailPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const { productId } = useParams();
   const {
     capabilities,

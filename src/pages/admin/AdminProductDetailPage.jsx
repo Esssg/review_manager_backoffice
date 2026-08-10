@@ -9,9 +9,10 @@ import SubmissionTable from "../../components/admin/product-detail/SubmissionTab
 import AppAlertDialog from "../../components/common/AppAlertDialog";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { useAdminProductDetail } from "../../hooks/useAdminProductDetail";
+import { getLocalStorageValue } from "../../utils/browserStorage";
 
 export default function AdminProductDetailPage() {
-  const adminId = localStorage.getItem(ADMIN_STORAGE_KEY);
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const { productId } = useParams();
   const [deleteTargetSubmissionId, setDeleteTargetSubmissionId] = useState(null);
   const [isDeletingSubmission, setIsDeletingSubmission] = useState(false);

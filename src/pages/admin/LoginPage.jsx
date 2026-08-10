@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
 import { validateAdminCredentials } from "../../services/adminAuth";
+import { setLocalStorageValue } from "../../utils/browserStorage";
 
 const initialForm = {
   loginId: "",
@@ -41,7 +42,7 @@ export default function LoginPage() {
       const { data, error } = await validateAdminCredentials(form.loginId, form.password);
 
       if (data) {
-        localStorage.setItem(ADMIN_STORAGE_KEY, form.loginId);
+        setLocalStorageValue(ADMIN_STORAGE_KEY, form.loginId);
         navigate("/admin");
         return;
       }
