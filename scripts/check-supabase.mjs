@@ -30,18 +30,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function run() {
-  // 테이블명이 아직 확정되지 않았을 수 있으므로 샘플 테이블명을 순차 시도
-  const candidates = ["products", "participants", "campaigns"];
+  const connectionCheckTable = "products";
+  const res = await supabase.from(connectionCheckTable).select("id", { head: true });
 
-  for (const table of candidates) {
-    const res = await supabase.from(table).select("*", { count: "exact", head: true });
-    if (!res.error) {
-      console.log(`Supabase 연결 성공 (table: ${table})`);
-      process.exit(0);
-    }
+  if (!res.error) {
+    console.log(`Supabase 연결 성공 (table: ${connectionCheckTable})`);
+    process.exit(0);
   }
 
-  console.error("Supabase 연결 실패. URL/KEY 또는 DB 테이블명을 확인하세요.");
+  console.error(
+    `Supabase 연결 실패 (table: ${connectionCheckTable}). URL/KEY 또는 허용된 DB 테이블을 확인하세요.`
+  );
   process.exit(1);
 }
 

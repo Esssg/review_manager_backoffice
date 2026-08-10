@@ -55,15 +55,11 @@ export async function fetchSubmissions(productId) {
 }
 
 export async function fetchEvidencePhotos(submissionIds, photoType) {
-  let hasEvidencePhotoTable = true;
-  let photos = [];
-  let photosError = null;
-
   if (submissionIds.length === 0) {
-    return { photos, photosError, hasEvidencePhotoTable };
+    return { photos: [], photosError: null };
   }
 
-  const primaryResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
+  const result = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
     supabase
       .from("evidence_photos")
       .select("id,submission_id,image_url")
@@ -71,36 +67,10 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
       .in("submission_id", submissionIdChunk)
   );
 
-  photos = primaryResult.data ?? [];
-  photosError = primaryResult.error;
-
-  const shouldFallbackPhotoTable =
-    Boolean(photosError) &&
-    (photosError?.code === "42P01" || photosError?.message?.includes("evidence_photos"));
-
-  if (shouldFallbackPhotoTable) {
-    const fallbackResult = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
-      supabase
-        .from("evidence_photo")
-        .select("id,submission_id,image_url")
-        .eq("photo_type", photoType)
-        .in("submission_id", submissionIdChunk)
-    );
-    photos = fallbackResult.data ?? [];
-    photosError = fallbackResult.error;
-  }
-
-  const evidenceTableMissing =
-    Boolean(photosError) &&
-    (photosError?.code === "42P01" || photosError?.message?.includes("evidence_photo"));
-
-  if (evidenceTableMissing) {
-    hasEvidencePhotoTable = false;
-    photos = [];
-    photosError = null;
-  }
-
-  return { photos, photosError, hasEvidencePhotoTable };
+  return {
+    photos: result.data ?? [],
+    photosError: result.error
+  };
 }
 
 export async function updateApplicationConfirmed(applicationId, productId, checked) {
@@ -118,15 +88,13 @@ export async function updateSubmissionVerified(submissionId, targetColumn, check
     .eq("id", submissionId);
 }
 
-export async function deleteEvidenceRowsIfExists(tableName, submissionId) {
-  const { error } = await supabase.from(tableName).delete().eq("submission_id", submissionId);
-  const isMissingTable =
-    error?.code === "42P01" ||
-    error?.code === "PGRST204" ||
-    error?.message?.includes("Could not find the table") ||
-    error?.message?.includes(`public.${tableName}`);
+export async function deleteEvidenceRows(submissionId) {
+  const { error } = await supabase
+    .from("evidence_photos")
+    .delete()
+    .eq("submission_id", submissionId);
 
-  if (error && !isMissingTable) {
+  if (error) {
     throw error;
   }
 }

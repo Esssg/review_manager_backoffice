@@ -1,172 +1,390 @@
-# `일괄수정하기` 메뉴 구현 계획
+# React/프로젝트 기준 리팩터링 계획
 
-상태: **프런트엔드·마이그레이션 구현 완료 / DB 마이그레이션 적용 대기**
+작성일: 2026-08-10
+상태: H-01 완료 / 다음 단계 승인 대기
 
-이 문서는 구현 전에 화면·엑셀 계약·DB 반영 규칙을 확정하기 위한 계획입니다. 아래 `결정 필요` 항목에 답을 적은 뒤 구현을 시작합니다. 답변 전에는 라우트, DB, 프런트 코드를 변경하지 않습니다.
+## 1. 목표와 범위
 
-## 1. 확정된 요구사항
+현재 동작, 라우팅, 권한 의미, DB 계약, UI 결과를 유지하면서 다음을 개선한다.
 
-- 좌측 관리자 메뉴에 `일괄수정하기`를 추가한다.
-- `admin_menu_permissions`에는 우선 `test1` 계정에만 해당 메뉴 권한을 추가한다.
-- 화면의 조회·필터·표는 `상품전체보기 > 전체보기`와 같은 데이터를 기준으로 한다.
-- 기존 상품전체보기의 작업 버튼은 제거하고, 이 화면에는 `필터 초기화`, `현재 화면 엑셀로 내보내기`, `일괄수정하기`만 둔다.
-- 내보낸 Excel의 첫 번째 열에는 각 행을 식별할 ID를 넣는다.
-- 사용자가 수정한 Excel을 `일괄수정하기` 모달에서 업로드한다.
-- 업로드 뒤 `다음` 단계에서 실제 변경 예정 항목을 보여준다.
-- 사용자가 확인하고 `적용하기`를 누르면 검증된 변경만 DB에 반영한다.
-- 수정 대상 검증은 담당 관리자 ID 일치 여부가 아니라 로그인 관리자와 대상 상품 담당자의 동일 `admins.company` 값으로 처리한다. 회사 정보가 비어 있는 계정은 일괄수정을 허용하지 않는다.
+- React 컴포넌트의 책임과 상태 경계를 명확히 한다.
+- 불필요한 렌더링과 네트워크 waterfall을 줄인다.
+- 초기 번들 및 사용자 동작 전에 필요한 코드만 로드한다.
+- Supabase 접근 범위를 허용 목록으로 강제한다.
+- 테스트 가능한 서비스·훅·순수 유틸 경계를 만든다.
 
-## 2. 현재 구조 확인 결과와 재사용 방침
+이번 계획에서 제외하는 것:
 
-- 현재 상품전체보기는 `/admin/product-overview/all`이며, `get_admin_product_overview_rows` RPC로 관리자 범위·열 필터·커서 페이지네이션을 처리한다.
-- 행의 고유 제출 식별자는 `submissions.id`이며, 현재 화면 데이터에는 `submission_id`와 `product_id`가 모두 있다.
-- 현재 `PRODUCT_OVERVIEW_COLUMNS`에는 `products`, `submissions`, `evidence_photos`의 표시 열이 함께 정의돼 있다. 사진, 제품비/리뷰비 입금구분 표시값 등은 원본 테이블의 단일 수정 컬럼이 아니거나 파생값이다.
-- 상품전체보기의 현 내보내기는 화면에 적재된 행만이 아니라 **현재 상태 탭·열 필터에 맞는 전체 결과**를 다시 조회해 Excel로 만든다.
-- 기존 파일 업로드는 신규 상품/제출 생성 흐름이므로, 이번의 “기존 행 차이 비교 후 수정” 용도로 그대로 재사용하지 않는다. 다만 Excel 읽기(`xlsx`), 파일 선택 UI, 날짜·금액·불리언 정규화 및 오류 표시는 재사용 후보로 검토한다.
-- 화면 하나를 위해 현재 대형 `AdminProductOverviewPage`를 통째로 복제하지 않는다. 목록 조회/필터 테이블을 설정 가능한 공용 단위로 분리하거나, 이미 분리된 순수 유틸·서비스를 공유해 신규 페이지의 작업 액션만 별도로 둔다. 이는 새 화면에만 필요한 Excel 파싱·차이 비교·적용 책임을 기존 화면의 구매/입금/삭제 로직과 섞지 않기 위해서다.
+- 기능 추가, 화면/스타일 변경, 라우트 URL 변경
+- 관리자 권한의 의미 변경 또는 인증 방식을 Supabase Auth로 교체
+- 허용 목록 밖의 Supabase 객체 변경
+- 승인 없는 DB 스키마·RPC·RLS 변경
+- 대규모 CSS/컴포넌트 추상화의 선행 도입
 
-## 3. 구현 범위 계획
+우선순위는 영향도와 회귀 위험을 함께 고려했다. High 항목은 보안·데이터 무결성·실행 오류·초기 성능에 직접 영향을 주므로 먼저 계약을 고정한 뒤 진행한다.
 
-### 3-1. 메뉴, 라우팅, 권한
+## 2. 탐색 결과 요약
 
-1. 확정된 메뉴 번호와 경로를 `ADMIN_MENU_NUMBER`, `ADMIN_MENU_ITEMS`, 경로-메뉴 판별 로직에 함께 추가한다.
-2. `/admin/*` 아래에 신규 라우트를 추가하고, `AdminLayout`의 기존 DB 기반 메뉴 권한 및 직접 URL 접근 제한을 그대로 적용한다.
-3. 메뉴 권한 운영 데이터에 `test1`의 한 행을 upsert한다. 다른 계정의 예외 하드코딩은 하지 않는다.
-4. 새 메뉴 번호·라벨·경로 계약 및 `test1` 권한 샘플을 `docs/guide_db.md`에 갱신하고, 구조 변화가 확정되면 `docs/project_analysis.md`의 메뉴/화면 설명도 갱신한다.
+- src/App.jsx가 모든 관리자·공개 페이지를 정적으로 import하고 있으며, src/main.jsx도 기능별 CSS를 모두 전역 import한다.
+- xlsx가 파일 업로드·일괄 수정·엑셀 내보내기 경로에 정적으로 포함된다. 기존 빌드 관찰상 메인 JS가 약 1.2MB이며 500kB 초과 경고가 발생했다.
+- 가장 큰 화면은 src/pages/admin/AdminReviewReceiveDetailPage.jsx 4,643줄, src/pages/admin/AdminProductOverviewPage.jsx 2,854줄, src/pages/admin/AdminReviewReceivePage.jsx 2,390줄이다.
+- AdminLayout과 AdminSettingPage에는 조건부 early return/render 중 navigate와 Hook 호출 순서가 섞인 부분이 있다.
+- 저장소 전체 재검색 결과, 단수형 evidence_photo는 레거시 fallback/삭제 호출과 오래된 문서에만 남아 있고, participants/campaigns는 연결 점검 스크립트와 설정 문서에만 남아 있다. 반면 evidence_photos는 서비스·Edge Function·마이그레이션에서 실제 사용 중이다.
+- 대시보드·엑셀 export·사진 ZIP·파일 업로드에 순차 요청 또는 N+1 요청 후보가 있다.
+- 제품 개요 테이블은 최대 300행을 한 번에 렌더링하며, 렌더마다 큰 파생 계산과 membership 검색을 수행한다.
+- 현재 Node 테스트는 3개 파일, 총 10개 테스트가 통과한다. 화면·권한·Supabase allowlist·대시보드 집계에 대한 회귀 테스트는 부족하다.
 
-### 3-2. 일괄수정 목록 화면
+## 3. High 우선순위
 
-1. 헤더는 `일괄수정하기`로 표시하고, 기본 조회는 상품전체보기의 `전체보기`와 동일하게 `status=all`을 사용한다.
-2. 관리자 범위, `내 회사 데이터 포함`, 열 필터, 로딩·오류·빈 상태, 커서 기반 추가 로딩을 기존 계약 그대로 유지한다.
-3. 기존 작업 기능(구매정보 입력, 리뷰완료/입금완료 처리, 삭제, 기존 내보내기 모달, 상태별 탭)은 이 페이지에 노출하거나 호출하지 않는다.
-4. 화면 상단/목록 툴바에는 확정된 범위에 따라 `필터 초기화`, `현재 화면 엑셀로 내보내기`, `일괄수정하기`만 배치한다. 비활성·로딩 상태와 키보드 포커스도 기존 하늘색 UI 토큰으로 맞춘다.
+### H-01. Supabase 허용 테이블 범위 위반 참조 제거 및 정적 보호 — 완료
 
-### 3-3. 수정용 Excel 내보내기 계약
+- 문제: 이 프로젝트의 허용 목록에 없는 evidence_photo fallback과 participants, campaigns 연결 점검이 존재한다. 같은 public 스키마의 다른 프로젝트 데이터를 건드릴 수 있다. 이번 계획의 대상은 물리 테이블 삭제가 아니라 이 저장소의 참조·점검 로직 제거다.
+- 원인: 과거 레거시 테이블 호환 코드와 일반화된 테이블 이름 인자가 현재 프로젝트의 명시적인 DB 경계를 우회한다.
+- 관련 파일:
+  - AGENTS.md:36-55
+  - src/services/productDetail.js:66-103,121-132
+  - src/hooks/useAdminProductDetail.js:178-179
+  - scripts/check-supabase.mjs:32-40
+  - SUPABASE_SETUP.md:43-54
+  - docs/project_analysis.md:320-330
+- 재확인 결과:
+  - 저장소 전체에서 evidence_photo 단수형은 src/services/productDetail.js의 조회 fallback, src/hooks/useAdminProductDetail.js의 삭제 호출, 그리고 이를 설명하는 오래된 문서에만 존재한다.
+  - participants와 campaigns는 scripts/check-supabase.mjs의 candidates와 SUPABASE_SETUP.md의 설명에만 존재하며, 앱 서비스·페이지·마이그레이션·Edge Function의 .from() 또는 SQL 참조는 확인되지 않았다.
+  - evidence_photos 복수형은 여러 앱 서비스, review-receive-photo-sync Edge Function, Supabase 마이그레이션, docs/guide_db.md에서 실제 사용된다.
+  - 2026-08-10에 허용 목록 7개 테이블만 읽기 전용으로 확인했으며 모두 접근 가능했다. 확인 당시 row count는 admins 8, products 4,226, admin_menu_permissions 40, product_steps 180, applications 630, submissions 21,038, evidence_photos 19,396이었다.
+  - 따라서 evidence_photos는 이 프로젝트에서 확실히 사용하는 테이블이다. 엄밀히 말해 evidence_photo는 현재 코드에 fallback/삭제 참조가 남아 있어 완전 미사용은 아니지만, 대상 DB에서 evidence_photos가 정상 존재하는 것이 확인된 만큼 이 프로젝트의 허용된 정상 경로에는 필요하지 않다. evidence_photo, participants, campaigns가 공유 DB에 물리적으로 존재하는지 또는 다른 프로젝트가 사용하는지는 이 저장소 범위를 넘어가므로 조회·삭제하지 않는다.
+- 적용할 Skill/rule: supabase-schema-sync, review-manager-development, AGENTS.md의 Supabase DB 대상 범위 규칙, review-agent의 근거 기반 결함 보고 원칙.
+- 예상 변경 내용:
+  - public.evidence_photos는 유지하고, 이 프로젝트의 모든 사진 조회·삭제·저장 경로가 이 허용 테이블만 사용하도록 한다.
+  - evidence_photo fallback과 호출부를 제거한다. 물리 테이블 DROP, rename, 데이터 삭제는 수행하지 않는다.
+  - 임의 문자열을 받는 삭제 helper를 허용 테이블별 명시적 함수 또는 allowlist 상수 기반 API로 바꾼다.
+  - check-supabase가 participants/campaigns를 probe하지 않고, 허용 목록에 있는 연결 확인 대상만 사용하도록 고친다.
+  - SUPABASE_SETUP.md와 docs/project_analysis.md의 사실 설명을 실제 계약에 맞춘다.
+  - 알 수 없는 테이블명이 코드에 재도입되지 않도록 정적 검사 또는 테스트를 추가한다.
+  - 실제 확인된 row count는 계획의 기준점으로만 기록하고, 구현 시 데이터 자체를 수정하지 않는다.
+- 회귀 위험: 코드상 레거시 fallback 제거로 이 저장소의 제품 상세 사진 동작이 달라질 가능성은 있으나, 현재 허용 테이블 public.evidence_photos가 실제 존재하고 사용 중임을 확인했다. 다른 프로젝트의 물리 테이블을 삭제하지 않으므로 공유 DB에 대한 외부 회귀는 만들지 않는다. 제품 상세 조회·삭제와 Edge Function 사진 흐름을 구현 후 검증한다.
+- 실행 결과: 레거시 참조 제거, allowlist 정적 테스트 추가, npm test 11개 통과, npm run build 성공, products 단일 테이블 연결 점검 성공, review receive 상세의 evidence_photos 요청 200 및 evidence_photo 요청 0건을 확인했다.
 
-1. 일반 상품전체보기 내보내기와 구분되는 전용 파일명과 시트명을 사용한다.
-2. 첫 열에 `submission_id`를 넣고, 제품 필드를 수정 대상으로 포함하면 두 번째 식별 열로 `product_id`도 넣는다. ID 열은 수정 대상이 아니며, 누락·중복·다른 회사 데이터 ID는 업로드 검증 오류로 처리한다.
-3. 그 뒤에는 확정된 수정 가능 열을 사람이 읽는 한글 헤더로 고정 순서로 넣는다. 사진·파생 표시값·시스템 식별자 등 수정 불가 열은 별도로 표시하거나 파일에서 제외한다.
-4. 현재 적용된 필터와 관리자 범위에 해당하는 전체 행을 다시 조회해 내보낸다. 따라서 아직 스크롤로 로드하지 않은 행도 같은 필터 결과라면 포함한다. 이 동작은 최종 결정에서 바뀔 수 있다.
-5. 업로드 파서는 시트/헤더/ID/셀 형식을 엄격하게 검증한다. 날짜, 정수 금액, 불리언, 입금구분 등은 기존 검증 유틸을 확장해 DB 값으로 정규화한다.
+### H-02. 인증 경계에서 Hook 순서와 render 중 navigation 정리
 
-### 3-4. 업로드 및 변경 미리보기 모달
+- 문제: 인증 정보가 없을 때 Hook 호출보다 먼저 반환하거나 render 중 navigate()를 실행하는 코드가 있어, 상태 변화 시 Hook 순서 오류와 예측 불가능한 redirect가 발생할 수 있다.
+- 원인: 인증/권한 경계와 실제 화면의 Hook·렌더 책임이 한 컴포넌트에 섞여 있다.
+- 관련 파일:
+  - src/components/layout/AdminLayout.jsx:32-107
+  - src/pages/admin/AdminSettingPage.jsx:107-160,242-300
+  - src/hooks/useAdminCapabilities.js
+  - src/services/adminAuth.js
+- 적용할 Skill/rule: admin-access-control, review-manager-development, react-best-practices의 Hook 규칙·rerender-move-effect-to-event·effect는 외부 동기화에만 사용 원칙.
+- 예상 변경 내용:
+  - 인증 경계 wrapper와 인증된 관리자 화면을 분리하거나, 모든 Hook을 동일한 순서로 호출한 뒤 redirect를 렌더링한다.
+  - 설정 페이지의 render 중 navigation을 Navigate 또는 안전한 effect/경계 컴포넌트로 이동한다.
+  - loading, error, no-permission, unauthenticated 상태를 구분하고 현재 URL별 redirect 의미를 유지한다.
+  - 직접 URL 접근과 메뉴 권한 확인을 함께 검증할 수 있는 테스트 경계를 만든다.
+- 회귀 위험: 로그인 직후 메뉴 로딩 순서, 설정 직접 접근, 권한 거부 화면이 달라질 수 있다. 인증됨/미인증/권한 없음/로딩 상태를 각각 브라우저로 확인한다.
 
-1. `일괄수정하기`를 누르면 파일 선택 영역이 있는 첫 번째 모달을 연다. `.xlsx`와 `.xls`만 받고, 파일명·읽기 중 상태·형식 오류를 보여준다.
-2. 파일을 읽은 뒤 다음을 모두 검사한다.
-   - 전용 Excel 헤더 및 ID 열 존재 여부
-   - ID의 숫자 형식, 중복 여부, 대상 상품 담당자와 로그인 관리자의 동일 회사 여부
-   - 수정 가능 열만 수정됐는지와 각 값의 타입·도메인 유효성
-   - 현재 DB 값과 비교했을 때 실제 변경이 있는지
-   - 한 상품이 여러 submission 행으로 반복될 때 제품 단위 변경값이 서로 충돌하는지
-3. 오류가 하나라도 있으면 오류 행·열·이유를 보여주고 `다음`을 비활성화한다. 변경이 없는 파일은 적용 단계로 진행시키지 않고 안내한다.
-4. `다음`을 누르면 두 번째 단계에서 아래를 보여준다.
-   - 총 업로드 행 수, 유효 행 수, 변경 행 수, 제품 변경 건수, 제출 변경 건수
-   - 행별 ID, 상품/주문 식별 정보, 필드명, 기존 값, 변경 값
-   - 적용에서 제외된 오류/충돌 항목과 이유
-5. 두 번째 단계의 `적용하기`는 공통 `AppAlertDialog`로 최종 확인을 한 번 더 받는다. 적용 중에는 닫기·중복 제출을 막고, 완료 후 성공/실패/반영 건수를 명확히 표시한 뒤 목록을 최신 데이터로 다시 조회한다.
+### H-03. 라우트·대형 의존성 코드 분할
 
-### 3-5. DB 적용과 안전성
+- 문제: 로그인 직후 사용하지 않는 모든 관리자 화면, 공개 화면, export 기능이 초기 번들에 들어간다. xlsx도 초기 로드에 포함될 가능성이 높다.
+- 원인: App.jsx의 정적 페이지 import와 유틸리티의 정적 xlsx import, 기능 CSS의 전역 import 때문이다.
+- 관련 파일:
+  - src/App.jsx:1-61
+  - src/main.jsx:5-12
+  - src/utils/fileUploadParser.js:1
+  - src/utils/bulkEditExcel.js:1
+  - src/utils/exportFile.js:1
+  - src/utils/fileUploadTemplate.js:1
+  - src/pages/admin/AdminFileUploadPage.jsx:168
+  - src/pages/admin/AdminBulkEditPage.jsx:198,218
+  - src/pages/admin/*Export*Page.jsx
+- 적용할 Skill/rule: react-best-practices의 bundle-dynamic-imports, bundle-conditional, bundle-defer-third-party, review-manager-development, review-manager-ui.
+- 예상 변경 내용:
+  - 라우트 단위 lazy/Suspense를 도입하고 공통 loading/error fallback을 둔다.
+  - 공통 CSS만 entry에서 유지하고, 기능별 CSS는 해당 route/feature 경계에서 로드하는 방안을 검토한다.
+  - xlsx는 파일 선택, 템플릿 생성, 일괄 수정, export 실행 시점에만 dynamic import한다.
+  - 테스트·서비스에서 사용하는 순수 계약은 유지하고, browser-only loading adapter를 별도로 둔다.
+  - 분할 뒤에도 권한 없는 route가 페이지 모듈을 불필요하게 실행하지 않는지 확인한다.
+- 회귀 위험: 첫 진입 loading UI, CSS 적용 시점, export/upload 오류 처리, deep link refresh가 달라질 수 있다. build의 chunk 결과와 주요 route의 실제 화면·권한·엑셀 동작을 함께 검증한다.
 
-1. 브라우저의 Excel ID를 신뢰해 무조건 `update`하지 않는다. 적용 직전에 서버에서 ID별 현재 행과 담당 관리자 회사를 다시 조회하고, 로그인 관리자와 대상 상품 담당자의 동일 회사 여부를 검증한다.
-2. 제품 컬럼은 `products.id`, 제출 컬럼은 `submissions.id` 기준으로 분리해 갱신한다. 사진 테이블은 이번 기능에서 수정하지 않는다.
-3. 다건 적용은 전용 Supabase RPC/마이그레이션으로 한 요청에서 검증·적용한다. 이렇게 하면 클라이언트 반복 업데이트의 부분 성공, 다른 회사 데이터 수정, 중간 실패를 줄인다.
-4. RPC는 입력 JSON의 허용 열 목록을 화이트리스트로 고정하고, 대상 ID의 동일 회사 여부와 `can_verify_deposit` 같은 기존 권한을 서버에서도 확인한다. 응답은 적용 건수와 ID별 오류/충돌 결과만 반환한다.
-5. 적용 단위를 한 파일 전체의 원자적 처리로 할지, 유효 행만 부분 처리할지는 아래 결정에 따른다. DB 함수/스키마 객체를 추가하거나 변경하면 최종 구조를 재조회하고 `docs/guide_db.md`의 RPC 문서도 갱신한다.
+### H-04. 관리자 scope/capability 로딩 정책 일원화
 
-### 3-6. 검증 및 완료 기준
+- 문제: 페이지·서비스·훅마다 관리자 scope와 메뉴 capability를 따로 조회한다. 특히 review receive detail은 includeCompanyData: true를 고정하고, 목록 화면은 사용자 토글을 사용해 직접 URL별 데이터 범위가 일관되게 보장되는지 추적하기 어렵다.
+- 원인: resolveAdminManagerScope, useAdminCapabilities, useAdminIncludeCompanyData가 공통 정책 계층 없이 각 feature에서 조합된다.
+- 관련 파일:
+  - src/services/adminScope.js:11-75
+  - src/hooks/useAdminCapabilities.js:6-85
+  - src/services/adminProducts.js:139-193
+  - src/services/productOverview.js:120-163
+  - src/services/reviewReceive.js:49-136
+  - src/pages/admin/AdminReviewReceiveDetailPage.jsx:657-662
+  - src/pages/admin/AdminReviewReceivePage.jsx:646-765
+  - src/pages/admin/AdminProductOverviewPage.jsx:516-828
+- 적용할 Skill/rule: admin-access-control, supabase-schema-sync, review-manager-development, AGENTS.md의 라우팅·관리자 권한 규칙.
+- 예상 변경 내용:
+  - 세션, capability, scope를 한 번 해석하고 feature가 명시적인 scope policy를 전달하도록 경계를 만든다.
+  - 서버 RPC의 권한 검사는 유지하고, 클라이언트의 중복 조회·정책 누락만 줄인다.
+  - detail의 회사 데이터 포함 여부처럼 현재 동작이 고정된 부분은 먼저 의도를 계약으로 기록한 뒤 named policy와 테스트로 고정한다.
+  - 메뉴 노출, 직접 URL, personal/company scope, write action을 같은 매트릭스로 검증한다.
+- 회귀 위험: 노출되는 제품·리뷰 데이터와 쓰기 대상이 달라질 수 있는 고위험 영역이다. 권한 의미를 추측해 바꾸지 않고 현재 운영 결과를 기준으로 fixture와 브라우저 검증을 먼저 만든다.
 
-1. 순수 Excel 파서·값 정규화·차이 계산·제품 중복 행 충돌 검사는 Node 테스트로 추가한다.
-2. `test1`에는 새 메뉴가 보이고 직접 URL도 접근되며, 권한이 없는 계정은 메뉴가 보이지 않고 URL 접근도 기존 권한 처리대로 막히는지 확인한다.
-3. 같은 회사의 다른 관리자 상품은 적용할 수 있고, 다른 회사 상품 ID를 포함한 파일은 적용할 수 없는지 확인한다.
-4. 빈 결과, 필터 적용 뒤 내보내기, 300건 이상 결과, ID 누락/중복/변조, 다른 회사 ID, 잘못된 날짜·금액·상태값, 변경 없음, 적용 취소, 적용 성공, 서버 오류를 수동 확인한다.
-5. `npm test`, `npm run build`를 실행한다. DB/RPC 변경이 확정되면 관련 실제 연결 검증도 수행한다.
+### H-05. 삭제 흐름의 부분 성공·데이터 무결성 계약 정리
 
-## 4. 결정 필요 — 답변을 적어 주세요
+- 문제: 제품 삭제가 evidence_photos, submissions, applications, product_steps, products를 여러 요청으로 순차 삭제한다. 중간 실패 시 일부만 삭제된 상태가 남을 수 있다.
+- 원인: 여러 허용 테이블에 대한 transaction 경계가 서비스 호출 단위에 없고, 두 화면에 삭제 구현이 나뉘어 있다.
+- 관련 파일:
+  - src/services/adminProducts.js:253-437
+  - src/services/productOverview.js:257-356
+  - src/services/productDetail.js:121-132
+  - docs/guide_db.md
+- 적용할 Skill/rule: supabase-schema-sync, admin-access-control, AGENTS.md의 DB 변경·문서 동기화 규칙.
+- 예상 변경 내용:
+  - 먼저 삭제 대상·순서·부분 실패 반환 계약을 공통 service로 정리한다.
+  - transaction이 실제로 필요하다고 확인되면 허용 목록 테이블만 대상으로 하는 승인된 RPC/DB 변경을 별도 단계로 설계한다.
+  - RPC/마이그레이션을 도입하는 경우 최종 스키마 재조회와 docs/guide_db.md 동기화를 같은 작업에 포함한다.
+  - 권한 없음, 대상 없음, 중간 실패, 재시도 결과를 테스트한다.
+- 회귀 위험: 실패 시 사용자에게 보이는 결과와 재시도 가능성이 달라질 수 있고, DB 변경을 수반할 수 있다. 사용자 확인과 운영 DB 검증 전에는 RPC·마이그레이션을 만들지 않는다.
 
-아래 각 항목의 `답변:` 뒤에 선택지 문자 또는 구체적인 값을 적어 주세요. 선택지에 없는 요구사항도 적을 수 있습니다.
+## 4. Medium 우선순위
 
-### Q1. 메뉴 번호와 URL
+### M-01. 대형 페이지를 화면·도메인 훅·feature component로 단계적 분리
 
-- A. `menu_number = 7`, 경로 `/admin/bulk-edit` **(권장)**
-- B. `menu_number = 7`, 경로 `/admin/bulk-update`
-- C. 다른 번호/경로: 직접 기입
+- 문제: 한 페이지가 데이터 로딩, 필터, 선택, bulk write, 모달, 테이블, 사진 처리, 화면 렌더를 동시에 책임져 변경 영향과 재렌더 원인을 추적하기 어렵다.
+- 원인: 기능이 성장하는 동안 페이지 파일에 상태와 handler가 누적됐고, page 파일이 다른 page의 재사용 component까지 보유한다.
+- 관련 파일:
+  - src/pages/admin/AdminReviewReceiveDetailPage.jsx:657-4643
+  - src/pages/admin/AdminProductOverviewPage.jsx:239-2854
+  - src/pages/admin/AdminReviewReceivePage.jsx:646-2390
+  - src/pages/public/PublicReviewReceiveDetailPage.jsx:382-1001
+  - src/pages/admin/AdminBulkEditPage.jsx:4
+- 적용할 Skill/rule: review-manager-development의 reuse-first·page/service/utils 책임 분리·상태 분리, review-manager-ui, react-best-practices의 rerender-split-combined-hooks, rerender-no-inline-components, rerender-memo.
+- 예상 변경 내용:
+  - 먼저 순수 변환/validation과 데이터 접근을 page 밖으로 이동한다.
+  - ProductOverviewTable을 components/admin/product-overview/로 이동하고, bulk edit이 page 파일에 의존하지 않게 한다.
+  - review receive 목록/상세의 filter, table row, bulk editor, modal을 실제 공통 계약이 있는 단위만 추출한다.
+  - public detail은 데이터 hook, photo action, item/section UI를 분리한다.
+  - 기존 props, CSS class, session persistence, partial-save semantics를 유지하며 한 feature씩 이동한다.
+- 회귀 위험: modal open state, 선택 상태, 확장 row, 입력 debounce, DOM selector, CSS cascade가 깨질 수 있다. 매 단계 build/test와 성공·실패·빈 상태·중복 제출을 검증한다.
 
-답변: A
+### M-02. Product Overview의 렌더 hot path와 파생 상태 최적화
 
-### Q2. “상품전체보기와 같은 화면”에서 남길 표의 상호작용 범위
+- 문제: 제품 개요 페이지가 렌더마다 JSON key 생성, Map/Set 생성, 대량 row map, bulk preview 계산을 반복한다. row 내부에서는 includes 기반 membership 검색도 발생한다.
+- 원인: 파생값이 render 계산에 흩어져 있고, 비용이 큰 계산과 단순 표시 계산의 경계가 없다.
+- 관련 파일:
+  - src/pages/admin/AdminProductOverviewPage.jsx:613-712
+  - src/pages/admin/AdminProductOverviewPage.jsx:411-443
+  - src/utils/productOverviewRows.js
+  - src/utils/productOverviewBulk.js
+- 적용할 Skill/rule: react-best-practices의 rerender-derived-state-no-effect, rerender-dependencies, rerender-memo, js-set-map-lookups, js-index-maps, review-manager-development.
+- 예상 변경 내용:
+  - 파생값은 state로 중복 저장하지 않고, 실제 비용이 큰 계산만 primitive/구조적 dependency 기준으로 useMemo한다.
+  - 선택 제외 ID 등 반복 membership은 Set/index map으로 바꾼다.
+  - row를 독립 component로 만들고 필요 시 memo하여 변경된 row만 갱신한다.
+  - query key와 bulk preview의 결과가 기존 필터·선택·페이지네이션과 동일한지 순수 테스트를 추가한다.
+- 회귀 위험: selection query key, 전체 선택/제외 선택, infinite loading, bulk preview의 경계가 달라질 수 있다. 단순 계산까지 무분별하게 memoize하지 않고 대표 데이터로 before/after 결과를 비교한다.
 
-필터 입력/드롭다운은 유지해야 필터링이 가능하므로 버튼 제거 대상에서 제외하는 것으로 제안합니다. 행 선택 체크박스, 사진 보기, 상품 링크 열의 상호작용은 어떻게 할지 결정이 필요합니다.
+### M-03. 대량 테이블 렌더링 비용 줄이기
 
-- A. 필터와 표 데이터만 읽기 전용으로 유지하고, 행 선택·사진 보기·링크/행 작업 등 다른 상호작용은 모두 제거한다 **(권장)**
-- B. 필터, 행 선택, 사진 보기, 링크 열 상호작용은 유지하되 작업 툴바 버튼만 제거한다
-- C. 유지/제거할 상호작용을 직접 기입
+- 문제: Product Overview는 최대 300행, review receive 화면은 제품·bundle·상세 row와 사진을 한 번에 렌더링할 수 있어 스크롤·입력 반응이 느려질 가능성이 있다.
+- 원인: 모든 row와 셀을 일반 렌더링하고, row 단위 memo/content visibility 경계가 없다.
+- 관련 파일:
+  - src/pages/admin/AdminProductOverviewPage.jsx:411-443
+  - src/pages/admin/AdminReviewReceivePage.jsx:1486-1608
+  - src/pages/admin/AdminReviewReceiveDetailPage.jsx:2894-3031
+  - src/styles/admin-shell.css:376-614
+- 적용할 Skill/rule: react-best-practices의 rendering-content-visibility, rerender-memo, review-manager-ui의 table semantics·keyboard·responsive 규칙.
+- 예상 변경 내용:
+  - 대표 300/1,000건 데이터로 먼저 성능을 측정한다.
+  - row component memoization과 안전한 content-visibility/contain-intrinsic-size 적용을 우선 검토한다.
+  - 효과가 부족할 때만 virtualization을 검토하며, infinite sentinel·확장 row·표의 키보드/스크린리더 semantics를 보존한다.
+- 회귀 위험: row 높이, expanded content, IntersectionObserver, sticky header, print와 접근성이 달라질 수 있다. 브라우저에서 실제 스크롤·확장·키보드 이동을 검증한다.
 
-답변: A
+### M-04. Review Receive 필터 header 중복과 이중 입력 이벤트 정리
 
-### Q3. “현재 화면 엑셀”의 내보내기 범위
+- 문제: 목록과 상세 페이지가 거의 같은 FilterIcon/filter header를 각각 구현하고, 텍스트 입력에 onInput과 onChange가 동시에 연결되어 동일 handler가 중복 실행될 수 있다.
+- 원인: 공통 필터 UI가 page 내부에 복제됐고 브라우저 이벤트 계약이 정리되지 않았다.
+- 관련 파일:
+  - src/pages/admin/AdminReviewReceivePage.jsx:552-640
+  - src/pages/admin/AdminReviewReceiveDetailPage.jsx:554-655
+  - src/styles/admin-shell.css
+- 적용할 Skill/rule: review-manager-ui의 shared dialog/form/accessibility 규칙, review-manager-development, react-best-practices의 event-driven update 원칙.
+- 예상 변경 내용:
+  - 실제 공통 props를 추출해 ReviewReceiveFilterHeader로 재사용한다.
+  - 텍스트 입력은 한 이벤트 경로로 통일하고, 기존 debounce/reset/close/focus 동작을 보존한다.
+  - 날짜 필터, sessionStorage 복원, 빈 결과와 loading 상태의 contract를 테스트한다.
+- 회귀 위험: 입력 debounce 시점, IME 입력, 키보드 조작, 필터 초기화 동작이 달라질 수 있다. 한국어 IME와 직접 URL 재진입을 포함해 브라우저에서 검증한다.
 
-- A. 현재 관리자 범위와 현재 필터의 **전체 결과**를 내보낸다. 아직 스크롤로 불러오지 않은 행도 포함한다 **(권장, 현 상품전체보기와 동일)**
-- B. 현재 브라우저에 로드되어 화면에 보이는 행만 내보낸다
-- C. 선택된 행만 내보낸다 (이 경우 행 선택 UI를 유지해야 함)
+### M-05. 독립적인 Supabase 요청의 waterfall 제거
 
-답변: A
+- 문제: 대시보드와 export 데이터 로딩에서 서로 독립적인 submissions, applications, 회사 구성원 등의 요청이 앞 요청이 끝난 뒤 순차 실행된다.
+- 원인: 서비스 함수가 의존 관계와 단순한 코드 순서를 구분하지 않고 await를 연결한다.
+- 관련 파일:
+  - src/services/dashboardMetrics.js:25-142
+  - src/services/exportData.js:61-175
+  - src/services/exportPhotos.js:50-116
+- 적용할 Skill/rule: react-best-practices의 async-parallel, supabase-schema-sync의 페이지네이션·데이터 계약, review-manager-development.
+- 예상 변경 내용:
+  - scope와 ID처럼 실제 의존성이 있는 단계는 유지하고, 독립 branch는 Promise.all로 병렬화한다.
+  - pagination/chunk 제한, 에러 우선순위, 부분 데이터 반환 여부를 기존과 동일하게 유지한다.
+  - exportPhotos처럼 실제 의존성이 있는 products → submissions → photos 순서는 병렬화하지 않는다.
+- 회귀 위험: 요청 동시성 증가로 rate limit, 에러 메시지 우선순위, 부분 결과가 달라질 수 있다. 결과 집합과 에러 계약을 테스트하고 Supabase 요청 수/순서를 계측한다.
 
-### Q4. Excel에서 수정 허용할 열
+### M-06. 사진 ZIP 다운로드의 bounded concurrency 도입 검토
 
-현재 표에는 제품 공통 값과 submission별 값이 섞여 있습니다. 특히 하나의 상품은 여러 submission 행에 반복되므로, 제품 열의 수정 여부를 명확히 정해야 합니다.
+- 문제: AdminExportPhotosPage가 사진을 for 루프로 한 장씩 await하여 대량 다운로드가 느리다.
+- 원인: 동시성 제한이 없는 순차 fetch 구현이며, 진행률·실패 정보가 개별 요청과 강하게 결합돼 있다.
+- 관련 파일:
+  - src/pages/admin/AdminExportPhotosPage.jsx:293-372
+  - src/services/exportPhotos.js
+- 적용할 Skill/rule: react-best-practices의 async-parallel, review-manager-development, review-manager-ui의 progress/error feedback.
+- 예상 변경 내용:
+  - 고정된 작은 동시성으로 fetch하되 ZIP entry 순서와 파일명은 기존 규칙을 유지한다.
+  - 성공/실패/진행률을 요청 완료 순서와 무관하게 표시한다.
+  - 무제한 Promise.all은 사용하지 않고, CORS·signed URL·메모리·rate limit을 고려해 실패 시 기존 안내를 보존한다.
+- 회귀 위험: 서버 throttling, 브라우저 메모리, 파일 순서, 실패한 사진 수가 달라질 수 있다. 소량·대량·일부 실패 케이스를 브라우저에서 확인한다.
 
-- A. submission 열만 수정 허용: 배정명, 주문번호, 구매자/수취인, 구매계정, 연락처, 주소, 은행/계좌/예금주, 금액, 리뷰비, 리뷰완료, 입금완료, 입금일, 실제입금자명 **(권장: 첫 구현 범위가 가장 명확함)**
-- B. A + 제품 열도 수정 허용: 상품 제목, 설명, 링크, 업체명, 품명, 옵션, 리뷰형태, 예정 입금자명, 제품비/리뷰비 입금구분
-- C. 수정 가능/불가 열을 직접 목록으로 기입
+### M-07. localStorage/sessionStorage 접근을 한 경계로 통합
 
-항상 수정 불가로 둘 후보: `submission_id`, `product_id`, 관리자, 사진, 제품비/리뷰비 입금구분의 표시값(원본 코드로 별도 처리하지 않는 경우).
+- 문제: 관리자 ID와 필터·선택·공개 리뷰 세션 값의 storage key, parse, try/catch, legacy normalization이 여러 화면에 중복된다.
+- 원인: constants/admin.js에 일부 key만 있지만 각 page/hook이 직접 storage를 읽고 쓴다.
+- 관련 파일:
+  - src/constants/admin.js:1-2
+  - src/components/layout/AdminLayout.jsx
+  - src/hooks/useExportColumnSelection.js:68-197
+  - src/pages/admin/AdminReviewReceivePage.jsx:504-528
+  - src/pages/public/PublicReviewReceiveDetailPage.jsx:54-90,624-625
+  - src/services/adminAuth.js:70-73
+- 적용할 Skill/rule: react-best-practices의 client-localstorage-schema, rerender-defer-reads, review-manager-development.
+- 예상 변경 내용:
+  - key, version, parse/normalize, quota/security 예외 처리를 작은 storage adapter로 모은다.
+  - 기존 key와 legacy column 값은 호환하고, 인증 secret은 저장하지 않는다.
+  - 초기 storage read는 필요한 경계에서 한 번만 수행하고, 변경 이벤트는 실제 외부 동기화가 필요할 때만 사용한다.
+- 회귀 위험: 기존 사용자 설정 초기화, 다중 탭 동기화, private mode/quota 예외, 공개 흐름의 session 복원이 달라질 수 있다. legacy key와 잘못된 JSON을 테스트한다.
 
-답변: A
+### M-08. Admin Setting의 Supabase 접근을 service 경계로 이동
 
-### Q5. 제품 공통 열을 수정할 때, 같은 `product_id`의 여러 행 값이 다르면
+- 문제: AdminSettingPage가 화면에서 직접 Supabase client를 import하고 관리자 profile/password 관련 query와 update를 수행한다.
+- 원인: 서비스 계층이 인증과 설정 책임을 모두 명시적으로 제공하지 않는다.
+- 관련 파일:
+  - src/pages/admin/AdminSettingPage.jsx:4,149-200,242-300
+  - src/services/adminAuth.js
+- 적용할 Skill/rule: review-manager-development의 page/service 분리, supabase-schema-sync, review-manager-ui의 form/error/dialog 규칙.
+- 예상 변경 내용:
+  - adminSettings service 또는 기존 adminAuth의 명시적인 함수로 read/update를 이동한다.
+  - admins의 허용된 컬럼, 입력 검증, 오류 분류, 성공 메시지를 service contract로 고정한다.
+  - 화면은 form state와 결과 상태만 관리하고 기존 AppAlertDialog 흐름을 유지한다.
+- 회귀 위험: 비밀번호 규칙, profile 저장 성공/실패, 권한 오류, alert timing이 달라질 수 있다. 정상·빈 입력·잘못된 입력·권한 실패를 모두 검증한다.
 
-Q4에서 B 또는 C로 제품 열 수정을 허용할 때만 답변해 주세요.
+### M-09. 대시보드 집계의 반복 순회와 O(N×M) 조회 개선
 
-- A. 해당 상품의 충돌을 오류로 표시하고, 같은 값으로 맞춘 뒤 다시 업로드하게 한다 **(권장)**
-- B. Excel에서 가장 위 행의 값만 제품에 적용한다
-- C. 다른 정책: 직접 기입
+- 문제: 대시보드 순수 집계가 제품·submission·evidence를 여러 번 filter하고, 회사 구성원 집계는 구성원마다 전체 submissions를 다시 filter한다.
+- 원인: product/manager별 index를 일부만 사용하고 집계 단계가 여러 독립 pass로 나뉘어 있다.
+- 관련 파일:
+  - src/utils/dashboardMetrics.js:167-302,475-515
+  - src/services/dashboardMetrics.js:25-142
+  - 관련 src/utils/dashboardMetrics.test.js 신규 대상
+- 적용할 Skill/rule: react-best-practices의 js-combine-iterations, js-index-maps, js-set-map-lookups, review-manager-development.
+- 예상 변경 내용:
+  - 제품·관리자·submission 관계를 한 번 만든 index로 재사용한다.
+  - 호환 가능한 filter/map pass를 합치되, 오늘/월간/시간대와 timezone 경계 계산은 분리해 의미를 보존한다.
+  - 날짜 parsing cache는 측정으로 효과가 확인된 경우에만 도입한다.
+- 회귀 위험: 집계 건수, 중복 제거, 날짜 경계, 담당자 없는 데이터 처리가 바뀔 수 있다. 기존 결과를 fixture snapshot/순수 함수 테스트로 비교한다.
 
-답변:
+### M-10. 파일 업로드·일괄 수정의 N+1 요청과 부분 저장 계약 개선
 
-### Q6. 기존 데이터가 Excel 다운로드 뒤 다른 곳에서 변경된 경우
+- 문제: 업로드 처리에서 상품별/행별로 submission을 찾고 쓰는 순차 흐름이 있어 대량 파일에서 느리며, 중간 실패 시 부분 저장 결과가 복잡해진다.
+- 원인: 주문번호 매칭을 개별 query로 수행하고, source order와 partial-save 보고가 서비스 내부에 함께 묶여 있다.
+- 관련 파일:
+  - src/services/fileUpload.js:62-187
+  - src/pages/admin/AdminFileUploadPage.jsx
+  - src/pages/admin/AdminBulkEditPage.jsx
+  - src/utils/fileUploadParser.js
+  - src/utils/bulkEditExcel.js
+- 적용할 Skill/rule: supabase-schema-sync의 chunk/pagination 규칙, react-best-practices의 async-parallel, review-manager-development, review-manager-ui.
+- 예상 변경 내용:
+  - 허용된 submissions 범위에서 주문번호를 chunk 단위로 미리 조회하거나, 제한된 동시성으로 묶는다.
+  - source row 순서, 중복 주문번호 우선 규칙, 상품별 처리 순서, 성공/실패 보고를 유지한다.
+  - 대량 처리 최적화 전 parser와 write result를 분리해 순수 테스트를 만든다.
+- 회귀 위험: 중복 주문번호, 존재하지 않는 상품, 기존 submission update/insert 판정, partial failure 메시지가 바뀔 위험이 높다. 계약 테스트 후에만 최적화한다.
 
-- A. 현재 DB 값과 달라도 업로드 파일 값으로 덮어쓴다(마지막 적용 값 우선) **(권장: 추가 스키마 변경 없이 단순함)**
-- B. 다운로드 당시 기준값과 현재 DB 값이 달라진 행을 충돌로 막고 재다운로드를 요구한다. 이를 위해 Excel에 기준값/버전 정보를 추가한다.
-- C. 충돌 행만 제외하고 나머지 행을 적용한다.
+## 5. Low 우선순위
 
-답변: A
+### L-01. Export 페이지들의 선언적 config와 공통 로딩 경계 정리
 
-### Q7. 한 파일 안에 오류 또는 다른 회사 ID가 있을 때 적용 방식
+- 문제: 여러 export page가 비슷한 hook 호출·column filter·title/filename 설정을 반복해 새 export 변형을 추가할 때 누락 가능성이 있다.
+- 원인: useAdminExportData와 공통 export component는 있으나 page별 preset이 선언적 registry로 통합되지 않았다.
+- 관련 파일:
+  - src/pages/admin/AdminExportAllProductsPage.jsx
+  - src/pages/admin/AdminExportMyProductsPage.jsx
+  - src/pages/admin/AdminExportByDatePage.jsx
+  - src/pages/admin/AdminExportByProductPage.jsx
+  - src/pages/admin/AdminExportByDepositDatePage.jsx
+  - src/pages/admin/AdminExportByStatusPage.jsx
+  - src/pages/admin/AdminExportApplicationsPage.jsx
+  - src/hooks/useAdminExportData.js
+  - src/components/admin/export/*
+- 적용할 Skill/rule: review-manager-development, react-best-practices의 reuse-first·rerender-split-combined-hooks.
+- 예상 변경 내용:
+  - 실제 동일 계약인 export 옵션만 config로 모으고, 각 페이지의 unique filter/permission은 명시적으로 남긴다.
+  - column preset, filename, date/status semantics를 데이터로 표현하고 공통 화면에 전달한다.
+- 회귀 위험: export column 순서, filename, 날짜 inclusive/exclusive, 권한별 데이터 범위가 바뀔 수 있다. 모든 export variant별 결과 비교가 필요하다.
 
-- A. 오류가 하나라도 있으면 파일 전체를 적용하지 않는다. 오류를 고쳐 다시 업로드한다 **(권장: 의도치 않은 부분 반영 방지)**
-- B. 오류 행만 제외하고 유효한 변경 행은 적용한다
+### L-02. CSS 소유권과 공통 token의 점진적 정리
 
-답변: A
+- 문제: admin-shell.css가 약 2,887줄의 넓은 전역 스타일을 담당해 feature 추출 시 selector 충돌과 cascade 추적 비용이 크다.
+- 원인: 공통 layout/token과 제품·review·export 화면 스타일이 한 파일에 누적되어 있다.
+- 관련 파일:
+  - src/styles/admin-shell.css
+  - src/styles/admin-dashboard.css
+  - src/styles/admin-export.css
+  - src/styles/public-review-receive.css
+  - 추출 대상 src/components/admin/**
+- 적용할 Skill/rule: review-manager-ui의 기존 sky-blue token·responsive/a11y 계약, review-manager-development.
+- 예상 변경 내용:
+  - component extraction 시 해당 selector와 token만 함께 이동하고, 공통 shell token/utility는 별도 유지한다.
+  - selector 이름과 DOM 구조를 불필요하게 바꾸지 않고 dead rule만 근거를 확인해 제거한다.
+  - style split은 H-03 code split과 함께 영향 범위를 작은 feature 단위로 검증한다.
+- 회귀 위험: cascade, 모바일 breakpoint, sticky/scroll, dialog stacking, print 스타일이 변할 수 있다. 주요 route의 브라우저 검증이 필요하다.
 
-### Q8. 입금/완료 상태를 Excel로 수정할 권한
+### L-03. 순수 유틸·권한·데이터 계약 테스트 보강
 
-현재 `can_verify_deposit` 권한은 입금완료 처리에 사용됩니다. 일괄수정에서도 이를 지킬지 결정이 필요합니다.
+- 문제: 현재 테스트가 pagination, bulk Excel, product overview pagination에 집중되어 화면 권한, DB allowlist, 대시보드 집계, 필터/스토리지 정규화 회귀를 빠르게 잡지 못한다.
+- 원인: 큰 page 통합 흐름을 직접 테스트하기 전에 순수 경계와 access matrix fixture가 충분히 고정되지 않았다.
+- 관련 파일:
+  - src/utils/*.test.js
+  - src/utils/dashboardMetrics.js
+  - src/utils/reviewReceiveBulkInput.js
+  - src/utils/reviewReceiveFilters.js
+  - src/utils/productOverviewRows.js
+  - src/services/adminScope.js
+  - scripts/check-supabase.mjs
+- 적용할 Skill/rule: review-agent의 defect-first·재현 가능한 검증 원칙, review-manager-development, admin-access-control, supabase-schema-sync.
+- 예상 변경 내용:
+  - dashboard metric 날짜/중복/담당자 없음, review filter/IME 입력 계약, storage legacy normalization을 Node 테스트로 추가한다.
+  - 허용 테이블 정적 검사와 scope/capability matrix를 테스트한다.
+  - 실제 네트워크·브라우저 흐름은 순수 테스트와 분리해 최소 smoke 시나리오로 유지한다.
+- 회귀 위험: 테스트 fixture가 실제 운영 계약과 어긋나면 잘못된 안정감을 줄 수 있다. fixture는 docs/guide_db.md와 실제 허용 테이블 계약을 기준으로 유지한다.
 
-- A. `is_deposit_verified`, `deposited_at`, `actual_depositor_name` 변경은 `can_verify_deposit=true`인 계정만 허용하고, 나머지 열은 메뉴 권한 계정이 수정한다 **(권장)**
-- B. `일괄수정하기` 메뉴 권한만 있으면 위 입금 관련 열도 수정할 수 있다
-- C. 다른 권한 규칙: 직접 기입
+## 6. 권장 실행 순서
 
-답변: A
+1. H-01을 먼저 처리해 DB 대상 범위와 정적 guardrail을 고정한다.
+2. H-02의 인증/Hook 경계를 고친 뒤, H-04의 scope/capability 정책을 현재 동작 기준으로 고정한다.
+3. L-03의 순수 계약 테스트를 보강해 이후 구조 변경의 안전망을 만든다.
+4. H-03 route/xlsx code split을 적용하고 build chunk와 주요 경로를 확인한다.
+5. M-02~M-06의 측정 가능한 렌더링·네트워크 최적화를 작은 단위로 진행한다.
+6. M-01 대형 페이지 분리는 공통 계약이 확인된 부분부터 단계적으로 진행한다.
+7. M-07~M-10의 storage/service/업로드 경계 정리와 L-01~L-02의 cleanup을 마무리한다.
+8. H-05 삭제 transaction 검토는 DB 변경 승인을 받은 경우에만 별도 작업으로 진행한다.
 
-## 5. 답변 후 확정할 산출물
+## 7. 각 구현 단계의 검증 기준
 
-- 확정된 화면/라우트/권한/Excel 열 계약을 반영한 구현 계획 최종본
-- 전용 Excel 파서·차이 계산·DB 적용 서비스와 필요한 공용 UI 분리
-- `test1` 메뉴 권한 데이터 및 관련 DB 문서 갱신
-- 테스트와 빌드 검증 결과
+- 프런트 코드 변경 후 npm run build.
+- 순수 유틸·파싱·페이지네이션 변경 후 관련 npm test.
+- Supabase 연결/환경변수 변경 후 npm run supabase:check.
+- 라우팅·권한·폼·쓰기 흐름 변경 후 성공, 실패, 빈 입력, 중복 제출, 직접 URL 접근을 확인한다.
+- 작업이 끝난 뒤에는 반드시 Playwright MCP 또는 Chrome DevTools MCP로 변경 부분을 브라우저에서 검증한다.
+- 로그인 테스트는 .env의 E2E_TEST_EMAIL, E2E_TEST_PASSWORD를 사용하고 값을 로그나 문서에 노출하지 않는다.
+- DB 스키마나 RPC를 실제로 변경한 경우에만 최종 스키마 재조회와 docs/guide_db.md 동기화를 수행한다.
+- 계획만 작성하는 현재 단계에서는 코드 수정이 없으므로 브라우저 검증은 실행하지 않는다.
 
-## 6. 구현 반영 결과
+## 8. 승인 대기
 
-- 확정 답변 A 기준으로 `/admin/bulk-edit`, `menu_number = 7`, 읽기 전용 표, 현재 필터 전체 Excel 내보내기, submission 열만 수정, 마지막 적용값 우선, 오류 시 전체 적용 차단, 입금완료 권한 검증을 구현했다.
-- `test1`의 `admin_menu_permissions` 권한 행은 Supabase에 추가해 조회로 확인했다.
-- `supabase/migrations/20260721120000_add_bulk_edit_menu_and_apply_rpc.sql`에 메뉴 권한 upsert와 적용 RPC를 작성했다. 이 작업 환경에는 DB 마이그레이션 실행 권한/접속 정보가 없어 RPC는 아직 원격 DB에 적용하지 못했다.
+이 문서는 기존 완료 계획을 삭제하고 새로 작성한 리팩터링 계획이다. 사용자 확인 전에는 위 항목의 애플리케이션 코드를 수정하지 않는다.

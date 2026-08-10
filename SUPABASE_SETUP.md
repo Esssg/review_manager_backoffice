@@ -48,10 +48,10 @@ npm run supabase:check
 
 동작:
 
-- `products` -> `participants` -> `campaigns` 순으로 `select head`를 시도합니다.
-- 하나라도 성공하면 연결 성공으로 판단합니다.
+- 허용 목록에 포함된 필수 테이블 `products`에 `select head`를 시도합니다.
+- `products` 조회가 성공하면 연결 성공으로 판단합니다.
 
-> 실제 DB 테이블명이 다르면 `scripts/check-supabase.mjs`의 `candidates` 배열을 수정하면 됩니다.
+> 이 프로젝트는 같은 `public` 스키마의 다른 테이블을 연결 확인용 fallback으로 조회하지 않습니다.
 
 ## 4) 구매자용 사진 업로드 Edge Function
 

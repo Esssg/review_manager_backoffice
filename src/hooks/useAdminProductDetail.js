@@ -3,7 +3,7 @@ import { STEP_NUMBER_BY_TAB } from "../constants/admin";
 import { deleteEvidencePhoto } from "../services/evidencePhotos";
 import {
   createSubmission,
-  deleteEvidenceRowsIfExists,
+  deleteEvidenceRows,
   deleteSubmission,
   fetchApplications,
   fetchEvidencePhotos,
@@ -101,14 +101,10 @@ export function useAdminProductDetail({ adminId, productId }) {
 
         const submissionIds = (submissions ?? []).map((item) => item.id);
         let photoMap = {};
-        let hasEvidencePhotoTable = true;
 
         if (submissionIds.length > 0) {
           const photoType = activeTab === "purchase" ? "purchase" : "review";
-          const { photos, photosError, hasEvidencePhotoTable: nextHasEvidencePhotoTable } = await fetchEvidencePhotos(
-            submissionIds,
-            photoType
-          );
+          const { photos, photosError } = await fetchEvidencePhotos(submissionIds, photoType);
 
           if (photosError) {
             setErrorMessage(photosError.message);
@@ -116,7 +112,6 @@ export function useAdminProductDetail({ adminId, productId }) {
             return;
           }
 
-          hasEvidencePhotoTable = nextHasEvidencePhotoTable;
           photoMap = (photos ?? []).reduce((acc, photo) => {
             if (!acc[photo.submission_id]) acc[photo.submission_id] = [];
             acc[photo.submission_id].push(photo);
@@ -127,8 +122,7 @@ export function useAdminProductDetail({ adminId, productId }) {
         setRows(
           (submissions ?? []).map((item) => ({
             ...item,
-            photos: photoMap[item.id] ?? [],
-            hasEvidencePhotoTable
+            photos: photoMap[item.id] ?? []
           }))
         );
       } catch (error) {
@@ -175,8 +169,7 @@ export function useAdminProductDetail({ adminId, productId }) {
   const handleDeleteSubmission = async (submissionId) => {
     setErrorMessage("");
     try {
-      await deleteEvidenceRowsIfExists("evidence_photos", submissionId);
-      await deleteEvidenceRowsIfExists("evidence_photo", submissionId);
+      await deleteEvidenceRows(submissionId);
 
       const { error } = await deleteSubmission(submissionId);
       if (error) {
