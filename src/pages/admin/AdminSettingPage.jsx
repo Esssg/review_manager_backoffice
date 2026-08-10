@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ADMIN_STORAGE_KEY } from "../../constants/admin";
-import { supabase } from "../../lib/supabase";
 import AppAlertDialog from "../../components/common/AppAlertDialog";
+import { fetchAdminSetting, updateAdminSetting } from "../../services/adminSettings";
 import { getLocalStorageValue } from "../../utils/browserStorage";
 
 const EMPTY_PASSWORD_FORM = {
@@ -151,11 +151,7 @@ function AuthenticatedAdminSettingPage({ adminId }) {
     const fetchAdminData = async () => {
       setIsLoading(true);
       setLoadError("");
-      const { data, error } = await supabase
-        .from("admins")
-        .select("login_id,username,phone_number,email,company")
-        .eq("login_id", adminId)
-        .single();
+      const { data, error } = await fetchAdminSetting(adminId);
 
       if (error) {
         setLoadError(`관리자 정보를 불러올 수 없습니다: ${error.message}`);
@@ -244,10 +240,7 @@ function AuthenticatedAdminSettingPage({ adminId }) {
       updatePayload.password = passwordForm.newPassword;
     }
 
-    const { error } = await supabase
-      .from("admins")
-      .update(updatePayload)
-      .eq("login_id", adminId);
+    const { error } = await updateAdminSetting(adminId, updatePayload);
 
     setIsSaving(false);
 

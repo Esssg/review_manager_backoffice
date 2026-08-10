@@ -1,7 +1,7 @@
 # React/프로젝트 기준 리팩터링 계획
 
 작성일: 2026-08-10
-상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07 완료 / 다음 단계(M-08) 진행 예정
+상태: H-01·H-02·H-03·H-04·H-05·M-01·M-02·M-03·M-04·M-05·M-06·M-07·M-08 완료 / 다음 단계(M-09) 진행 예정
 
 ## 1. 목표와 범위
 
@@ -297,6 +297,7 @@
   - admins의 허용된 컬럼, 입력 검증, 오류 분류, 성공 메시지를 service contract로 고정한다.
   - 화면은 form state와 결과 상태만 관리하고 기존 AppAlertDialog 흐름을 유지한다.
 - 회귀 위험: 비밀번호 규칙, profile 저장 성공/실패, 권한 오류, alert timing이 달라질 수 있다. 정상·빈 입력·잘못된 입력·권한 실패를 모두 검증한다.
+- 실행 결과: `fetchAdminSetting`과 `updateAdminSetting`을 `src/services/adminSettings.js`로 이동하고 화면의 Supabase client 직접 import를 제거했다. `admins`의 기존 조회 컬럼과 update payload, 비밀번호 검증·AppAlertDialog·성공/실패 상태는 그대로 유지했다. `npm test` 25개와 `npm run build`를 통과했고, Playwright로 관리자 설정 profile 조회·기본 정보·비밀번호 변경 진입·저장 버튼을 확인했으며 실제 저장은 실행하지 않았다. 기존 capability 조회 400 오류 외 새 콘솔 오류는 없었다.
 
 ### M-09. 대시보드 집계의 반복 순회와 O(N×M) 조회 개선
 
