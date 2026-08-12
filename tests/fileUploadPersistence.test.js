@@ -6,7 +6,7 @@ import {
   createFileUploadResult,
   finalizeFileUploadResult,
   getSubmissionLookupResult
-} from "../src/utils/fileUploadPersistence.js";
+} from "../src/utils/fileUploadPersistence.ts";
 
 test("업로드 결과는 성공·부분 성공·오류에 같은 summary 계약을 사용한다", () => {
   const result = createFileUploadResult();

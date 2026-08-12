@@ -1,0 +1,29 @@
+- generic [ref=f13e2]:
+  - region "Notifications alt+T"
+  - main [ref=f13e3]:
+    - generic [ref=f13e5]:
+      - generic [ref=f13e15]:
+        - strong [ref=f13e16]: Review Manager
+        - generic [ref=f13e17]: OPERATIONS CONSOLE
+      - generic [ref=f13e18]:
+        - paragraph [ref=f13e19]: REVIEW OPERATIONS / ADMIN
+        - heading "리뷰 운영을 정확하게 관리하세요." [level=1] [ref=f13e20]: 리뷰 운영을정확하게 관리하세요.
+        - paragraph [ref=f13e21]: 상품 등록부터 리뷰 진행, 제출 현황과 정산까지 운영에 필요한 정보를 한 곳에서 확인합니다.
+      - generic [ref=f13e22]:
+        - generic [ref=f13e23]: 운영 데이터 기반 관리
+        - generic [ref=f13e25]: SECURE ADMIN ACCESS
+    - form [ref=f13e27]:
+      - generic [ref=f13e28]:
+        - paragraph [ref=f13e29]: ADMIN ACCESS
+        - heading "관리자 로그인" [level=2] [ref=f13e30]
+        - paragraph [ref=f13e31]: Review Manager 운영 콘솔에 접속합니다.
+      - generic [ref=f13e32]:
+        - generic [ref=f13e33]: 관리자 아이디
+        - textbox "관리자 아이디" [ref=f13e35]:
+          - /placeholder: 아이디 입력
+      - generic [ref=f13e36]:
+        - generic [ref=f13e37]: 패스워드
+        - textbox "패스워드" [ref=f13e39]:
+          - /placeholder: 패스워드 입력
+      - button "운영 콘솔 접속" [ref=f13e40]
+      - paragraph [ref=f13e42]: 승인된 관리자 계정만 접근할 수 있습니다.

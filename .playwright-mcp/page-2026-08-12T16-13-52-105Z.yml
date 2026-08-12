@@ -1,0 +1,4 @@
+- generic [ref=f17e2]:
+  - region "Notifications alt+T"
+  - region "화면 로딩 상태" [ref=f17e3]:
+    - paragraph [ref=f17e4]: 화면을 불러오는 중...

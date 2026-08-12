@@ -1,0 +1,33 @@
+- generic [ref=f11e2]:
+  - region "Notifications alt+T"
+  - main [ref=f11e4]:
+    - generic [ref=f11e5]:
+      - button "관리자 메뉴 열기" [ref=f11e6]:
+        - generic [ref=f11e7]: Toggle Sidebar
+      - generic [ref=f11e8]: Review Manager
+    - generic [ref=f11e9]:
+      - generic [ref=f11e12]:
+        - generic [ref=f11e13]:
+          - generic [ref=f11e14]: 데이터 운영
+          - heading "상품전체보기" [level=1] [ref=f11e15]
+          - paragraph [ref=f11e16]: 전체보기 화면입니다.
+        - generic "상품전체보기 화면 도구" [ref=f11e17]:
+          - generic [ref=f11e18]:
+            - generic [ref=f11e19]:
+              - generic [ref=f11e20]: 조회 범위
+              - generic [ref=f11e21]: 내 계정 데이터
+            - generic [ref=f11e22]:
+              - radiogroup "조회 범위" [ref=f11e23]:
+                - generic [ref=f11e24] [cursor=pointer]:
+                  - radio "내 계정 데이터" [checked] [ref=f11e25]
+                  - generic [ref=f11e29]: 내 계정 데이터
+                - generic [ref=f11e30] [cursor=pointer]:
+                  - radio "내 회사 전체" [ref=f11e31]
+                  - generic [ref=f11e32]: 내 회사 전체
+              - generic "현재 로그인 계정" [ref=f11e33]:
+                - generic [ref=f11e34]: 현재 로그인
+                - strong [ref=f11e35]: 이석진
+                - generic "계정 2sssg" [ref=f11e36]
+            - paragraph [ref=f11e37]: 현재 로그인한 계정의 데이터만 표시합니다.
+      - region "상품전체보기 빈 상태" [ref=f11e38]:
+        - paragraph [ref=f11e39]: 표시할 submission 데이터가 없습니다.

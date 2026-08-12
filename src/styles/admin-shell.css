@@ -1668,7 +1668,7 @@
 .review-receive-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.56);
+  background: color-mix(in oklch, var(--foreground) 56%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1680,10 +1680,10 @@
   width: min(980px, 100%);
   max-height: min(88vh, 920px);
   overflow: auto;
-  background: #fff;
-  border: 1px solid #dbeafe;
-  border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px color-mix(in oklch, var(--foreground) 18%, transparent);
   padding: 24px;
 }
 
@@ -1712,14 +1712,25 @@
 }
 
 .review-receive-modal-close {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #fff;
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 8px 12px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 10px;
   cursor: pointer;
+}
+
+.review-receive-modal-close:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.review-receive-modal-close:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
 }
 
 .review-receive-modal-body {
@@ -2118,17 +2129,15 @@
 
 .review-receive-dialog-content {
   padding: 28px;
-  background:
-    radial-gradient(circle at top right, rgba(56, 189, 248, 0.16), transparent 36%),
-    linear-gradient(180deg, #f8fdff 0%, #ffffff 100%);
+  background: var(--card);
 }
 
 .review-receive-dialog-badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  background: #e0f2fe;
-  color: #0369a1;
+  border-radius: var(--radius-md);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
   font-size: 12px;
   font-weight: 700;
   padding: 7px 12px;
@@ -2277,17 +2286,17 @@
 .admin-setting-container {
   width: 100%;
   max-width: 500px;
-  background: #fff;
-  border: 1px solid #dbeafe;
-  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
   padding: 32px 28px;
-  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.07);
+  box-shadow: 0 10px 24px color-mix(in oklch, var(--foreground) 7%, transparent);
 }
 
 .admin-setting-container h1 {
   margin: 0 0 28px;
   font-size: 28px;
-  color: #0c4a6e;
+  color: var(--foreground);
 }
 
 .admin-setting-section {
@@ -2297,7 +2306,7 @@
 .admin-setting-section h2 {
   margin: 0 0 18px;
   font-size: 16px;
-  color: #334155;
+  color: var(--foreground);
   font-weight: 700;
 }
 
@@ -2323,28 +2332,29 @@
 .form-group label {
   font-size: 14px;
   font-weight: 700;
-  color: #334155;
+  color: var(--foreground);
 }
 
 .form-input {
-  padding: 10px 14px;
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
   font-size: 14px;
-  background: #f8fcff;
-  color: #0f172a;
+  background: var(--background);
+  color: var(--foreground);
   font-family: inherit;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: #7dd3fc;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
 }
 
 .form-input:disabled {
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: var(--muted);
+  color: var(--muted-foreground);
   cursor: not-allowed;
 }
 
@@ -2356,9 +2366,9 @@
 
 .admin-password-change-panel {
   padding: 16px;
-  border: 1px solid #dbeafe;
-  border-radius: 12px;
-  background: #f8fcff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--muted);
 }
 
 .password-input-row {
@@ -2378,29 +2388,31 @@
   justify-content: center;
   width: 42px;
   height: 42px;
-  border: 1px solid #bae6fd;
-  border-radius: 10px;
-  color: #0369a1;
-  background: #fff;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--secondary-foreground);
+  background: var(--background);
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .password-visibility-button:hover:not(:disabled),
 .password-visibility-button.is-active {
-  border-color: #38bdf8;
-  background: #e0f4ff;
+  border-color: var(--ring);
+  background: var(--secondary);
 }
 
 .password-visibility-button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
 }
 
 .password-visibility-button:disabled {
-  color: #94a3b8;
-  background: #f1f5f9;
-  border-color: #e2e8f0;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-color: var(--border);
   cursor: not-allowed;
 }
 
@@ -2445,30 +2457,30 @@
 .admin-setting-save-button,
 .admin-setting-cancel-button {
   flex: 1;
-  height: 44px;
+  height: 36px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .admin-setting-save-button {
-  background: #0369a1;
-  color: #fff;
-  border-color: #0369a1;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
 }
 
 .admin-setting-save-button:hover:not(:disabled) {
-  background: #0284c7;
-  border-color: #0284c7;
+  background: color-mix(in oklch, var(--primary), var(--foreground) 10%);
+  border-color: color-mix(in oklch, var(--primary), var(--foreground) 10%);
 }
 
 .admin-setting-save-button:focus:not(:disabled) {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
 }
 
 .admin-setting-save-button:disabled {
@@ -2477,19 +2489,18 @@
 }
 
 .admin-setting-cancel-button {
-  background: transparent;
-  color: #334155;
-  border-color: #cbd5e1;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .admin-setting-cancel-button:hover:not(:disabled) {
-  background: #f1f5f9;
-  border-color: #94a3b8;
+  background: var(--muted);
+  border-color: var(--border);
 }
 
 .admin-setting-cancel-button:focus:not(:disabled) {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
 }
 
 .admin-setting-cancel-button:disabled {

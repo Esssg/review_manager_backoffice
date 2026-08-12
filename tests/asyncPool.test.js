@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runWithConcurrency } from "../src/utils/asyncPool.js";
+import { runWithConcurrency } from "../src/utils/asyncPool.ts";
 
 test("동시성 제한을 지키면서 결과는 입력 순서를 유지한다", async () => {
   let activeCount = 0;

@@ -5,7 +5,7 @@ import {
   getAdminScopePolicy,
   includesAdminScopeCompanyData,
   resolveAdminScopePolicy
-} from "../src/constants/adminScope.js";
+} from "../src/constants/adminScope.ts";
 
 test("사용자 토글은 개인/회사 scope policy로 변환된다", () => {
   assert.equal(getAdminScopePolicy(false), ADMIN_SCOPE_POLICY.PERSONAL);

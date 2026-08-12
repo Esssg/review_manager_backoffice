@@ -4,7 +4,7 @@ import {
   ADMIN_MENU_NUMBER,
   getAdminMenuItemByNumber,
   getAdminMenuItemByPathname
-} from "../src/constants/admin.js";
+} from "../src/constants/admin.ts";
 
 test("관리자 상위·하위 경로는 동일한 메뉴 권한 번호로 매핑된다", () => {
   const cases = [

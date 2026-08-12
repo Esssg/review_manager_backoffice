@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getDeletionErrorMessage } from "../src/utils/deletionContract.js";
+import { getDeletionErrorMessage } from "../src/utils/deletionContract.ts";
 
 test("삭제 오류는 부분 성공이 아니면 기존 오류 메시지를 유지한다", () => {
   const result = {

@@ -23,12 +23,20 @@
 - 라우팅, 페이지, 데이터 접근, 순수 유틸, 스타일의 책임을 섞지 않습니다.
 - 서버 원본 데이터와 화면 보조 상태를 분리하고, 파생값을 중복 상태로 저장하지 않습니다.
 - 실패 가능한 작업에는 네트워크·입력·권한 오류를 구분한 사용자 피드백을 제공합니다.
-- 브라우저 기본 `alert`, `confirm`, `prompt`를 추가하지 않고 `src/components/common/AppAlertDialog.jsx`를 사용합니다.
+- 브라우저 기본 `alert`, `confirm`, `prompt`를 추가하지 않습니다. 확인·경고·삭제는 `AppAlertDialog` 또는 shadcn `AlertDialog`/`Dialog` 공통 계약을 사용하며, Enter·Escape·focus·aria·busy/disabled·위험 variant 동작을 유지합니다.
 - 작업 중 생성한 임시 파일은 종료 전에 삭제합니다.
+
+## UI·가독성·반응형 원칙
+
+- 관리자용 페이지는 백오피스 성격에 맞게 표와 화면의 정보 가독성을 최우선으로 합니다.
+- 사용자 공개 페이지, 특히 리뷰어용 페이지는 정보 가독성을 우선하면서도 시각적 디자인 품질을 함께 고려합니다.
+- 공통적으로 의도하지 않은 줄바꿈으로 인한 가독성 저하를 가장 주의합니다. 표 셀, 버튼, 필터 라벨, 상태 배지, 날짜·금액·링크·안내 문구의 줄바꿈과 행 높이 변화를 확인합니다.
+- 줄바꿈을 방지할 때 내용을 무조건 잘라내지 말고, 필요한 경우 열 너비·최소 너비·말줄임·overflow·툴팁·가로 스크롤을 함께 설계해 정보 손실을 피합니다.
+- 관리자 페이지는 데스크톱 백오피스의 밀도와 정보 탐색을 우선하되, 공개 페이지(리뷰어용)는 모바일 화면을 중요한 기준으로 삼아 좁은 viewport에서의 줄바꿈·overflow·터치 조작을 반드시 검토합니다.
 
 우선 탐색할 위치:
 
-- `src/App.jsx`, `src/pages/*`, `src/components/*`, `src/hooks/*`
+- `src/App.tsx`, `src/pages/*`, `src/components/*`, `src/hooks/*`
 - `src/services/*`, `src/utils/*`, `src/constants/*`
 - `src/lib/supabase.ts`, `src/styles/*`
 - `scripts/check-supabase.mjs`

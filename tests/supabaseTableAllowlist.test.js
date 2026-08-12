@@ -6,7 +6,7 @@ import test from "node:test";
 
 const projectRoot = join(fileURLToPath(new URL("..", import.meta.url)));
 const sourceRoots = ["src", "scripts", "supabase/functions", "supabase/migrations"];
-const sourceExtensions = new Set([".js", ".jsx", ".mjs", ".ts", ".sql"]);
+const sourceExtensions = new Set([".ts", ".tsx", ".mjs", ".ts", ".sql"]);
 const allowedTables = new Set([
   "admins",
   "products",

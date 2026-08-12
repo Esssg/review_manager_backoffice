@@ -81,10 +81,10 @@
   justify-content: space-between;
   gap: 14px;
   padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #dbeafe;
-  border-radius: 14px;
-  box-shadow: 0 8px 20px rgba(14, 116, 144, 0.06);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 20px color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
 .export-toolbar-stats {
@@ -114,8 +114,8 @@
 .export-empty-hint {
   margin: 0;
   padding: 14px 16px;
-  background: #f8fcff;
-  border: 1px dashed #bae6fd;
+  background: var(--muted);
+  border: 1px dashed var(--border);
   border-radius: 12px;
   color: var(--text-subtle);
   font-size: 14px;
@@ -128,11 +128,11 @@
 
 .export-panel {
   flex: 0 0 auto;
-  background: #fff;
-  border: 1px solid #dbeafe;
-  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 18px;
-  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.06);
+  box-shadow: 0 10px 24px color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
 .export-panel-header {
@@ -175,14 +175,14 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border: 1px solid #bae6fd;
-  border-radius: 999px;
-  background: #f0f9ff;
-  color: #075985;
-  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font-weight: 500;
 }
 
-.export-date-radio input {
+.export-date-radio [data-slot="radio-group-item"] {
   margin: 0;
 }
 
@@ -201,16 +201,16 @@
 }
 
 .export-date-input input {
-  min-height: 42px;
-  padding: 10px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #fff;
-  color: var(--text-strong);
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .export-date-input input:focus-visible,
-.export-date-radio input:focus-visible,
+.export-date-radio [data-slot="radio-group-item"]:focus-visible,
 .export-quick-range-button:focus-visible {
   outline: 2px solid #38bdf8;
   outline-offset: 2px;
@@ -223,19 +223,21 @@
 }
 
 .export-quick-range-button {
-  border: 1px solid #bae6fd;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: #f8fcff;
-  color: #0369a1;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  background: var(--background);
+  color: var(--foreground);
   cursor: pointer;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .export-quick-range-button.active {
-  background: #0ea5e9;
-  border-color: #0ea5e9;
-  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .export-date-filter-actions {
@@ -267,14 +269,14 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border: 1px solid #bae6fd;
-  border-radius: 999px;
-  background: #f8fcff;
-  color: #075985;
-  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-weight: 500;
 }
 
-.export-chip-option input {
+.export-chip-option [data-slot="radio-group-item"] {
   margin: 0;
 }
 
@@ -293,16 +295,16 @@
 }
 
 .export-select-input {
-  min-height: 42px;
-  padding: 10px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #fff;
-  color: var(--text-strong);
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .export-select-input:focus-visible,
-.export-chip-option input:focus-visible {
+.export-chip-option [data-slot="radio-group-item"]:focus-visible {
   outline: 2px solid #38bdf8;
   outline-offset: 2px;
 }
@@ -321,19 +323,21 @@
 }
 
 .export-preset-button {
-  border: 1px solid #bae6fd;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: #f0f9ff;
-  color: #0369a1;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
   cursor: pointer;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .export-preset-button.active {
-  background: #0ea5e9;
-  color: #fff;
-  border-color: #0ea5e9;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
 }
 
 .export-preset-button:focus-visible,

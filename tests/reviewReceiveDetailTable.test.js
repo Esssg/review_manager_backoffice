@@ -5,7 +5,7 @@ import {
   filterReviewReceiveRowsByColumnFilters,
   getVisibleReviewReceiveRowFilterColumns,
   normalizeReviewReceiveFilterText
-} from "../src/utils/reviewReceiveDetailTable.js";
+} from "../src/utils/reviewReceiveDetailTable.ts";
 
 test("리뷰받기 열 필터 정규화는 전각 문자와 구분 기호를 같은 검색어로 취급한다", () => {
   assert.equal(normalizeReviewReceiveFilterText(" ＡＢＣ / 12-3 "), "abc123");

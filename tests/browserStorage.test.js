@@ -6,7 +6,7 @@ import {
   removeStorageValue,
   writeStorageJson,
   writeStorageValue
-} from "../src/utils/browserStorage.js";
+} from "../src/utils/browserStorage.ts";
 
 function createMemoryStorage() {
   const values = new Map();

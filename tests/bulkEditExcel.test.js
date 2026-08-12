@@ -5,7 +5,7 @@ import {
   buildBulkEditChangeSet,
   buildBulkEditExcelRows,
   hasBulkEditDepositChanges
-} from "../src/utils/bulkEditExcel.js";
+} from "../src/utils/bulkEditExcel.ts";
 
 const baseValues = {
   assign_name: "기존 배정",

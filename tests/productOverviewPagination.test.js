@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sliceProductOverviewPage } from "../src/utils/productOverviewPagination.js";
+import { sliceProductOverviewPage } from "../src/utils/productOverviewPagination.ts";
 
 test("상품전체보기 페이지 크기와 반환 행 수가 같아도 total_count가 크면 다음 페이지가 있다", () => {
   const rows = Array.from({ length: 300 }, (_, index) => ({

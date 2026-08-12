@@ -105,6 +105,11 @@
   grid-column: 1 / 4;
 }
 
+.step-tab-list > [data-slot="tabs"],
+.step-tab-list-inner {
+  width: 100%;
+}
+
 .step-controls {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -133,8 +138,8 @@
 .step-tab-button {
   flex: 1;
   height: 54px;
-  border-radius: 12px;
-  font-weight: 700;
+  border-radius: var(--radius-md);
+  font-weight: 500;
   border: 1px solid transparent;
   display: flex;
   justify-content: space-between;
@@ -148,20 +153,21 @@
 }
 
 .step-tab-button.enabled {
-  background: #e0f2fe;
-  border-color: #bae6fd;
-  color: #0c4a6e;
+  background: var(--secondary);
+  border-color: var(--border);
+  color: var(--secondary-foreground);
   cursor: pointer;
 }
 
 .step-tab-button.enabled.active {
-  background: linear-gradient(90deg, var(--sky-500), #0ea5e9);
-  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .step-tab-button.disabled {
-  background: #e5e7eb;
-  color: #6b7280;
+  background: var(--muted);
+  color: var(--muted-foreground);
   cursor: pointer;
 }
 

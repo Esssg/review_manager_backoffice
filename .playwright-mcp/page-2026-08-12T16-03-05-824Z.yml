@@ -1,0 +1,9 @@
+- generic [ref=f10e2]:
+  - region "Notifications alt+T"
+  - main [ref=f10e4]:
+    - generic [ref=f10e5]:
+      - button "관리자 메뉴 열기" [ref=f10e6]:
+        - generic [ref=f10e7]: Toggle Sidebar
+      - generic [ref=f10e8]: Review Manager
+    - region "메뉴 권한 로딩 상태" [ref=f10e10]:
+      - paragraph [ref=f10e11]: 메뉴 권한을 확인하는 중...

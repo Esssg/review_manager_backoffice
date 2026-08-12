@@ -5,7 +5,7 @@ import {
   buildDashboardSummary,
   pickTopProductsByPurchase,
   pickTopProductsByReviewWaiting
-} from "../src/utils/dashboardMetrics.js";
+} from "../src/utils/dashboardMetrics.ts";
 
 const now = new Date(2026, 7, 11, 12, 0, 0);
 

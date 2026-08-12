@@ -48,139 +48,139 @@
 
 ```text
 src/
-  main.jsx                앱 진입점 + 스타일 레이어 로드
-  App.jsx                 최상위 라우팅 엔트리
+  main.tsx                앱 진입점 + 스타일 레이어 로드
+  App.tsx                 최상위 라우팅 엔트리
   constants/
-    admin.js              관리자 저장 키, 탭/스텝 상수
-    adminScope.js         personal/company 및 feature 고정 scope policy
+    admin.ts              관리자 저장 키, 탭/스텝 상수
+    adminScope.ts         personal/company 및 feature 고정 scope policy
   contexts/
-    AdminAccessContext.jsx
+    AdminAccessContext.tsx
                           인증된 관리자 capability/profile 공유 경계
   hooks/
-    useAdminCapabilities.js
+    useAdminCapabilities.ts
                           capability/profile 조회 및 회사 범위 토글 상태 관리
-    useAdminDashboard.js     대시보드 조회/집계/범위 토글 상태 관리
-    useAdminExportData.js    내보내기 데이터 조회/범위 토글/행 변환
-    useExportColumnSelection.js
+    useAdminDashboard.ts     대시보드 조회/집계/범위 토글 상태 관리
+    useAdminExportData.ts    내보내기 데이터 조회/범위 토글/행 변환
+    useExportColumnSelection.ts
                           내보내기 컬럼 프리셋·체크박스·localStorage
-    useAdminProductDetail.js
+    useAdminProductDetail.ts
                           상품 상세 상태/조회/변경 흐름 관리
   components/
     layout/
-      AdminLayout.jsx     관리자 공통 레이아웃
+      AdminLayout.tsx     관리자 공통 레이아웃
     admin/dashboard/
-      DashboardKpiGrid.jsx
-      DashboardAlerts.jsx
-      DashboardTrendChart.jsx
-      DashboardActivityPanels.jsx
-      DashboardCompanyMembers.jsx
+      DashboardKpiGrid.tsx
+      DashboardAlerts.tsx
+      DashboardTrendChart.tsx
+      DashboardActivityPanels.tsx
+      DashboardCompanyMembers.tsx
                           대시보드 KPI/알림/추이/활동/회사 비교 UI 컴포넌트
     admin/product-detail/
-      ProductSummary.jsx
-      SubmissionInput.jsx
-      StepTabList.jsx
-      ApplicationsTable.jsx
-      SubmissionTable.jsx
-      PhotoViewerModal.jsx
+      ProductSummary.tsx
+      SubmissionInput.tsx
+      StepTabList.tsx
+      ApplicationsTable.tsx
+      SubmissionTable.tsx
+      PhotoViewerModal.tsx
                           상품 상세 하위 UI 컴포넌트
     admin/export/
-      ExportPageLayout.jsx
-      ExportColumnSelector.jsx
-      ExportToolbar.jsx
-      ExportPreviewTable.jsx
-      ExportDateFilterPanel.jsx
-      ExportDownloadButton.jsx
-      ExportWorkbookDownloadButton.jsx
+      ExportPageLayout.tsx
+      ExportColumnSelector.tsx
+      ExportToolbar.tsx
+      ExportPreviewTable.tsx
+      ExportDateFilterPanel.tsx
+      ExportDownloadButton.tsx
+      ExportWorkbookDownloadButton.tsx
                           내보내기 공용 레이아웃·컬럼 선택·미리보기·필터·다운로드 UI
     admin/product-overview/
-      ProductOverviewTable.jsx
-      ProductOverviewSection.jsx
+      ProductOverviewTable.tsx
+      ProductOverviewSection.tsx
                           상품전체보기·일괄수정 공용 테이블 및 섹션 UI
     admin/review-receive/
-      ReviewReceiveProductFilterHeader.jsx
-      ReviewReceiveProductList.jsx
-      AdminReviewReceiveAllProductsPanel.jsx
-      AdminReviewReceiveProductItems.jsx
-      AdminReviewReceiveSubmissionSection.jsx
-      AdminReviewReceiveProductReviewerBulkModal.jsx
+      ReviewReceiveProductFilterHeader.tsx
+      ReviewReceiveProductList.tsx
+      AdminReviewReceiveAllProductsPanel.tsx
+      AdminReviewReceiveProductItems.tsx
+      AdminReviewReceiveSubmissionSection.tsx
+      AdminReviewReceiveProductReviewerBulkModal.tsx
                           리뷰받기 목록과 관리자 상세의 필터·상태 탭·번들·품목·제출 table·상품/리뷰어 bulk modal UI
     common/
-      ProductLinkCopy.jsx 상품 링크 3줄 말줄임 표시 및 전체 복사 버튼
+      ProductLinkCopy.tsx 상품 링크 3줄 말줄임 표시 및 전체 복사 버튼
     public/
-      PublicReviewReceiveSection.jsx
+      PublicReviewReceiveSection.tsx
                           구매자용 리뷰받기 읽기 전용 섹션 컴포넌트
-      PublicReviewReceiveProductSummary.jsx
-      PublicReviewReceiveLookupPanel.jsx
+      PublicReviewReceiveProductSummary.tsx
+      PublicReviewReceiveLookupPanel.tsx
                           구매자용 상품 요약·조회 폼 UI
-      PublicPhotoUploadModal.jsx
+      PublicPhotoUploadModal.tsx
                           구매자용 사진 업로드/저장 모달
   pages/
     admin/
-      LoginPage.jsx
-      AdminDashboardPage.jsx
-      AdminProductOverviewPage.jsx
-      AdminProductsPage.jsx
-      AdminProductDetailPage.jsx
-      AdminReviewReceivePage.jsx
-      AdminReviewReceiveDetailPage.jsx
-      AdminExportAllProductsPage.jsx
-      AdminExportMyProductsPage.jsx
-      AdminExportByDatePage.jsx
-      AdminExportByProductPage.jsx
-      AdminExportByDepositDatePage.jsx
-      AdminExportByStatusPage.jsx
-      AdminExportApplicationsPage.jsx
-      AdminExportPhotosPage.jsx
-      AdminFileUploadPage.jsx
+      LoginPage.tsx
+      AdminDashboardPage.tsx
+      AdminProductOverviewPage.tsx
+      AdminProductsPage.tsx
+      AdminProductDetailPage.tsx
+      AdminReviewReceivePage.tsx
+      AdminReviewReceiveDetailPage.tsx
+      AdminExportAllProductsPage.tsx
+      AdminExportMyProductsPage.tsx
+      AdminExportByDatePage.tsx
+      AdminExportByProductPage.tsx
+      AdminExportByDepositDatePage.tsx
+      AdminExportByStatusPage.tsx
+      AdminExportApplicationsPage.tsx
+      AdminExportPhotosPage.tsx
+      AdminFileUploadPage.tsx
                           내보내기 하위 페이지(전체상품·내상품·일자별·상품별·입금일·상태별·신청자·사진내려받기)
                           관리자 페이지 컴포넌트
     public/
-      PublicReviewReceiveDetailPage.jsx
+      PublicReviewReceiveDetailPage.tsx
                           구매자용 리뷰받기 상세 페이지
   lib/supabase.ts         Supabase 클라이언트 생성
   services/
-    adminAuth.js          관리자 로그인·메뉴 권한·capability/profile 조회
-    adminScope.js         관리자 profile 기반 manager scope 해석
-    adminProducts.js      관리자 상품 목록 조회, 리뷰받기 목록 RPC 조회
-    dashboardMetrics.js   대시보드 데이터 조회
-    productOverview.js    상품전체보기 목록 RPC 조회 및 선택 작업용 전체 조건 조회
-    productDetail.js      상품 상세 관련 조회/수정
-    adminDeletion.js      허용 테이블의 삭제 순서·부분 성공 결과 계약
-    reviewReceivePublic.js
+    adminAuth.ts          관리자 로그인·메뉴 권한·capability/profile 조회
+    adminScope.ts         관리자 profile 기반 manager scope 해석
+    adminProducts.ts      관리자 상품 목록 조회, 리뷰받기 목록 RPC 조회
+    dashboardMetrics.ts   대시보드 데이터 조회
+    productOverview.ts    상품전체보기 목록 RPC 조회 및 선택 작업용 전체 조건 조회
+    productDetail.ts      상품 상세 관련 조회/수정
+    adminDeletion.ts      허용 테이블의 삭제 순서·부분 성공 결과 계약
+    reviewReceivePublic.ts
                           구매자용 리뷰받기 조회 + 사진 업로드 함수 호출 서비스
-    reviewReceive.js      리뷰받기 상세 조회/수정/삭제
-    exportData.js         내보내기용 products/submissions 등 조회
-    exportPhotos.js       사진내려받기용 products/submissions/evidence_photos 조회
-    fileUpload.js         파일 업로드 products 생성 및 submissions 주문번호 기준 저장
-    bulkEdit.js           일괄수정 Excel 대상 현재값 조회 및 적용 RPC 호출
-    paginatedQuery.js     Supabase 고유 키 커서 전체 조회, IN 조건 분할, 제한 동시 실행
+    reviewReceive.ts      리뷰받기 상세 조회/수정/삭제
+    exportData.ts         내보내기용 products/submissions 등 조회
+    exportPhotos.ts       사진내려받기용 products/submissions/evidence_photos 조회
+    fileUpload.ts         파일 업로드 products 생성 및 submissions 주문번호 기준 저장
+    bulkEdit.ts           일괄수정 Excel 대상 현재값 조회 및 적용 RPC 호출
+    paginatedQuery.ts     Supabase 고유 키 커서 전체 조회, IN 조건 분할, 제한 동시 실행
   utils/
-    applicationRows.js    신청자 정렬 유틸
-    dashboardMetrics.js   대시보드 날짜/상태/집계/Top N/최근 활동 유틸
-    productOverviewRows.js
+    applicationRows.ts    신청자 정렬 유틸
+    dashboardMetrics.ts   대시보드 날짜/상태/집계/Top N/최근 활동 유틸
+    productOverviewRows.ts
                          상품전체보기 평탄화/정렬/필터 유틸
-    productOverviewSelection.js
+    productOverviewSelection.ts
                          상품전체보기 선택 query key·로드 행 membership 유틸
-    submissionParser.js   제출 문자열 파싱 유틸
-    reviewReceiveRows.js  리뷰받기 섹션 분리/정렬 유틸
-    reviewReceiveProductList.js
+    submissionParser.ts   제출 문자열 파싱 유틸
+    reviewReceiveRows.ts  리뷰받기 섹션 분리/정렬 유틸
+    reviewReceiveProductList.ts
                          리뷰받기 목록 컬럼·날짜·번들·완료현황 표시 유틸
-    reviewReceiveDetailTable.js
+    reviewReceiveDetailTable.ts
                          리뷰받기 상세 열 필터 정의·상태 초기화·행 필터 순수 유틸
-    exportColumns.js      내보내기 컬럼·프리셋·행 변환
-    exportDateFilters.js  내보내기 날짜 필터 기본값/빠른 범위 유틸
-    exportFile.js         xlsx 기반 Excel 다운로드
-    zipFile.js            브라우저 기반 무압축 ZIP 생성/다운로드
-    productLink.js        상품 설명/링크 분리 유틸
-    plannedDepositorName.js
+    exportColumns.ts      내보내기 컬럼·프리셋·행 변환
+    exportDateFilters.ts  내보내기 날짜 필터 기본값/빠른 범위 유틸
+    exportFile.ts         xlsx 기반 Excel 다운로드
+    zipFile.ts            브라우저 기반 무압축 ZIP 생성/다운로드
+    productLink.ts        상품 설명/링크 분리 유틸
+    plannedDepositorName.ts
                          등록일·업체명 기반 예정 입금자명 생성 유틸
-    fileUploadParser.js   Excel 파일 업로드 행 파싱/상품 블록 변환 순수 로직
-    fileUploadExcel.js    xlsx 기반 workbook 변환 adapter(파일 선택 시 lazy import)
-    fileUploadValidation.js
+    fileUploadParser.ts   Excel 파일 업로드 행 파싱/상품 블록 변환 순수 로직
+    fileUploadExcel.ts    xlsx 기반 workbook 변환 adapter(파일 선택 시 lazy import)
+    fileUploadValidation.ts
                           파일 업로드 날짜/금액/계좌/상태값 검증 유틸
-    fileUploadTemplate.js 파일 업로드 샘플 Excel 다운로드 유틸
-    bulkEditExcel.js      일괄수정 Excel 열 계약, 파싱, 차이 계산 유틸
-    loadXlsx.js           xlsx dynamic import promise 공유 loader
+    fileUploadTemplate.ts 파일 업로드 샘플 Excel 다운로드 유틸
+    bulkEditExcel.ts      일괄수정 Excel 열 계약, 파싱, 차이 계산 유틸
+    loadXlsx.ts           xlsx dynamic import promise 공유 loader
   styles/
     base.css              공통 토큰/전역 UI 규칙
     login.css             로그인 화면 전용 스타일
@@ -231,10 +231,10 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 
 현재 구조의 핵심 특징은 아래와 같습니다.
 
-- `src/App.jsx`는 라우팅 엔트리 역할만 담당하며 관리자·공개 페이지는 route 단위 `React.lazy`로 분할됩니다. 공통 `Suspense` fallback은 chunk 로딩 중에만 표시되고, `AdminLayout`의 권한 경계는 정적으로 유지됩니다.
+- `src/App.tsx`는 라우팅 엔트리 역할만 담당하며 관리자·공개 페이지는 route 단위 `React.lazy`로 분할됩니다. 공통 `Suspense` fallback은 chunk 로딩 중에만 표시되고, `AdminLayout`의 권한 경계는 정적으로 유지됩니다.
 - 페이지 단위 컴포넌트는 `src/pages/admin/*`, `src/pages/public/*` 아래로 분리되어 있습니다.
 - Supabase 접근은 `src/services/*`에서 관리합니다.
-- 허용된 관련 데이터 삭제는 `adminDeletion.js`에서 `evidence_photos → submissions → applications → product_steps → products` 순서를 명시적으로 실행합니다. 요청이 여러 chunk로 나뉘므로 중간 오류 시 실제 완료 ID와 `partial`, `completedSteps`, `failedStep`을 함께 반환하고, 화면은 완료된 상태를 반영하거나 최신 데이터를 재조회합니다. 원자적 transaction/RPC는 아직 도입하지 않았습니다.
+- 허용된 관련 데이터 삭제는 `adminDeletion.ts`에서 `evidence_photos → submissions → applications → product_steps → products` 순서를 명시적으로 실행합니다. 요청이 여러 chunk로 나뉘므로 중간 오류 시 실제 완료 ID와 `partial`, `completedSteps`, `failedStep`을 함께 반환하고, 화면은 완료된 상태를 반영하거나 최신 데이터를 재조회합니다. 원자적 transaction/RPC는 아직 도입하지 않았습니다.
 - 순수 파싱/정렬 로직은 `src/utils/*`와 `src/constants/*`로 이동했습니다.
 - 대시보드는 실제 `products`, `submissions`, `applications`, `evidence_photos`, `admins` 데이터를 서비스/유틸/훅으로 분리해 조회·집계합니다.
 - 가장 복잡한 상품 상세 화면은 페이지 + 훅 + 하위 컴포넌트 구조로 정리되었습니다.
@@ -246,7 +246,7 @@ nginx/default.conf        SPA fallback + NAS 이미지 reverse proxy
 - 구매자용 리뷰받기 상세는 `PublicReviewReceiveProductSummary`, `PublicReviewReceiveLookupPanel`, `PublicReviewReceiveSection`, 사진 모달 컴포넌트로 상단 요약·조회·결과·사진 UI를 분리하고, 페이지는 공개 조회와 사진 초안/저장 상태를 조합합니다.
 - 구매자용 공개 리뷰받기 화면은 공개 페이지 + 공개 서비스 + 공용 행 정렬/섹션 유틸 + 사진 업로드 모달 구조로 분리되었습니다.
 - 실제 사진 저장은 홈서버 Supabase Edge Function `review-receive-photo-sync`가 검증하고, Docker network 내부 `rmb-file-writer`가 NAS 파일 쓰기/삭제를 담당합니다. DB에는 `/rmb-images/review-receive/...` 상대 경로를 저장합니다.
-- 다건 조회는 `src/services/paginatedQuery.js`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
+- 다건 조회는 `src/services/paginatedQuery.ts`의 고유 `id` 커서 반복 조회를 사용합니다. Supabase API가 한 요청에서 최대 1,000행만 반환해도 마지막 행까지 계속 조회하며, 큰 `IN (...)` 조건은 100개 단위로 나눠 제한된 동시 요청으로 처리합니다.
 - 초기 JavaScript에는 모든 페이지와 `xlsx`를 넣지 않습니다. 페이지 chunk는 실제 route가 렌더링될 때 로드되고, `xlsx` chunk는 Excel 읽기·템플릿 생성·내보내기 실행 시점에만 로드됩니다. 기능별 CSS는 현재 전역 로딩을 유지해 route 전환 중 스타일 깜박임을 방지합니다.
 - 리뷰받기 목록은 `get_admin_review_receive_product_summaries` RPC가 `bundle_id` 단위로 상품을 묶고 submission 원본 row 대신 구매/리뷰/완료/총 개수와 진행/완료 상태만 집계해 반환합니다. 전체/진행중/완료 보기, 열 필터, 커서 기반 다음 페이지 제한도 DB에서 처리하며, 화면은 처음 50건을 렌더링하고 스크롤 하단 진입 시 같은 조건으로 다음 50건을 이어 불러옵니다.
 - 상품전체보기 목록은 `get_admin_product_overview_rows` RPC가 관리자 범위, 상태 탭(`all`, `purchase`, `review`, `complete`), 열 필터, 리뷰 사진 집계, 커서 기반 다음 페이지 제한을 DB에서 처리합니다. 화면은 처음 300건을 렌더링하고, 스크롤 하단 진입 시 같은 조건으로 다음 300건을 이어 불러옵니다. 헤더 전체선택은 로드된 행만이 아니라 현재 서버 필터 결과 전체를 선택하는 상태로 관리하고, 실제 작업 시 필요한 경우 해당 조건의 모든 페이지를 다시 조회합니다.
@@ -335,11 +335,11 @@ Node 스크립트용 대체 키도 지원합니다.
 1. 인증된 `AdminLayout`이 `localStorage`의 관리자 ID를 기준으로 capability와 profile을 조회하고 하위 화면에 공유합니다.
 2. 페이지 진입/이동 때 `admins.include_company_data_include` 기준으로 회사 데이터 포함 상태를 초기화하고, `personal` 또는 `company` scope policy를 선택합니다.
 3. `resolveAdminManagerScope`가 공유 profile을 사용해 본인 또는 회사 단위 `managerIds` 범위를 결정합니다. 리뷰받기 상세와 일괄수정은 현재 동작을 보존하는 고정 회사 scope policy를 사용합니다.
-4. `src/services/dashboardMetrics.js`가 `products`, `submissions`, `applications`, `evidence_photos`를 필요한 컬럼만 조회합니다.
+4. `src/services/dashboardMetrics.ts`가 `products`, `submissions`, `applications`, `evidence_photos`를 필요한 컬럼만 조회합니다.
    각 테이블은 1,000행 제한에 잘리지 않도록 고유 키 커서로 끝까지 조회하고, 연관 ID 조건은 100개 단위로 분할합니다.
 5. 회사 데이터 포함이 켜져 있고 회사명이 있으면 같은 회사의 `admins` 목록도 조회합니다.
-6. `src/utils/dashboardMetrics.js`가 오늘/누적 KPI, 알림 조건, 기간별 추이, 상위 상품, 최근 활동, 회사 멤버 비교 데이터를 순수 함수로 집계합니다.
-7. `src/hooks/useAdminDashboard.js`가 로딩/오류/새로고침/회사 데이터 포함 토글 상태를 관리하고, `src/components/admin/dashboard/*` 컴포넌트가 각 섹션을 렌더링합니다.
+6. `src/utils/dashboardMetrics.ts`가 오늘/누적 KPI, 알림 조건, 기간별 추이, 상위 상품, 최근 활동, 회사 멤버 비교 데이터를 순수 함수로 집계합니다.
+7. `src/hooks/useAdminDashboard.ts`가 로딩/오류/새로고침/회사 데이터 포함 토글 상태를 관리하고, `src/components/admin/dashboard/*` 컴포넌트가 각 섹션을 렌더링합니다.
 
 ### 상품 상세
 
@@ -386,7 +386,7 @@ Node 스크립트용 대체 키도 지원합니다.
 
 ### 1) 상품 상세 도메인 복잡도는 여전히 높음
 
-- `src/App.jsx` 집중 문제는 해소됐지만, 상품 상세 도메인은 여전히 이 프로젝트에서 가장 복잡한 영역입니다.
+- `src/App.tsx` 집중 문제는 해소됐지만, 상품 상세 도메인은 여전히 이 프로젝트에서 가장 복잡한 영역입니다.
 - `useAdminProductDetail` 훅이 상태/조회/변경 흐름을 담당하고 있어, 기능이 더 늘어나면 추가 분리 포인트가 생길 수 있습니다.
 
 영향:
@@ -485,31 +485,31 @@ Node 스크립트용 대체 키도 지원합니다.
 src/
   pages/
     admin/
-      LoginPage.jsx
-      AdminDashboardPage.jsx
-      AdminProductsPage.jsx
-      AdminProductDetailPage.jsx
+      LoginPage.tsx
+      AdminDashboardPage.tsx
+      AdminProductsPage.tsx
+      AdminProductDetailPage.tsx
   components/
     layout/
-      AdminLayout.jsx
+      AdminLayout.tsx
     admin/product-detail/
-      ProductSummary.jsx
-      SubmissionInput.jsx
-      StepTabList.jsx
-      ApplicationsTable.jsx
-      SubmissionTable.jsx
-      PhotoViewerModal.jsx
+      ProductSummary.tsx
+      SubmissionInput.tsx
+      StepTabList.tsx
+      ApplicationsTable.tsx
+      SubmissionTable.tsx
+      PhotoViewerModal.tsx
   hooks/
-    useAdminProductDetail.js
+    useAdminProductDetail.ts
   services/
-    adminAuth.js
-    adminProducts.js
-    productDetail.js
+    adminAuth.ts
+    adminProducts.ts
+    productDetail.ts
   constants/
-    admin.js
+    admin.ts
   utils/
-    submissionParser.js
-    applicationRows.js
+    submissionParser.ts
+    applicationRows.ts
   styles/
     base.css
     login.css

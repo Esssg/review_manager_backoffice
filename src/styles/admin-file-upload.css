@@ -16,16 +16,16 @@
   gap: 18px;
   min-height: 172px;
   padding: 24px;
-  border: 2px dashed #7dd3fc;
-  background: #f8fcff;
+  border: 2px dashed var(--ring);
+  background: var(--muted);
   transition:
     border-color 160ms ease,
     background 160ms ease;
 }
 
 .file-upload-drop-zone.is-dragging {
-  border-color: #0ea5e9;
-  background: #e0f2fe;
+  border-color: var(--primary);
+  background: var(--secondary);
 }
 
 .file-upload-drop-zone h2,
@@ -91,8 +91,9 @@
   min-height: 30px;
   padding: 0 10px;
   border-radius: 999px;
-  background: #e0f2fe;
-  color: #0369a1;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;

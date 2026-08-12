@@ -18,7 +18,8 @@ description: Use when changing React UI, CSS, forms, dialogs, tables, loading st
 ## 알림과 위험 동작
 
 - 브라우저 기본 `alert`, `confirm`, `prompt`를 사용하지 않는다.
-- 확인·경고·삭제는 `src/components/common/AppAlertDialog.jsx`를 사용한다.
+- 확인·경고·삭제는 `src/components/common/AppAlertDialog.jsx` 또는 shadcn `AlertDialog`/`Dialog` 공통 계약을 사용한다.
+- shadcn 직접 사용으로 전환할 때도 Enter·Escape·focus·aria-modal·busy/disabled·위험 variant와 기존 오류 피드백을 보존한다.
 - 버튼 라벨, 위험 여부, 로딩 상태, 닫기 가능 여부는 props와 상태로 표현한다.
 - 위험 동작에는 `variant="danger"`와 `admin-danger-button` 조합을 우선 사용한다.
 - 화면별로 동일한 알림 모달 마크업과 스타일을 복제하지 않는다.

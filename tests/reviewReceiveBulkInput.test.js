@@ -4,7 +4,7 @@ import {
   parseInlinePurchaseInput,
   parsePurchaseAssignLines,
   parsePurchaseBulkInput
-} from "../src/utils/reviewReceiveBulkInput.js";
+} from "../src/utils/reviewReceiveBulkInput.ts";
 
 test("구매정보 일괄입력은 tab 형식의 구매계정·계좌·리뷰비를 순서대로 보존한다", () => {
   const [entry] = parsePurchaseBulkInput(

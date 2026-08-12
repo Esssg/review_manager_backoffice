@@ -1,0 +1,14 @@
+- generic [ref=f5e2]:
+  - region "Notifications alt+T"
+  - main [ref=f5e3]:
+    - heading [level=1] [ref=f5e9]: Review Manager
+    - generic [ref=f5e11]:
+      - heading "로그인" [level=2] [ref=f5e12]
+      - paragraph [ref=f5e13]: 아이디와 패스워드를 입력하세요.
+      - generic [ref=f5e14]: 아이디
+      - textbox "아이디" [ref=f5e15]:
+        - /placeholder: 아이디 입력
+      - generic [ref=f5e16]: 패스워드
+      - textbox "패스워드" [ref=f5e17]:
+        - /placeholder: 패스워드 입력
+      - button "로그인" [ref=f5e18] [cursor=pointer]

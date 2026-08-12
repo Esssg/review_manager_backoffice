@@ -3,8 +3,8 @@ import test from "node:test";
 import {
   buildProductOverviewSelectionQueryKey,
   buildSelectedProductOverviewSubmissionIds
-} from "../src/utils/productOverviewSelection.js";
-import { buildPurchaseBulkPreview } from "../src/utils/reviewReceiveBulkInput.js";
+} from "../src/utils/productOverviewSelection.ts";
+import { buildPurchaseBulkPreview } from "../src/utils/reviewReceiveBulkInput.ts";
 
 test("상품전체보기 선택 query key는 화면·상태·필터·회사 범위를 함께 구분한다", () => {
   const base = buildProductOverviewSelectionQueryKey({

@@ -33,6 +33,7 @@
 }
 
 .product-overview-table td {
+  white-space: normal;
   word-break: break-word;
   background: #fff;
   vertical-align: middle;
@@ -81,6 +82,19 @@
 
 .product-overview-status-tab-list {
   margin-top: 14px;
+}
+
+/* StepTabList uses 54px controls while the shadcn TabsList default is 36px.
+   Give the status tabs their real height so the table starts below the active underline. */
+.product-overview-status-tab-list .step-tab-list,
+.product-overview-status-tab-list .step-tab-list-inner {
+  min-height: 54px;
+  height: 54px;
+}
+
+/* The custom 54px step tabs do not use the default shadcn line-tab offset. */
+.product-overview-status-tab-list .step-tab-button::after {
+  bottom: 0;
 }
 
 .product-overview-list-load-more {
@@ -350,10 +364,15 @@
   }
 
   .review-receive-toolbar-actions.product-overview-reset-actions {
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     margin-left: 0;
-    width: auto;
+    width: 100%;
+  }
+
+  .review-receive-toolbar-actions.product-overview-reset-actions > button {
+    width: 100%;
+    min-width: 0;
   }
 
   .product-overview-export-column-grid {

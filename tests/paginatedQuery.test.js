@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchAllRows, fetchAllRowsInChunks } from "../src/services/paginatedQuery.js";
+import { fetchAllRows, fetchAllRowsInChunks } from "../src/services/paginatedQuery.ts";
 
 function createQueryBuilder(rows, serverRowLimit = 1000) {
   let cursorColumn = "id";

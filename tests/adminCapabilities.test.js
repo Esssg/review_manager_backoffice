@@ -4,7 +4,7 @@ import {
   getFallbackAdminCapabilities,
   isAdminCapabilitiesColumnError,
   normalizeAdminCapabilities
-} from "../src/utils/adminCapabilities.js";
+} from "../src/utils/adminCapabilities.ts";
 
 test("관리자 capability fallback은 현재 계정별 기본값을 유지한다", () => {
   assert.deepEqual(getFallbackAdminCapabilities("hyejin2054"), {
