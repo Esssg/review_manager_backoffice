@@ -1,13 +1,13 @@
 // @ts-nocheck
 
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseAnonKey } from "@/lib/supabase";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import { invokeReviewReceivePhotoSyncRequest } from "@/services/reviewReceivePhotoSyncTransport";
 
 const PUBLIC_REVIEW_RECEIVE_PRODUCT_SELECT =
   "id,title,product_name,option_name,review_type,description,planned_depositor_name,product_date,company_name,\"deposit_GB\",bundle_id";
 const PUBLIC_REVIEW_RECEIVE_SUBMISSION_SELECT =
   "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name,created_at";
-const REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION = "review-receive-photo-sync";
 const PUBLIC_REVIEW_RECEIVE_LOOKUP_FIELD_MAP = {
   assign_name: "assign_name",
   account_holder: "account_holder"
@@ -40,7 +40,7 @@ async function extractFunctionErrorPayload(response) {
 
   try {
     if (contentType.includes("application/json")) {
-      const payload = await response.clone().tson();
+      const payload = await response.clone().json();
       return {
         code: payload?.code || "",
         message: payload?.error || payload?.message || ""
@@ -103,14 +103,14 @@ function buildPhotoSyncFunctionError({ action, error, response, payload }) {
 }
 
 async function invokeReviewReceivePhotoSync(action, payload) {
-  const result = await supabase.functions.invoke(REVIEW_RECEIVE_PHOTO_SYNC_FUNCTION, {
-    body:
-      payload instanceof FormData
-        ? payload
-        : {
-            action,
-            ...payload
-          }
+  const result = await invokeReviewReceivePhotoSyncRequest({
+    action,
+    payload,
+    supabaseKey: supabaseAnonKey,
+    getAccessToken: async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token;
+    }
   });
 
   if (!result.error) {

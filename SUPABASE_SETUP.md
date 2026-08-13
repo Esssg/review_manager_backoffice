@@ -55,7 +55,7 @@ npm run supabase:check
 
 ## 4) 구매자용 사진 업로드 Edge Function
 
-구매자 공개 페이지 `/review-receive/specific/:productId`는 `multipart/form-data`를 Supabase Edge Function에 전송합니다. Edge Function은 제출 권한과 이미지 형식을 검증하고, 홈서버 Docker network 내부의 `rmb-file-writer`를 통해 NAS 파일을 쓰고 삭제합니다.
+구매자 공개 페이지 `/review-receive/specific/:productId`는 `multipart/form-data`를 same-origin 경로 `/api/review-receive-photo-sync`로 전송합니다. 앱 서버 Nginx가 이 요청을 내부 Kong의 `/functions/v1/review-receive-photo-sync`로 프록시하므로, 브라우저는 별도 API 도메인에 직접 요청하거나 CORS preflight를 보내지 않습니다. Edge Function은 제출 권한과 이미지 형식을 검증하고, 홈서버 Docker network 내부의 `rmb-file-writer`를 통해 NAS 파일을 쓰고 삭제합니다.
 
 함수 위치:
 
@@ -102,8 +102,9 @@ Supabase 기본 제공 시크릿:
 2. `rmb-file-writer`가 홈서버 Docker network 안에서 실행 중이어야 합니다.
 3. 공개 페이지에서 사용하는 anon 권한이 `products`, `submissions`, `evidence_photos` 읽기를 허용해야 합니다.
 4. `/rmb-images/`가 NAS 정적 파일 경로로 연결되어야 합니다.
-5. 앱 서버 Nginx가 `/rmb-images/`를 `https://sinabro-rmb.jinitlab.com/rmb-images/`로 프록시해야 합니다.
-6. 홈서버 외부 프록시의 요청 본문 제한이 10MB보다 커야 합니다.
+5. 앱 서버 Nginx가 `/api/review-receive-photo-sync`를 내부 Kong으로 프록시해야 합니다.
+6. 앱 서버 Nginx가 `/rmb-images/`를 `https://sinabro-rmb.jinitlab.com/rmb-images/`로 프록시해야 합니다.
+7. 홈서버 외부 프록시의 요청 본문 제한이 10MB보다 커야 합니다.
 
 ## 7) 앱 서버 Docker 실행
 
@@ -119,6 +120,7 @@ Nginx 설정은 다음을 담당합니다.
 
 - React Router 경로를 `index.html`로 fallback
 - `/assets/` 장기 캐시
+- `/api/review-receive-photo-sync` same-origin 업로드 프록시
 - `/rmb-images/` 홈서버 이미지 프록시
 - `/healthz` 컨테이너 healthcheck
 
