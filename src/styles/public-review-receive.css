@@ -349,7 +349,14 @@
 
 .public-review-table th,
 .public-review-table td {
+  min-width: 0;
   word-break: keep-all;
+}
+
+.public-review-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
 .public-review-table-purchase {
