@@ -41,7 +41,7 @@ export async function downloadExcel(filename, sheets) {
     const headers = Array.isArray(sheet?.headers) ? sheet.headers : Object.keys(rows[0] ?? {});
     const worksheet = leadingRows.length > 0
       ? XLSX.utils.aoa_to_sheet([...leadingRows, headers])
-      : XLSX.utils.tson_to_sheet(rows);
+      : XLSX.utils.json_to_sheet(rows);
 
     if (leadingRows.length > 0 && rows.length > 0) {
       XLSX.utils.sheet_add_json(worksheet, rows, { skipHeader: true, origin: -1 });
