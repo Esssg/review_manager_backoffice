@@ -52,6 +52,7 @@
 - `public.applications`
 - `public.submissions`
 - `public.evidence_photos`
+- `public.admin_tutorial_progress`
 
 대상 범위 규칙:
 

@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { ProductOverviewTable } from "@/components/admin/product-overview/ProductOverviewTable";
+import TableHorizontalScroll from "@/components/common/TableHorizontalScroll";
 import { Badge } from "@/components/ui/badge";
 
 export default function ProductOverviewSection({
@@ -23,6 +25,8 @@ export default function ProductOverviewSection({
   totalCount,
   tableWrapClassName
 }) {
+  const tableScrollRef = useRef(null);
+
   return (
     <section className="dashboard-panel review-receive-section" aria-label={title}>
       <div className="review-receive-section-header">
@@ -36,6 +40,7 @@ export default function ProductOverviewSection({
       </div>
 
       {toolbar}
+      <TableHorizontalScroll scrollTargetRef={tableScrollRef} ariaLabel={`${title} 표 가로 스크롤`} />
       {selectionSummary ? <p className="product-overview-selection-summary">{selectionSummary}</p> : null}
 
       <ProductOverviewTable
@@ -55,6 +60,7 @@ export default function ProductOverviewSection({
         totalCount={totalCount}
         emptyMessage={`${title} 상태의 제출 데이터가 없습니다.`}
         wrapClassName={tableWrapClassName}
+        tableScrollRef={tableScrollRef}
       />
     </section>
   );

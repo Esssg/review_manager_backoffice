@@ -383,10 +383,19 @@
   border-radius: 12px;
 }
 
+.export-preview-table-wrap > [data-slot="table-container"] {
+  overflow: visible;
+}
+
+.export-preview-table-wrap::-webkit-scrollbar:horizontal {
+  height: 0;
+}
+
 .export-preview-table {
   width: 100%;
   border-collapse: collapse;
   min-width: 760px;
+  --export-table-header-height: 42px;
 }
 
 .export-preview-table th,
@@ -403,6 +412,11 @@
   font-size: 13px;
   position: sticky;
   top: 0;
+  z-index: 2;
+}
+
+.export-preview-table thead tr:nth-child(2) th {
+  top: var(--export-table-header-height);
   z-index: 1;
 }
 

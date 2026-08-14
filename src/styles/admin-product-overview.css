@@ -12,6 +12,14 @@
   scrollbar-gutter: stable;
 }
 
+.product-overview-table-wrap > [data-slot="table-container"] {
+  overflow: visible;
+}
+
+.product-overview-table-wrap::-webkit-scrollbar:horizontal {
+  height: 0;
+}
+
 .product-overview-table {
   --product-overview-header-height: 42px;
   border: 1px solid #dbeafe;

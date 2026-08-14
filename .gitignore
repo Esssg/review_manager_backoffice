@@ -54,3 +54,4 @@ supabase/migrations
 !supabase/migrations/20260627174854_add_review_receive_summary_rpc.sql
 !supabase/migrations/20260627181000_add_product_overview_rows_rpc.sql
 !supabase/migrations/20260627183058_optimize_product_overview_rows_rpc.sql
+!supabase/migrations/20260814124722_create_admin_tutorial_progress.sql

@@ -83,8 +83,9 @@ function renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly) {
             className="photo-thumb-button"
             onClick={(event) => {
               event.stopPropagation();
-              onOpenPhotoViewer(rowPhotos, index);
+              onOpenPhotoViewer(row, rowPhotos, index, event.currentTarget);
             }}
+            data-tutorial-target="tutorial-photo-thumb"
             aria-label={`리뷰 사진 ${index + 1} 열기`}
           >
             <img src={url} alt={`리뷰 사진 ${index + 1}`} className="photo-thumb-image" loading="lazy" />
@@ -172,7 +173,8 @@ export function ProductOverviewTable({
   hasMore = false,
   loadedCount = rows.length,
   totalCount = rows.length,
-  wrapClassName = ""
+  wrapClassName = "",
+  tableScrollRef = null
 }) {
   const columnCount = PRODUCT_OVERVIEW_COLUMNS.length + (showSelection ? 1 : 0);
   const isAllSelected =
@@ -180,7 +182,7 @@ export function ProductOverviewTable({
     (isAllMatchingSelected ||
       (!isAllMatchingSelectionActive && rows.every((row) => selectedSubmissionIds.has(row.submission_id))));
   return (
-    <div className={`table-scroll-wrap product-overview-table-wrap ${wrapClassName}`.trim()}>
+    <div ref={tableScrollRef} className={`table-scroll-wrap product-overview-table-wrap ${wrapClassName}`.trim()}>
       <Table className="review-receive-table product-overview-table">
         <TableHeader>
           <TableRow>
@@ -216,10 +218,14 @@ export function ProductOverviewTable({
                       size="sm"
                       className="table-cell-input product-overview-filter-input product-overview-filter-trigger"
                       aria-label={`${column.label} 필터`}
+                      data-tutorial-target={column.key === "review_photos" ? "photo-filter" : undefined}
                     >
                       <SelectValue placeholder="전체" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent
+                      className={column.key === "review_photos" ? "tutorial-photo-filter-content" : undefined}
+                      data-tutorial-select-content={column.key === "review_photos" ? "true" : undefined}
+                    >
                       {(PRODUCT_OVERVIEW_FILTER_DROPDOWN_OPTIONS[column.key] ?? []).map((option) => (
                         <SelectItem key={option.value || "all"} value={option.value || "all"}>
                           {option.label}

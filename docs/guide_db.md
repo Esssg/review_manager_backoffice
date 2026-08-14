@@ -12,6 +12,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 - `products` 1 --- N `applications` (`applications.product_id -> products.id`)
 - `products` 1 --- N `submissions` (`submissions.product_id -> products.id`)
 - `submissions` 1 --- N `evidence_photos` (`evidence_photos.submission_id -> submissions.id`)
+- `admins` 1 --- N `admin_tutorial_progress` (`admin_tutorial_progress.admin_id -> admins.login_id`)
 
 ## 2) 테이블별 스키마
 
@@ -86,6 +87,19 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   `menu_number = 6`은 `파일 업로드` 메뉴에 사용 (2026-04-30 추가)
   `menu_number = 7`은 `일괄수정하기` 메뉴(`/admin/bulk-edit`)에 사용 (2026-07-21 추가). 초기 권한은 `test1`에만 부여
   2026-04-26에 테스트 계정 `test1`, `test2`, `test3`에는 `menu_number` 1, 3, 4, 5만 부여
+
+## `admin_tutorial_progress`
+- PK: (`admin_id`, `tutorial_version`)
+- FK
+  - `admin_id` -> `admins.login_id`
+- 컬럼
+  - `admin_id` text, not null
+  - `tutorial_version` text, not null
+  - `status` text, not null, check (`status` in (`skipped`, `completed`))
+  - `recorded_at` timestamptz, not null, default `now()`
+- row count: 0 (2026-08-14 마이그레이션 적용 직후)
+- 비고: 관리자 계정별·튜토리얼 버전별 스킵/완료 상태를 기록합니다. 현재 1.0.1 튜토리얼은 이 테이블의 `tutorial_version = '1.0.1'` 행을 기준으로 새로고침·로그인 시 안내 여부를 판정합니다.
+- 인덱스: `admin_tutorial_progress_version_idx` (`tutorial_version`, `recorded_at desc`)
 
 ## `product_steps`
 - PK: `id` (bigint, identity)
@@ -300,7 +314,7 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
 ## 4) 메모
 
 - 2026-04-24에 Supabase MCP로 `public` 스키마의 실제 테이블명, 컬럼 목록, row count를 다시 확인했습니다.
-- 현재 존재하는 `public` 테이블은 `admins`, `products`, `admin_menu_permissions`, `product_steps`, `applications`, `submissions`, `evidence_photos` 입니다.
+- 현재 이 백오피스가 관리하는 `public` 테이블은 `admins`, `products`, `admin_menu_permissions`, `admin_tutorial_progress`, `product_steps`, `applications`, `submissions`, `evidence_photos` 입니다. 같은 Supabase 프로젝트의 다른 프로젝트 테이블은 이 저장소의 DB 대상 범위에 포함하지 않습니다.
 - `admins.include_company_data_include`는 페이지 진입/이동 시 적용할 계정별 `내 회사 데이터 포함` 기준값입니다. `hyejin2054`는 true, `aram2525`, `kimhanbi77` 및 그 외 계정은 false로 관리합니다. 사용자는 현재 페이지에서 토글로 임시 변경할 수 있지만, 다른 페이지로 이동하면 이 컬럼 기준으로 다시 초기화됩니다.
 - `admins.can_verify_deposit`는 `submissions.is_deposit_verified`, `deposited_at`, `actual_depositor_name`을 수정하는 입금완료 처리 권한입니다. `aram2525`, `kimhanbi77`은 false, 그 외 계정은 true로 관리합니다.
 - `products`에서는 `deposit_name`, `review_fee`가 제거됐고, `company_name`, `option_name`, `review_type`, `planned_depositor_name`이 관리됩니다.

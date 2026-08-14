@@ -6,6 +6,7 @@ import StepTabList from "@/components/admin/product-detail/StepTabList";
 import ProductOverviewSection from "@/components/admin/product-overview/ProductOverviewSection";
 import AppAlertDialog from "@/components/common/AppAlertDialog";
 import AdminScopeCard from "@/components/common/AdminScopeCard";
+import { useAdminTutorialContext } from "@/contexts/AdminTutorialContext";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -20,6 +21,7 @@ import {
   ADMIN_STORAGE_KEY,
   PRODUCT_OVERVIEW_STATUS_TABS
 } from "@/constants/admin";
+import { createTutorialDemoRow } from "@/constants/adminTutorial";
 import { deleteEvidencePhoto } from "@/services/evidencePhotos";
 import {
   PRODUCT_OVERVIEW_PAGE_SIZE,
@@ -51,6 +53,7 @@ import {
 import { buildExportFilename, downloadExcel } from "@/utils/exportFile";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "@/utils/photoItems";
+import { ADMIN_TUTORIAL_EVENT, emitAdminTutorialAction } from "@/utils/adminTutorialEvents";
 import { getLocalStorageValue } from "@/utils/browserStorage";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
@@ -187,8 +190,30 @@ function getVisibleProducts(rows, productMap) {
     .filter(Boolean);
 }
 
+function getPhotoNavigationKey(photo) {
+  return String(getPhotoId(photo) ?? getPhotoUrl(photo) ?? "");
+}
+
+function buildPhotoNavigationItems(rows) {
+  return (rows ?? []).flatMap((row) => {
+    const photos = Array.isArray(row.review_photos) ? row.review_photos : [];
+
+    return photos.map((photo, photoIndex) => ({
+      key: `${row.submission_id}:${getPhotoNavigationKey(photo)}:${photoIndex}`,
+      row,
+      photo,
+      photoIndex
+    }));
+  });
+}
+
+function getPhotoNavigationMetadata(item) {
+  return item?.row ?? null;
+}
+
 export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
+  const { isRunning: isTutorialRunning } = useAdminTutorialContext();
   const {
     capabilities,
     adminProfile,
@@ -226,10 +251,15 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const [photoViewer, setPhotoViewer] = useState({
     isOpen: false,
     photos: [],
-    activeIndex: 0
+    activeIndex: 0,
+    navigationItems: [],
+    metadata: null,
+    navigationIsFullyLoaded: false,
+    returnFocusElement: null
   });
   const [deleteTargetPhoto, setDeleteTargetPhoto] = useState(null);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [isLoadingPhotoNavigation, setIsLoadingPhotoNavigation] = useState(false);
   const [purchaseBulkScope, setPurchaseBulkScope] = useState("all");
   const [isPurchaseBulkModalOpen, setIsPurchaseBulkModalOpen] = useState(false);
   const [purchaseBulkAssignName, setPurchaseBulkAssignName] = useState("");
@@ -286,6 +316,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const overviewRequestIdRef = useRef(0);
   const loadMoreTriggerRef = useRef(null);
   const isLoadingMoreRef = useRef(false);
+  const photoNavigationLoadedRef = useRef(false);
+  const photoNavigationLoadingRef = useRef(false);
   const { showToast } = useAppToast();
 
   const isStatusView = viewMode === "status";
@@ -427,6 +459,23 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         ? `현재 필터 결과 ${selectedCount.toLocaleString()}건이 선택되었습니다.`
         : `선택한 행 ${selectedCount.toLocaleString()}건`
       : "";
+  const loadedReviewPhotoCount = rows.reduce(
+    (count, row) => count + (Array.isArray(row.review_photos) ? row.review_photos.length : 0),
+    0
+  );
+  const shouldShowTutorialDemo =
+    isTutorialRunning &&
+    !isStatusView &&
+    !isLoading &&
+    !errorMessage &&
+    filters.review_photos === "has" &&
+    loadedReviewPhotoCount < 3;
+  const displayRows = useMemo(
+    () => (shouldShowTutorialDemo ? [createTutorialDemoRow(), ...rows] : rows),
+    [rows, shouldShowTutorialDemo]
+  );
+  const shouldRenderOverviewSection =
+    rows.length > 0 || (isTutorialRunning && !isStatusView && !isLoading && !errorMessage);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -460,6 +509,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       queryKey: currentSelectionQueryKey,
       totalCount: 0
     });
+    photoNavigationLoadedRef.current = false;
   }, [currentSelectionQueryKey]);
 
   useEffect(() => {
@@ -659,6 +709,10 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       ...prev,
       [columnKey]: value
     }));
+
+    if (columnKey === "review_photos" && value === "has") {
+      emitAdminTutorialAction("photo-filter");
+    }
   };
 
   const handleResetFilters = () => {
@@ -670,6 +724,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       totalCount: 0
     });
     setFilters(createEmptyProductOverviewFilters());
+    photoNavigationLoadedRef.current = false;
   };
 
   const clearSelectedRows = (submissionIds) => {
@@ -784,31 +839,187 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     return (result.data ?? []).filter((row) => !excludedIds.has(row.submission_id));
   };
 
-  const openPhotoViewer = useCallback((photos, activeIndex) => {
-    setPhotoViewer({
-      isOpen: true,
-      photos,
-      activeIndex
+  const loadAllPhotoNavigationRows = useCallback(async () => {
+    if (photoNavigationLoadedRef.current || photoNavigationLoadingRef.current) {
+      return null;
+    }
+
+    photoNavigationLoadingRef.current = true;
+    setIsLoadingPhotoNavigation(true);
+
+    const result = await fetchAllAdminProductOverviewRows(adminId, {
+      scopePolicy,
+      adminProfile,
+      status: currentQueryStatus,
+      filters: debouncedFilters,
+      pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
     });
+
+    if (result.error) {
+      showToast(result.error.message ?? "사진 이동에 필요한 전체 데이터를 불러오지 못했습니다.", "error");
+      photoNavigationLoadingRef.current = false;
+      setIsLoadingPhotoNavigation(false);
+      return null;
+    }
+
+    const fetchedRows = result.data ?? [];
+
+    setProducts((previousProducts) => {
+      const nextProductMap = new Map(previousProducts.map((product) => [product.id, product]));
+
+      (result.products ?? []).forEach((product) => {
+        nextProductMap.set(product.id, product);
+      });
+
+      return Array.from(nextProductMap.values());
+    });
+    setRows((previousRows) => mergeProductOverviewRows(previousRows, fetchedRows));
+    setPageInfo((previousPageInfo) => ({
+      ...previousPageInfo,
+      hasMore: false,
+      nextCursor: null,
+      totalCount: Math.max(previousPageInfo.totalCount ?? 0, fetchedRows.length)
+    }));
+    photoNavigationLoadedRef.current = true;
+    photoNavigationLoadingRef.current = false;
+    setIsLoadingPhotoNavigation(false);
+
+    return fetchedRows;
+  }, [adminId, adminProfile, currentQueryStatus, debouncedFilters, scopePolicy, showToast]);
+
+  const openPhotoViewer = useCallback(
+    (row, photos, activeIndex, returnFocusElement) => {
+      const navigationItems = buildPhotoNavigationItems(displayRows);
+      const activePhoto = photos?.[activeIndex];
+      const activeKey = `${row?.submission_id}:${getPhotoNavigationKey(activePhoto)}:${activeIndex}`;
+      const navigationIndex = Math.max(
+        0,
+        navigationItems.findIndex((item) => item.key === activeKey)
+      );
+
+      photoNavigationLoadedRef.current = !pageInfo.hasMore;
+      setPhotoViewer({
+        isOpen: true,
+        photos: navigationItems.map((item) => item.photo),
+        activeIndex: navigationItems.length > 0 ? navigationIndex : activeIndex,
+        navigationItems,
+        metadata: getPhotoNavigationMetadata(navigationItems[navigationIndex] ?? { row }),
+        navigationIsFullyLoaded: !pageInfo.hasMore,
+        returnFocusElement
+      });
+      emitAdminTutorialAction("photo-open");
+    },
+    [displayRows, pageInfo.hasMore]
+  );
+
+  const closePhotoViewer = useCallback(() => {
+    setPhotoViewer((previousViewer) => ({
+      ...previousViewer,
+      isOpen: false,
+      photos: [],
+      activeIndex: 0,
+      navigationItems: [],
+      metadata: null
+    }));
   }, []);
 
-  const closePhotoViewer = () => {
-    setPhotoViewer({ isOpen: false, photos: [], activeIndex: 0 });
-  };
+  useEffect(() => {
+    const handleTutorialReplay = (event) => {
+      if (event.detail?.action !== "tutorial-replay") {
+        return;
+      }
 
-  const showPrevPhoto = () => {
-    setPhotoViewer((prev) => ({
-      ...prev,
-      activeIndex: prev.activeIndex === 0 ? prev.photos.length - 1 : prev.activeIndex - 1
-    }));
-  };
+      setDeleteTargetPhoto(null);
+      closePhotoViewer();
+    };
 
-  const showNextPhoto = () => {
-    setPhotoViewer((prev) => ({
-      ...prev,
-      activeIndex: prev.activeIndex === prev.photos.length - 1 ? 0 : prev.activeIndex + 1
-    }));
-  };
+    window.addEventListener(ADMIN_TUTORIAL_EVENT, handleTutorialReplay);
+    return () => window.removeEventListener(ADMIN_TUTORIAL_EVENT, handleTutorialReplay);
+  }, [closePhotoViewer]);
+
+  const movePhoto = useCallback(
+    async (direction) => {
+      const currentViewer = photoViewer;
+
+      if (
+        !currentViewer.isOpen ||
+        isDeletingPhoto ||
+        deleteTargetPhoto ||
+        photoNavigationLoadingRef.current
+      ) {
+        return;
+      }
+
+      const directIndex = currentViewer.activeIndex + direction;
+
+      if (directIndex >= 0 && directIndex < currentViewer.navigationItems.length) {
+        const nextItem = currentViewer.navigationItems[directIndex];
+        setPhotoViewer((previousViewer) => ({
+          ...previousViewer,
+          activeIndex: directIndex,
+          metadata: getPhotoNavigationMetadata(nextItem)
+        }));
+        return;
+      }
+
+      if (currentViewer.navigationIsFullyLoaded || !pageInfo.hasMore) {
+        return;
+      }
+
+      const fetchedRows = await loadAllPhotoNavigationRows();
+
+      if (!fetchedRows) {
+        return;
+      }
+
+      const fetchedPhotoCount = fetchedRows.reduce(
+        (count, row) => count + (Array.isArray(row.review_photos) ? row.review_photos.length : 0),
+        0
+      );
+      const navigationRows =
+        isTutorialRunning && !isStatusView && filters.review_photos === "has" && fetchedPhotoCount < 3
+          ? [createTutorialDemoRow(), ...fetchedRows]
+          : fetchedRows;
+      const navigationItems = buildPhotoNavigationItems(navigationRows);
+      const currentItem = currentViewer.navigationItems[currentViewer.activeIndex];
+      const currentItemIndex = currentItem
+        ? navigationItems.findIndex((item) => item.key === currentItem.key)
+        : -1;
+      const nextIndex = (currentItemIndex < 0 ? currentViewer.activeIndex : currentItemIndex) + direction;
+
+      setPhotoViewer((previousViewer) => {
+        if (nextIndex < 0 || nextIndex >= navigationItems.length) {
+          return {
+            ...previousViewer,
+            navigationIsFullyLoaded: true
+          };
+        }
+
+        const nextItem = navigationItems[nextIndex];
+        return {
+          ...previousViewer,
+          photos: navigationItems.map((item) => item.photo),
+          activeIndex: nextIndex,
+          navigationItems,
+          metadata: getPhotoNavigationMetadata(nextItem),
+          navigationIsFullyLoaded: true
+        };
+      });
+    },
+    [
+      deleteTargetPhoto,
+      filters.review_photos,
+      isDeletingPhoto,
+      isStatusView,
+      isTutorialRunning,
+      loadAllPhotoNavigationRows,
+      pageInfo.hasMore,
+      photoViewer
+    ]
+  );
+
+  const showPrevPhoto = useCallback(() => movePhoto(-1), [movePhoto]);
+  const showNextPhoto = useCallback(() => movePhoto(1), [movePhoto]);
 
   const openDeletePhotoDialog = (photo) => {
     setDeleteTargetPhoto(photo);
@@ -853,16 +1064,34 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     );
 
     setPhotoViewer((prev) => {
-      const nextPhotos = removePhotoById(prev.photos, photoId);
+      const nextNavigationItems = (prev.navigationItems ?? []).filter(
+        (item) => String(getPhotoId(item.photo)) !== String(photoId)
+      );
+      const nextPhotos = nextNavigationItems.length
+        ? nextNavigationItems.map((item) => item.photo)
+        : removePhotoById(prev.photos, photoId);
 
       if (nextPhotos.length === 0) {
-        return { isOpen: false, photos: [], activeIndex: 0 };
+        return {
+          ...prev,
+          isOpen: false,
+          photos: [],
+          activeIndex: 0,
+          navigationItems: [],
+          metadata: null,
+          navigationIsFullyLoaded: true
+        };
       }
 
+      const nextActiveIndex = Math.min(prev.activeIndex, nextPhotos.length - 1);
       return {
         ...prev,
+        isOpen: false,
         photos: nextPhotos,
-        activeIndex: Math.min(prev.activeIndex, nextPhotos.length - 1)
+        navigationItems: nextNavigationItems,
+        activeIndex: nextActiveIndex,
+        metadata: getPhotoNavigationMetadata(nextNavigationItems[nextActiveIndex]),
+        navigationIsFullyLoaded: prev.navigationIsFullyLoaded
       };
     });
 
@@ -1780,6 +2009,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     }
   };
   const activeStatusSection = statusViewSectionsByKey[activeStatusTab] ?? statusViewSectionsByKey.purchase;
+  const displayCountLabel = shouldShowTutorialDemo ? "튜토리얼 예시 1건" : activeCountLabel;
 
   return (
     <>
@@ -1826,32 +2056,32 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         </section>
       )}
 
-      {!isLoading && !errorMessage && rows.length === 0 && (
+      {!isLoading && !errorMessage && rows.length === 0 && !shouldRenderOverviewSection && (
         <section className="dashboard-panel" aria-label="상품전체보기 빈 상태">
           <p className="login-message">표시할 submission 데이터가 없습니다.</p>
         </section>
       )}
 
-      {!isLoading && !errorMessage && rows.length > 0 && (
+      {!isLoading && !errorMessage && shouldRenderOverviewSection && (
         <>
           {!isStatusView ? (
             <ProductOverviewSection
               title="전체보기"
-              rows={rows}
+              rows={displayRows}
               filters={filters}
               onFilterChange={handleFilterChange}
               onOpenPhotoViewer={openPhotoViewer}
               selectedSubmissionIds={selectedSubmissionIdSet}
               onToggleRowSelection={handleToggleRowSelection}
               onToggleAllSelection={handleToggleAllSelection}
-              countLabel={activeCountLabel}
+              countLabel={displayCountLabel}
               selectionSummary={selectionSummary}
               isAllMatchingSelected={isAllMatchingSelected}
               isAllMatchingSelectionActive={isAllMatchingSelection}
               loadMoreRef={loadMoreTriggerRef}
               isLoadingMore={isLoadingMore}
               hasMore={pageInfo.hasMore}
-              loadedCount={rows.length}
+              loadedCount={displayRows.length}
               totalCount={activeTotalCount}
               tableWrapClassName="is-viewport-scroll"
               toolbar={
@@ -2568,6 +2798,22 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         onPrev={showPrevPhoto}
         onRequestDelete={openDeletePhotoDialog}
         isDeleting={isDeletingPhoto}
+        variant="product-overview"
+        metadata={photoViewer.metadata}
+        disableNavigationAtEnds
+        canGoPrev={
+          photoViewer.navigationIsFullyLoaded
+            ? photoViewer.activeIndex > 0
+            : !isLoadingPhotoNavigation
+        }
+        canGoNext={
+          photoViewer.navigationIsFullyLoaded
+            ? photoViewer.activeIndex < photoViewer.photos.length - 1
+            : !isLoadingPhotoNavigation
+        }
+        isTutorialMode={isTutorialRunning}
+        isDeleteDialogOpen={Boolean(deleteTargetPhoto)}
+        returnFocusElement={photoViewer.returnFocusElement}
       />
 
       <AppAlertDialog

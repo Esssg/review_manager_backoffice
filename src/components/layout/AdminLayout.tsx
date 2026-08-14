@@ -14,6 +14,9 @@ import {
   Table2,
   Upload
 } from "lucide-react";
+import AdminTutorialOverlay from "@/components/common/AdminTutorialOverlay";
+import AppAlertDialog from "@/components/common/AppAlertDialog";
+import { AdminTutorialContext } from "@/contexts/AdminTutorialContext";
 import {
   ADMIN_MENU_NUMBER,
   ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY,
@@ -23,7 +26,11 @@ import {
 } from "@/constants/admin";
 import { fetchAdminMenuPermissions, logoutAdmin } from "@/services/adminAuth";
 import { useAdminCapabilities } from "@/hooks/useAdminCapabilities";
+import { useAdminTutorial } from "@/hooks/useAdminTutorial";
 import { AdminAccessContext } from "@/contexts/AdminAccessContext";
+import { APP_VERSION } from "@/constants/appVersion";
+import { ADMIN_TUTORIAL_STEPS } from "@/constants/adminTutorial";
+import { emitAdminTutorialAction } from "@/utils/adminTutorialEvents";
 import { getLocalStorageValue, setLocalStorageValue } from "@/utils/browserStorage";
 import {
   AlertDialog,
@@ -199,6 +206,20 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
     ? allowedMenus.some((menuItem) => menuItem.menuNumber === currentMenuItem.menuNumber)
     : true;
   const fallbackMenuPath = allowedMenus[0]?.path ?? null;
+  const canAccessProductOverview = allowedMenus.some(
+    (menuItem) => menuItem.menuNumber === ADMIN_MENU_NUMBER.PRODUCT_OVERVIEW
+  );
+  const adminTutorial = useAdminTutorial({
+    adminId,
+    pathname: location.pathname,
+    navigate,
+    isReady:
+      !isLoadingCapabilities &&
+      !isLoadingMenus &&
+      !capabilitiesErrorMessage &&
+      !menuErrorMessage,
+    canAccessProductOverview
+  });
 
   const toggleMenuGroup = (menuNumber: number) => {
     setOpenMenuNumbers((previousMenuNumbers) =>
@@ -239,11 +260,12 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
 
   return (
     <AdminAccessContext.Provider value={adminAccessValue}>
-      <SidebarProvider
-        open={!isSidebarCollapsed}
-        onOpenChange={(open) => setIsSidebarCollapsed(!open)}
-        className="min-h-svh bg-background"
-      >
+      <AdminTutorialContext.Provider value={adminTutorial.contextValue}>
+        <SidebarProvider
+          open={!isSidebarCollapsed}
+          onOpenChange={(open) => setIsSidebarCollapsed(!open)}
+          className="min-h-svh bg-background"
+        >
         <Sidebar
           collapsible="icon"
           className="border-sidebar-border bg-sidebar"
@@ -301,10 +323,20 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
                             <SidebarMenuButton
                               type="button"
                               isActive={isActiveGroup}
-                              onClick={() => toggleMenuGroup(menuItem.menuNumber)}
+                              onClick={() => {
+                                toggleMenuGroup(menuItem.menuNumber);
+                                if (menuItem.menuNumber === ADMIN_MENU_NUMBER.PRODUCT_OVERVIEW) {
+                                  emitAdminTutorialAction("product-overview-menu");
+                                }
+                              }}
                               aria-expanded={isOpen}
                               aria-controls={"sidebar-submenu-" + menuItem.menuNumber}
                               title={menuItem.label}
+                              data-tutorial-target={
+                                menuItem.menuNumber === ADMIN_MENU_NUMBER.PRODUCT_OVERVIEW
+                                  ? "product-overview-menu"
+                                  : undefined
+                              }
                             >
                               <MenuIcon aria-hidden="true" />
                               <span className="min-w-0 flex-1 truncate">{menuItem.label}</span>
@@ -319,7 +351,20 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
                                 {menuItem.children.map((childItem) => (
                                   <SidebarMenuSubItem key={childItem.path}>
                                     <SidebarMenuSubButton asChild>
-                                      <NavLink to={childItem.path} end>
+                                      <NavLink
+                                        to={childItem.path}
+                                        end
+                                        onClick={() => {
+                                          if (childItem.path === "/admin/product-overview/all") {
+                                            emitAdminTutorialAction("product-overview-all");
+                                          }
+                                        }}
+                                        data-tutorial-target={
+                                          childItem.path === "/admin/product-overview/all"
+                                            ? "product-overview-all"
+                                            : undefined
+                                        }
+                                      >
                                         <span>{childItem.label}</span>
                                       </NavLink>
                                     </SidebarMenuSubButton>
@@ -356,6 +401,9 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
 
           <SidebarSeparator />
           <SidebarFooter>
+            <p className="admin-sidebar-version group-data-[collapsible=icon]:hidden" data-tutorial-target="app-version">
+              v{APP_VERSION}
+            </p>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -450,7 +498,49 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SidebarProvider>
+        <AdminTutorialOverlay
+          step={adminTutorial.step}
+          stepIndex={adminTutorial.stepIndex}
+          totalSteps={ADMIN_TUTORIAL_STEPS.length}
+        />
+
+        <AppAlertDialog
+          isOpen={adminTutorial.isPromptOpen}
+          badgeLabel={`현재 버전 v${APP_VERSION}`}
+          title="새 버전 안내"
+          description="새로운 버전으로 업데이트 됐습니다. 튜토리얼을 보시겠습니까?"
+          cancelLabel="스킵하기"
+          confirmLabel="확인하기"
+          busyConfirmLabel="준비 중..."
+          isBusy={adminTutorial.isPersisting}
+          onCancel={adminTutorial.handleSkip}
+          onConfirm={adminTutorial.startTutorial}
+          ariaLabel="새 버전 튜토리얼 안내"
+        >
+          {adminTutorial.progressError && (
+            <p className="login-error" role="alert">{adminTutorial.progressError}</p>
+          )}
+        </AppAlertDialog>
+
+        <AppAlertDialog
+          isOpen={adminTutorial.isCompletionOpen}
+          badgeLabel={`v${APP_VERSION} 튜토리얼`}
+          title="튜토리얼이 끝났습니다."
+          description="튜토리얼을 다시 보거나 완료하고 화면으로 돌아갈 수 있습니다."
+          cancelLabel="튜토리얼 다시보기"
+          confirmLabel="완료하기"
+          busyConfirmLabel="저장 중..."
+          isBusy={adminTutorial.isPersisting}
+          onCancel={adminTutorial.replayTutorial}
+          onConfirm={adminTutorial.handleComplete}
+          ariaLabel="튜토리얼 완료"
+        >
+          {adminTutorial.progressError && (
+            <p className="login-error" role="alert">{adminTutorial.progressError}</p>
+          )}
+        </AppAlertDialog>
+        </SidebarProvider>
+      </AdminTutorialContext.Provider>
     </AdminAccessContext.Provider>
   );
 }

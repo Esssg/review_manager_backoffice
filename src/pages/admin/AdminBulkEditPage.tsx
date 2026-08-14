@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import AppAlertDialog from "@/components/common/AppAlertDialog";
 import AdminScopeCard from "@/components/common/AdminScopeCard";
+import TableHorizontalScroll from "@/components/common/TableHorizontalScroll";
 import { ProductOverviewTable } from "@/components/admin/product-overview/ProductOverviewTable";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -74,6 +75,7 @@ export default function AdminBulkEditPage() {
   const [isApplying, setIsApplying] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const loadMoreRef = useRef(null);
+  const tableScrollRef = useRef(null);
   const isLoadingMoreRef = useRef(false);
   const { showToast } = useAppToast();
   const hasActiveFilters = Object.values(filters).some((value) => String(value ?? "").trim() !== "");
@@ -327,6 +329,7 @@ export default function AdminBulkEditPage() {
               <Button type="button" className="admin-primary-button" onClick={openModal}>일괄수정하기</Button>
             </div>
           </div>
+          <TableHorizontalScroll scrollTargetRef={tableScrollRef} ariaLabel="일괄수정 목록 표 가로 스크롤" />
           <ProductOverviewTable
             rows={rows}
             filters={filters}
@@ -340,6 +343,7 @@ export default function AdminBulkEditPage() {
             totalCount={totalCount}
             emptyMessage="표시할 submission 데이터가 없습니다."
             wrapClassName="is-viewport-scroll"
+            tableScrollRef={tableScrollRef}
           />
         </section>
       )}

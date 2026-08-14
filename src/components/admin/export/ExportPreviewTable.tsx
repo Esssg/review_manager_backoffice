@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import TableHorizontalScroll from "@/components/common/TableHorizontalScroll";
 import {
   Table,
   TableBody,
@@ -12,6 +14,7 @@ import ProductLinkCopy from "@/components/common/ProductLinkCopy";
 import { buildExportPreviewRows } from "@/utils/exportColumns";
 
 export default function ExportPreviewTable({ rows, limit = 50 }) {
+  const tableScrollRef = useRef(null);
   const previewRows = buildExportPreviewRows(rows, limit);
   const columns = Object.keys(previewRows[0] ?? {});
 
@@ -28,28 +31,31 @@ export default function ExportPreviewTable({ rows, limit = 50 }) {
       {previewRows.length === 0 || columns.length === 0 ? (
         <p className="login-message">표시할 미리보기 데이터가 없습니다.</p>
       ) : (
-        <div className="export-preview-table-wrap">
-          <Table className="export-preview-table">
-            <TableHeader>
-              <TableRow>
-                {columns.map((column) => (
-                  <TableHead key={column}>{column}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {previewRows.map((row, rowIndex) => (
-                <TableRow key={`export-preview-${rowIndex}`}>
+        <>
+          <TableHorizontalScroll scrollTargetRef={tableScrollRef} ariaLabel="내보내기 미리보기 표 가로 스크롤" />
+          <div ref={tableScrollRef} className="export-preview-table-wrap">
+            <Table className="export-preview-table">
+              <TableHeader>
+                <TableRow>
                   {columns.map((column) => (
-                    <TableCell key={`${rowIndex}-${column}`}>
-                      {column === "링크" ? <ProductLinkCopy value={row[column]} displayValue={row[column]} /> : row[column] == null || row[column] === "" ? "-" : row[column]}
-                    </TableCell>
+                    <TableHead key={column}>{column}</TableHead>
                   ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {previewRows.map((row, rowIndex) => (
+                  <TableRow key={`export-preview-${rowIndex}`}>
+                    {columns.map((column) => (
+                      <TableCell key={`${rowIndex}-${column}`}>
+                        {column === "링크" ? <ProductLinkCopy value={row[column]} displayValue={row[column]} /> : row[column] == null || row[column] === "" ? "-" : row[column]}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
     </Card>
   );
