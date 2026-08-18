@@ -66,8 +66,10 @@ npm run supabase:check
 1. `sync`: `productId`, `submissionId`, `assignName`으로 제출 권한 확인
 2. JPG/PNG/WebP/GIF, 파일당 10MB, 요청당 최대 10장 제한 검증
 3. `rmb-file-writer`에 파일 쓰기를 위임하고 `/rmb-images/review-receive/...` 상대 경로를 `public.evidence_photos`에 저장
-4. 제거 요청의 DB row와 NAS 파일 삭제
-5. 중간 실패 시 새 파일과 DB row를 정리하고, 필요하면 `rollback` action으로 추가 정리
+4. `operationId` 기반 결정적 object key와 `sync_review_receive_photo_rows` RPC로 자동 재시도를 멱등 처리
+5. 제거 요청의 DB row와 NAS 파일 삭제
+6. 중간 실패 시 DB에서 참조하지 않는 새 파일만 정리하고, 필요하면 `rollback` action으로 추가 정리
+7. 요청/문의 ID와 시도 번호, 사용자 개인정보를 제외한 클라이언트 전송 진단을 구조화 로그로 기록
 
 현재 함수는 구매자 공개 흐름을 지원해야 하므로 `verify_jwt: false`로 배포합니다. 대신 요청 본문의 `productId`, `submissionId`, `assignName` 조합으로 권한을 다시 확인하고, `is_review_verified = true` 인 제출은 수정하지 못하게 막습니다.
 
@@ -98,13 +100,16 @@ Supabase 기본 제공 시크릿:
 
 배포 후 확인할 사항:
 
-1. 함수가 배포되어 있어야 합니다.
-2. `rmb-file-writer`가 홈서버 Docker network 안에서 실행 중이어야 합니다.
-3. 공개 페이지에서 사용하는 anon 권한이 `products`, `submissions`, `evidence_photos` 읽기를 허용해야 합니다.
-4. `/rmb-images/`가 NAS 정적 파일 경로로 연결되어야 합니다.
-5. 앱 서버 Nginx가 `/api/review-receive-photo-sync`를 내부 Kong으로 프록시해야 합니다.
-6. 앱 서버 Nginx가 `/rmb-images/`를 `https://sinabro-rmb.jinitlab.com/rmb-images/`로 프록시해야 합니다.
-7. 홈서버 외부 프록시의 요청 본문 제한이 10MB보다 커야 합니다.
+1. `20260818143000_add_review_receive_photo_sync_rpc.sql` 마이그레이션이 적용되고 PostgREST schema cache가 갱신되어야 합니다.
+2. 함수가 배포되어 있어야 합니다.
+3. `rmb-file-writer`가 홈서버 Docker network 안에서 실행 중이어야 합니다.
+4. 공개 페이지에서 사용하는 anon 권한이 `products`, `submissions`, `evidence_photos` 읽기를 허용해야 합니다.
+5. `/rmb-images/`가 NAS 정적 파일 경로로 연결되어야 합니다.
+6. 앱 서버 Nginx가 query string을 포함한 `/api/review-receive-photo-sync`를 내부 Kong으로 프록시해야 합니다.
+7. 앱 서버 Nginx가 `/rmb-images/`를 `https://sinabro-rmb.jinitlab.com/rmb-images/`로 프록시해야 합니다.
+8. 홈서버 외부 프록시의 요청 본문 제한이 10MB보다 커야 합니다.
+
+운영 반영 순서는 호환성을 위해 `DB RPC 마이그레이션 → Edge Function → Backoffice 웹 이미지`를 지킵니다. 새 웹 번들은 자동 재시도를 사용하므로 RPC와 함수가 준비되기 전에 먼저 배포하지 않습니다. 각 단계의 백업·rollback과 health 검증을 준비하고, `docker compose up`, `restart`, 컨테이너 교체 또는 서버 재부팅은 사용자 승인 후에만 실행합니다.
 
 ## 7) 앱 서버 Docker 실행
 

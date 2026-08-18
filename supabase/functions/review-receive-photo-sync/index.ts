@@ -2,8 +2,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-review-operation-id, x-review-request-id, x-review-attempt",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers": "x-review-operation-id, x-review-request-id"
 };
 
 const jsonHeaders = {
@@ -20,6 +22,7 @@ const DEFAULT_PUBLIC_PATH_PREFIX = "/rmb-images";
 const DEFAULT_UPLOAD_PREFIX = "review-receive";
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+const TRACE_ID_PATTERN = /^[a-zA-Z0-9._-]{1,120}$/;
 const IMAGE_TYPE_EXTENSION_MAP = new Map([
   ["image/jpeg", "jpg"],
   ["image/png", "png"],
@@ -35,6 +38,7 @@ const ERROR_CODES = {
   SYNC_INSERT_FAILED: "00035",
   SYNC_DELETE_FAILED: "00036",
   SYNC_SERVER_FAILURE: "00038",
+  SYNC_TRANSACTION_FAILED: "00039",
   ROLLBACK_REQUEST_OR_ACCESS_FAILED: "00041",
   ROLLBACK_DELETE_FAILED: "00042",
   UNKNOWN_SERVER_FAILURE: "00090"
@@ -42,11 +46,35 @@ const ERROR_CODES = {
 
 type SyncPayload = {
   action: "sync";
+  operationId: string;
   productId: number;
   submissionId: number;
   assignName: string;
   removedImageUrls: string[];
   files: File[];
+};
+
+type DiagnosticAction = {
+  action: "diagnostic";
+  operationId?: string;
+  requestId?: string;
+  failedRequestId?: string;
+  attempt?: number;
+  code?: string;
+  transportKind?: string;
+  originalErrorName?: string;
+  originalMessage?: string;
+  productId?: number | null;
+  submissionId?: number | null;
+  networkContext?: Record<string, unknown> | null;
+};
+
+type RequestTrace = {
+  operationId: string;
+  requestId: string;
+  attempt: number;
+  action: string;
+  errorCode: string;
 };
 
 type RollbackAction = {
@@ -67,6 +95,58 @@ class PhotoSyncError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+function sanitizeTraceValue(value: string | null | undefined) {
+  const normalizedValue = String(value ?? "").trim();
+  return TRACE_ID_PATTERN.test(normalizedValue) ? normalizedValue : "";
+}
+
+function sanitizeDiagnosticText(value: unknown, maxLength: number) {
+  return String(value ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function createRequestTrace(req: Request): RequestTrace {
+  const requestUrl = new URL(req.url);
+  const attemptValue = Number(req.headers.get("x-review-attempt") ?? requestUrl.searchParams.get("attempt"));
+
+  return {
+    operationId: sanitizeTraceValue(
+      req.headers.get("x-review-operation-id") ?? requestUrl.searchParams.get("oid")
+    ),
+    requestId: sanitizeTraceValue(req.headers.get("x-review-request-id") ?? requestUrl.searchParams.get("rid")),
+    attempt: Number.isInteger(attemptValue) && attemptValue >= 0 && attemptValue <= 10 ? attemptValue : 0,
+    action: sanitizeDiagnosticText(requestUrl.searchParams.get("action"), 24),
+    errorCode: ""
+  };
+}
+
+function logRequestEvent(event: string, trace: RequestTrace, details: Record<string, unknown> = {}) {
+  console.info(
+    JSON.stringify({
+      event,
+      operationId: trace.operationId,
+      requestId: trace.requestId,
+      attempt: trace.attempt,
+      action: trace.action,
+      ...details
+    })
+  );
+}
+
+function attachRequestTrace(response: Response, trace: RequestTrace) {
+  if (trace.operationId) {
+    response.headers.set("X-Review-Operation-Id", trace.operationId);
+  }
+
+  if (trace.requestId) {
+    response.headers.set("X-Review-Request-Id", trace.requestId);
+  }
+
+  return response;
 }
 
 function json(data: unknown, status = 200) {
@@ -147,8 +227,15 @@ function encodeObjectKey(objectKey: string) {
     .join("/");
 }
 
-function buildObjectKey(uploadPrefix: string, productId: number, submissionId: number, fileName: string) {
-  return `${uploadPrefix}/${productId}/${submissionId}/${crypto.randomUUID()}-${sanitizeFileName(fileName)}`;
+function buildObjectKey(
+  uploadPrefix: string,
+  productId: number,
+  submissionId: number,
+  operationId: string,
+  fileIndex: number,
+  fileName: string
+) {
+  return `${uploadPrefix}/${productId}/${submissionId}/${operationId}/${String(fileIndex + 1).padStart(2, "0")}-${sanitizeFileName(fileName)}`;
 }
 
 function buildPublicImagePath(publicPathPrefix: string, objectKey: string) {
@@ -236,6 +323,8 @@ function parseJsonArrayField(formData: FormData, name: string) {
 }
 
 function readSyncPayload(formData: FormData): SyncPayload {
+  const providedOperationId = parseStringField(formData, "operationId").trim();
+  const operationId = providedOperationId || crypto.randomUUID();
   const productId = parseNumberField(formData, "productId");
   const submissionId = parseNumberField(formData, "submissionId");
   const assignName = parseStringField(formData, "assignName");
@@ -243,6 +332,10 @@ function readSyncPayload(formData: FormData): SyncPayload {
 
   if (productId == null || submissionId == null) {
     throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "productId와 submissionId는 숫자여야 합니다.", 400);
+  }
+
+  if (!TRACE_ID_PATTERN.test(operationId)) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_REQUEST_INVALID, "operationId 값이 올바르지 않습니다.", 400);
   }
 
   if (!assignName.trim()) {
@@ -259,6 +352,7 @@ function readSyncPayload(formData: FormData): SyncPayload {
 
   return {
     action: "sync",
+    operationId,
     productId,
     submissionId,
     assignName,
@@ -341,6 +435,74 @@ async function listCurrentPhotoUrls(
   }
 
   return photos.map((item) => item.image_url);
+}
+
+async function synchronizePhotoRows(
+  supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>,
+  submissionId: number,
+  newImageUrls: string[],
+  removedImageUrls: string[]
+) {
+  const { data, error } = await supabaseAdmin.rpc("sync_review_receive_photo_rows", {
+    p_submission_id: submissionId,
+    p_new_image_urls: newImageUrls,
+    p_removed_image_urls: removedImageUrls
+  });
+
+  if (error) {
+    throw new PhotoSyncError(ERROR_CODES.SYNC_TRANSACTION_FAILED, error.message);
+  }
+
+  return (data ?? [])
+    .map((item: { image_url?: unknown }) => item.image_url)
+    .filter((imageUrl: unknown): imageUrl is string => typeof imageUrl === "string");
+}
+
+function isObjectKeyOwnedBySubmission(
+  objectKey: string,
+  storageConfig: ReturnType<typeof getStorageConfig>,
+  productId: number,
+  submissionId: number
+) {
+  return objectKey.startsWith(`${storageConfig.uploadPrefix}/${productId}/${submissionId}/`);
+}
+
+async function cleanupUnreferencedUploadedFiles(
+  supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>,
+  storageConfig: ReturnType<typeof getStorageConfig>,
+  uploadedFiles: Array<{ objectKey: string; imageUrl: string }>,
+  trace: RequestTrace
+) {
+  if (uploadedFiles.length === 0) {
+    return;
+  }
+
+  const uploadedImageUrls = uploadedFiles.map((file) => file.imageUrl);
+  const { data, error } = await supabaseAdmin
+    .from("evidence_photos")
+    .select("image_url")
+    .in("image_url", uploadedImageUrls);
+
+  if (error) {
+    logRequestEvent("review_receive_photo_cleanup_skipped", trace, {
+      reason: "reference-check-failed",
+      code: ERROR_CODES.SYNC_SERVER_FAILURE
+    });
+    return;
+  }
+
+  const referencedImageUrls = new Set(
+    (data ?? [])
+      .map((item: { image_url?: unknown }) => item.image_url)
+      .filter((imageUrl: unknown): imageUrl is string => typeof imageUrl === "string")
+  );
+  const unreferencedObjectKeys = uploadedFiles
+    .filter((file) => !referencedImageUrls.has(file.imageUrl))
+    .map((file) => file.objectKey);
+
+  if (unreferencedObjectKeys.length > 0) {
+    await deleteLocalObjects(storageConfig, unreferencedObjectKeys);
+  }
 }
 
 function hasExpectedImageSignature(contentType: string, bytes: Uint8Array) {
@@ -478,7 +640,7 @@ async function deleteLocalObjects(storageConfig: ReturnType<typeof getStorageCon
   return deletedCount;
 }
 
-async function handleSyncAction(payload: SyncPayload) {
+async function handleSyncAction(payload: SyncPayload, trace: RequestTrace) {
   const supabaseAdmin = createSupabaseAdminClient(ERROR_CODES.SYNC_SERVER_FAILURE);
   const submission = await loadSubmissionForPublicAccess(supabaseAdmin, payload, ERROR_CODES.SYNC_SERVER_FAILURE);
 
@@ -491,85 +653,63 @@ async function handleSyncAction(payload: SyncPayload) {
   }
 
   const storageConfig = getStorageConfig();
-  const currentPhotos = await listCurrentPhotoUrls(
-    supabaseAdmin,
-    payload.submissionId,
-    ERROR_CODES.SYNC_CURRENT_PHOTOS_FAILED
-  );
-  const currentPhotoSet = new Set(currentPhotos);
-  const removableImageUrls = payload.removedImageUrls.filter((imageUrl) => currentPhotoSet.has(imageUrl));
-  const removableObjectKeys = removableImageUrls
+  const requestedRemovalImageUrls = [...new Set(payload.removedImageUrls)];
+  const removableObjectKeys = requestedRemovalImageUrls
     .map((imageUrl) => extractObjectKeyFromImageUrl(storageConfig.publicPathPrefix, imageUrl))
-    .filter((value): value is string => Boolean(value));
+    .filter(
+      (value): value is string =>
+        Boolean(value) &&
+        isObjectKeyOwnedBySubmission(value as string, storageConfig, payload.productId, payload.submissionId)
+    );
   const uploadedFiles: Array<{ objectKey: string; imageUrl: string }> = [];
+  let photos: string[] = [];
 
   try {
-    for (const file of payload.files) {
+    for (let fileIndex = 0; fileIndex < payload.files.length; fileIndex += 1) {
+      const file = payload.files[fileIndex];
       const { bytes, fileName } = await validateAndReadImageFile(file);
-      const objectKey = buildObjectKey(storageConfig.uploadPrefix, payload.productId, payload.submissionId, fileName);
+      const objectKey = buildObjectKey(
+        storageConfig.uploadPrefix,
+        payload.productId,
+        payload.submissionId,
+        payload.operationId,
+        fileIndex,
+        fileName
+      );
       const imageUrl = buildPublicImagePath(storageConfig.publicPathPrefix, objectKey);
 
       await writeImageFile(storageConfig, objectKey, bytes);
       uploadedFiles.push({ objectKey, imageUrl });
     }
 
-    if (uploadedFiles.length > 0) {
-      const { error } = await supabaseAdmin.from("evidence_photos").insert(
-        uploadedFiles.map((file) => ({
-          submission_id: payload.submissionId,
-          photo_type: PHOTO_TYPE,
-          image_url: file.imageUrl
-        }))
-      );
-
-      if (error) {
-        throw new PhotoSyncError(ERROR_CODES.SYNC_INSERT_FAILED, error.message);
-      }
-    }
-
-    if (removableImageUrls.length > 0) {
-      const { error } = await supabaseAdmin
-        .from("evidence_photos")
-        .delete()
-        .eq("submission_id", payload.submissionId)
-        .eq("photo_type", PHOTO_TYPE)
-        .in("image_url", removableImageUrls);
-
-      if (error) {
-        throw new PhotoSyncError(ERROR_CODES.SYNC_DELETE_FAILED, error.message);
-      }
-    }
+    photos = await synchronizePhotoRows(
+      supabaseAdmin,
+      payload.submissionId,
+      uploadedFiles.map((file) => file.imageUrl),
+      requestedRemovalImageUrls
+    );
   } catch (error) {
-    if (uploadedFiles.length > 0) {
-      await deleteLocalObjects(storageConfig, uploadedFiles.map((file) => file.objectKey));
-
-      await supabaseAdmin
-        .from("evidence_photos")
-        .delete()
-        .eq("submission_id", payload.submissionId)
-        .eq("photo_type", PHOTO_TYPE)
-        .in(
-          "image_url",
-          uploadedFiles.map((file) => file.imageUrl)
-        );
+    try {
+      await cleanupUnreferencedUploadedFiles(supabaseAdmin, storageConfig, uploadedFiles, trace);
+    } catch {
+      logRequestEvent("review_receive_photo_cleanup_failed", trace, {
+        code: ERROR_CODES.SYNC_SERVER_FAILURE
+      });
     }
 
     throw error;
   }
 
-  const removedImageUrlSet = new Set(removableImageUrls);
-  const photos = [
-    ...currentPhotos.filter((imageUrl) => !removedImageUrlSet.has(imageUrl)),
-    ...uploadedFiles.map((file) => file.imageUrl)
-  ];
-
   try {
     await deleteLocalObjects(storageConfig, removableObjectKeys);
-  } catch (error) {
-    console.error("Failed to delete local image files after DB commit", error);
+  } catch {
+    logRequestEvent("review_receive_photo_old_file_delete_failed", trace, {
+      code: ERROR_CODES.SYNC_DELETE_FAILED,
+      objectCount: removableObjectKeys.length
+    });
   }
 
-  return json({ photos, uploadedFiles });
+  return json({ photos, uploadedFiles, operationId: payload.operationId, requestId: trace.requestId });
 }
 
 async function handleRollbackAction(body: RollbackAction) {
@@ -598,7 +738,57 @@ async function handleRollbackAction(body: RollbackAction) {
   }
 }
 
-Deno.serve(async (req) => {
+function sanitizeDiagnosticNetworkContext(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const context = value as Record<string, unknown>;
+  const numberOrNull = (input: unknown) =>
+    typeof input === "number" && Number.isFinite(input) && input >= 0 ? Math.round(input) : null;
+
+  return {
+    online: typeof context.online === "boolean" ? context.online : null,
+    visibilityState: sanitizeDiagnosticText(context.visibilityState, 20),
+    millisecondsSinceForeground: numberOrNull(context.millisecondsSinceForeground),
+    millisecondsSinceNetworkChange: numberOrNull(context.millisecondsSinceNetworkChange),
+    pageRestoredFromCache: context.pageRestoredFromCache === true,
+    effectiveType: sanitizeDiagnosticText(context.effectiveType, 20)
+  };
+}
+
+function handleDiagnosticAction(body: DiagnosticAction, trace: RequestTrace) {
+  const bodyOperationId = sanitizeTraceValue(body.operationId);
+  const bodyRequestId = sanitizeTraceValue(body.requestId);
+
+  if (!trace.operationId && bodyOperationId) {
+    trace.operationId = bodyOperationId;
+  }
+
+  if (!trace.requestId && bodyRequestId) {
+    trace.requestId = bodyRequestId;
+  }
+
+  if (!trace.attempt && Number.isInteger(body.attempt) && Number(body.attempt) >= 0) {
+    trace.attempt = Math.min(Number(body.attempt), 10);
+  }
+
+  trace.action = "diagnostic";
+  logRequestEvent("review_receive_photo_client_diagnostic", trace, {
+    failedRequestId: sanitizeTraceValue(body.failedRequestId),
+    code: /^\d{5}$/.test(String(body.code ?? "")) ? body.code : "",
+    transportKind: sanitizeDiagnosticText(body.transportKind, 40),
+    originalErrorName: sanitizeDiagnosticText(body.originalErrorName, 80),
+    originalMessage: sanitizeDiagnosticText(body.originalMessage, 200),
+    productId: Number.isFinite(body.productId) ? body.productId : null,
+    submissionId: Number.isFinite(body.submissionId) ? body.submissionId : null,
+    networkContext: sanitizeDiagnosticNetworkContext(body.networkContext)
+  });
+
+  return json({ ok: true, operationId: trace.operationId, requestId: trace.requestId });
+}
+
+async function handleRequest(req: Request, trace: RequestTrace) {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       headers: corsHeaders
@@ -609,48 +799,86 @@ Deno.serve(async (req) => {
     return badRequest("POST 요청만 지원합니다.", 405, ERROR_CODES.SYNC_REQUEST_INVALID);
   }
 
+  const contentType = req.headers.get("content-type") ?? "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await req.formData();
+    const action = parseStringField(formData, "action");
+
+    if (action !== "sync") {
+      return badRequest("multipart 요청은 sync action만 지원합니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
+    }
+
+    const payload = readSyncPayload(formData);
+
+    if (trace.operationId && trace.operationId !== payload.operationId) {
+      return badRequest("요청 추적 ID가 일치하지 않습니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
+    }
+
+    trace.action = "sync";
+    trace.operationId = payload.operationId;
+    return await handleSyncAction(payload, trace);
+  }
+
+  const body = (await req.json()) as RollbackAction | DiagnosticAction | { action?: string };
+
+  if (!body?.action) {
+    return badRequest("action 값이 필요합니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
+  }
+
+  if (body.action === "diagnostic") {
+    return handleDiagnosticAction(body as DiagnosticAction, trace);
+  }
+
+  if (body.action === "rollback") {
+    const rollbackBody = body as RollbackAction;
+    trace.action = "rollback";
+
+    if (!Number.isFinite(rollbackBody.productId) || !Number.isFinite(rollbackBody.submissionId)) {
+      return badRequest("productId와 submissionId는 숫자여야 합니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
+    }
+
+    if (!rollbackBody.assignName?.trim()) {
+      return badRequest("assignName 값이 필요합니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
+    }
+
+    return await handleRollbackAction(rollbackBody);
+  }
+
+  return badRequest("지원하지 않는 action 입니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
+}
+
+Deno.serve(async (req) => {
+  const trace = createRequestTrace(req);
+  const startedAt = Date.now();
+  logRequestEvent("review_receive_photo_request_started", trace, {
+    method: req.method
+  });
+
+  let response: Response;
+
   try {
-    const contentType = req.headers.get("content-type") ?? "";
-
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await req.formData();
-      const action = parseStringField(formData, "action");
-
-      if (action !== "sync") {
-        return badRequest("multipart 요청은 sync action만 지원합니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
-      }
-
-      return await handleSyncAction(readSyncPayload(formData));
-    }
-
-    const body = (await req.json()) as RollbackAction | { action?: string };
-
-    if (!body?.action) {
-      return badRequest("action 값이 필요합니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
-    }
-
-    if (body.action === "rollback") {
-      if (!Number.isFinite(body.productId) || !Number.isFinite(body.submissionId)) {
-        return badRequest("productId와 submissionId는 숫자여야 합니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
-      }
-
-      if (!body.assignName?.trim()) {
-        return badRequest("assignName 값이 필요합니다.", 400, ERROR_CODES.ROLLBACK_REQUEST_OR_ACCESS_FAILED);
-      }
-
-      return await handleRollbackAction(body);
-    }
-
-    return badRequest("지원하지 않는 action 입니다.", 400, ERROR_CODES.SYNC_REQUEST_INVALID);
+    response = await handleRequest(req, trace);
   } catch (error) {
     if (error instanceof PhotoSyncError) {
-      return errorResponse(error.code, error.message, error.status);
+      trace.errorCode = error.code;
+      response = errorResponse(error.code, error.message, error.status);
+    } else {
+      trace.errorCode = ERROR_CODES.UNKNOWN_SERVER_FAILURE;
+      response = errorResponse(
+        ERROR_CODES.UNKNOWN_SERVER_FAILURE,
+        error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.",
+        500
+      );
     }
-
-    return errorResponse(
-      ERROR_CODES.UNKNOWN_SERVER_FAILURE,
-      error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.",
-      500
-    );
   }
+
+  attachRequestTrace(response, trace);
+  logRequestEvent("review_receive_photo_request_completed", trace, {
+    status: response.status,
+    errorCode: trace.errorCode,
+    durationMs: Date.now() - startedAt
+  });
+
+  return response;
 });

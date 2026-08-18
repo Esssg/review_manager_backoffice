@@ -166,11 +166,26 @@ row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업�
   - `photo_type` text, not null
   - `image_url` text, not null
   - `created_at` timestamptz, default `now()`
-- row count: 2435
+- row count: 21364 (2026-08-18 MCP 조회)
 - 비고: 컬럼 목록은 2026-04-23 MCP 기준 재확인
   2026-06-28에 상품전체보기 목록 RPC의 리뷰 사진 집계를 위해 `evidence_photos_review_submission_idx` 부분 인덱스 추가 마이그레이션 파일 작성
+  2026-08-18에 `(submission_id, photo_type, image_url)` 중복 key group 1개를 읽기 전용 집계로 확인했다. 기존 row는 삭제하지 않으며 새 공개 업로드 재시도는 아래 RPC의 submission 잠금과 존재 확인으로 중복 insert를 방지한다.
 
 ## 2-1) RPC / 함수
+
+## `sync_review_receive_photo_rows(p_submission_id, p_new_image_urls, p_removed_image_urls)`
+- 용도: 공개 리뷰 사진 업로드의 DB row 멱등 동기화
+- 입력
+  - `p_submission_id` bigint
+  - `p_new_image_urls` text[]
+  - `p_removed_image_urls` text[]
+- 반환: 해당 submission의 최종 `review` 사진 URL 목록. 기존 중복 URL은 반환 목록에서 한 번만 반환
+- 동작
+  - submission ID 기반 advisory transaction lock으로 같은 제출의 재시도·동시 처리를 직렬화
+  - 이미 존재하는 `(submission_id, photo_type = 'review', image_url)`은 다시 insert하지 않음
+  - 제거 URL과 신규 URL을 한 transaction 안에서 반영
+- 권한: `service_role`만 execute. 공개 `anon`·`authenticated` 직접 호출은 revoke
+- 마이그레이션: `20260818143000_add_review_receive_photo_sync_rpc.sql`
 
 ## `get_admin_review_receive_product_summaries(...)`
 - 용도: 관리자 `/admin/review-receive/*` 목록 전용 번들 집계 조회

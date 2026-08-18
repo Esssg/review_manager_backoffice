@@ -55,3 +55,4 @@ supabase/migrations
 !supabase/migrations/20260627181000_add_product_overview_rows_rpc.sql
 !supabase/migrations/20260627183058_optimize_product_overview_rows_rpc.sql
 !supabase/migrations/20260814124722_create_admin_tutorial_progress.sql
+!supabase/migrations/20260818143000_add_review_receive_photo_sync_rpc.sql

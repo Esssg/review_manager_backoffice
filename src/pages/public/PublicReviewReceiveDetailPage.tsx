@@ -14,6 +14,7 @@ import {
   fetchPublicReviewReceiveSubmissions,
   syncPublicReviewReceivePhotoUpload
 } from "@/services/reviewReceivePublic";
+import { startReviewReceivePhotoSyncNetworkMonitor } from "@/services/reviewReceivePhotoSyncNetwork";
 import { formatPlannedDepositorName } from "@/utils/plannedDepositorName";
 import { sortReviewReceiveRowsByCreatedAt } from "@/utils/reviewReceiveRows";
 import { getSessionStorageValue, setSessionStorageValue } from "@/utils/browserStorage";
@@ -50,10 +51,22 @@ const PUBLIC_PHOTO_UPLOAD_ERROR_MESSAGES = {
   "00036": "기존 사진 정보를 DB에서 삭제하지 못했습니다.",
   "00037": "사진 정보 저장 응답이 올바르지 않습니다.",
   "00038": "사진 정보 저장 중 서버 문제가 발생했습니다.",
+  "00039": "사진 정보를 중복 없이 동기화하는 중 DB 오류가 발생했습니다.",
   "00040": "임시 업로드 파일 정리 요청이 네트워크 문제로 실패했습니다.",
   "00041": "임시 업로드 파일 정리 권한을 확인하지 못했습니다.",
   "00042": "임시 업로드 파일을 저장소에서 삭제하지 못했습니다.",
   "00043": "업로드 실패 후 임시 파일 정리에 실패했습니다.",
+  "00050": "인터넷 연결이 확인되지 않아 사진을 전송하지 못했습니다.",
+  "00051": "앱 복귀 또는 네트워크 변경 직후 연결이 안정되지 않았습니다. 잠시 후 다시 시도해주세요.",
+  "00052": "사진 업로드 응답 대기 시간이 초과되었습니다.",
+  "00053": "브라우저 또는 운영체제가 사진 업로드 요청을 중단했습니다.",
+  "00054": "브라우저가 사진 업로드 서버의 응답을 받지 못했습니다.",
+  "00057": "업로드 요청 용량이 서버 허용 범위를 초과했습니다.",
+  "00058": "사진 업로드 서버 연결이 일시적으로 불안정합니다.",
+  "00059": "사진 처리 함수로 요청을 전달하지 못했습니다.",
+  "00060": "사진 업로드 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  "00061": "사진 저장 서버의 응답을 해석하지 못했습니다.",
+  "00062": "사진 업로드 인증 상태를 확인하지 못했습니다.",
   "00090": "사진 저장 중 알 수 없는 오류가 발생했습니다."
 };
 
@@ -260,7 +273,18 @@ function createPhotoUploadError(code, options = {}) {
   error.fileSize = options.fileSize ?? null;
   error.originalErrorName = options.originalErrorName || "";
   error.originalMessage = options.originalMessage || "";
+  error.originalContextName = options.originalContextName || "";
+  error.originalContextMessage = options.originalContextMessage || "";
   error.debugMessage = options.debugMessage || "";
+  error.transportKind = options.transportKind || "";
+  error.operationId = options.operationId || "";
+  error.traceId = options.traceId || "";
+  error.requestId = options.requestId || "";
+  error.attempt = options.attempt ?? null;
+  error.retryCount = options.retryCount ?? 0;
+  error.attemptFailures = options.attemptFailures ?? [];
+  error.networkContext = options.networkContext ?? null;
+  error.rollbackCode = options.rollbackCode || "";
   error.isPublicPhotoUploadError = true;
 
   return error;
@@ -270,7 +294,7 @@ function normalizePhotoUploadError(error, fallbackCode, options = {}) {
   if (error?.code) {
     return createPhotoUploadError(error.code, {
       ...options,
-      message: error.message || options.message,
+      message: getPhotoUploadErrorMessage(error.code, options.message || error.message),
       stage: error.stage || options.stage,
       status: error.status ?? options.status,
       fileIndex: error.fileIndex ?? options.fileIndex,
@@ -278,7 +302,18 @@ function normalizePhotoUploadError(error, fallbackCode, options = {}) {
       fileSize: error.fileSize ?? options.fileSize,
       originalErrorName: error.originalErrorName || error.name || options.originalErrorName,
       originalMessage: error.originalMessage || error.message || options.originalMessage,
-      debugMessage: error.debugMessage || options.debugMessage
+      originalContextName: error.originalContextName || options.originalContextName,
+      originalContextMessage: error.originalContextMessage || options.originalContextMessage,
+      debugMessage: error.debugMessage || options.debugMessage,
+      transportKind: error.transportKind || options.transportKind,
+      operationId: error.operationId || options.operationId,
+      traceId: error.traceId || options.traceId,
+      requestId: error.requestId || options.requestId,
+      attempt: error.attempt ?? options.attempt,
+      retryCount: error.retryCount ?? options.retryCount,
+      attemptFailures: error.attemptFailures || options.attemptFailures,
+      networkContext: error.networkContext || options.networkContext,
+      rollbackCode: error.rollbackCode || options.rollbackCode
     });
   }
 
@@ -293,8 +328,9 @@ function normalizePhotoUploadError(error, fallbackCode, options = {}) {
 function formatPhotoUploadError(error) {
   const normalizedError = error?.isPublicPhotoUploadError ? error : normalizePhotoUploadError(error, "00090");
   const rollbackSuffix = normalizedError.rollbackCode ? ` 추가 정리 오류코드: ${normalizedError.rollbackCode}` : "";
+  const traceSuffix = normalizedError.traceId ? ` 문의 ID: ${normalizedError.traceId}` : "";
 
-  return `[${normalizedError.code}] ${normalizedError.message}${rollbackSuffix}`;
+  return `[${normalizedError.code}] ${normalizedError.message}${rollbackSuffix}${traceSuffix}`;
 }
 
 function getPhotoFileDebugInfo(file, fileIndex) {
@@ -402,6 +438,8 @@ export default function PublicReviewReceiveDetailPage() {
   });
   const photoDraftsRef = useRef(photoDrafts);
   const photoEditorRef = useRef(photoEditor);
+
+  useEffect(() => startReviewReceivePhotoSyncNetworkMonitor(), []);
 
   useEffect(() => {
     photoDraftsRef.current = photoDrafts;
@@ -812,7 +850,22 @@ export default function PublicReviewReceiveDetailPage() {
           submissionId: Number(photoEditor.row.id),
           assignName: photoEditor.row.assign_name,
           removedImageUrls: photoEditor.row.serverPhotos ?? [],
-          files: nextDraft.newPhotos.map((photo) => photo.file)
+          files: nextDraft.newPhotos.map((photo) => photo.file),
+          onTransportState: ({ state, nextAttempt, traceId }) => {
+            setPhotoEditor((prev) => {
+              if (!prev.isSaving) {
+                return prev;
+              }
+
+              return {
+                ...prev,
+                feedbackMessage:
+                  state === "retrying"
+                    ? `네트워크 연결을 다시 확인하고 자동 재시도 중입니다. (${nextAttempt ?? 2}/2, 문의 ID: ${traceId})`
+                    : `네트워크 연결이 안정될 때까지 잠시 기다리는 중입니다. (문의 ID: ${traceId})`
+              };
+            });
+          }
         });
 
         if (syncError) {
@@ -862,7 +915,17 @@ export default function PublicReviewReceiveDetailPage() {
           fileSize: normalizedError.fileSize,
           originalErrorName: normalizedError.originalErrorName,
           originalMessage: normalizedError.originalMessage,
+          originalContextName: normalizedError.originalContextName,
+          originalContextMessage: normalizedError.originalContextMessage,
           debugMessage: normalizedError.debugMessage,
+          transportKind: normalizedError.transportKind,
+          operationId: normalizedError.operationId,
+          traceId: normalizedError.traceId,
+          requestId: normalizedError.requestId,
+          attempt: normalizedError.attempt,
+          retryCount: normalizedError.retryCount,
+          attemptFailures: normalizedError.attemptFailures,
+          networkContext: normalizedError.networkContext,
           rollbackCode: normalizedError.rollbackCode || ""
         });
 

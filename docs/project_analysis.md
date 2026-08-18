@@ -148,6 +148,10 @@ src/
     adminDeletion.ts      허용 테이블의 삭제 순서·부분 성공 결과 계약
     reviewReceivePublic.ts
                           구매자용 리뷰받기 조회 + 사진 업로드 함수 호출 서비스
+    reviewReceivePhotoSyncTransport.ts
+                          same-origin 사진 전송, 생명주기 안정화, 1회 재시도, 요청 추적·진단 adapter
+    reviewReceivePhotoSyncNetwork.ts
+                          background 복귀·online/offline 상태 추적과 전송 오류 분류
     reviewReceive.ts      리뷰받기 상세 조회/수정/삭제
     exportData.ts         내보내기용 products/submissions 등 조회
     exportPhotos.ts       사진내려받기용 products/submissions/evidence_photos 조회
@@ -208,7 +212,7 @@ tests/
 supabase/
   functions/
     review-receive-photo-sync/
-      index.ts            구매자용 사진 NAS 업로드/File Writer/DB 연동 함수
+      index.ts            구매자용 사진 NAS 업로드/File Writer/멱등 DB RPC 연동 및 구조화 진단 함수
 
 docs/
   guide.md                Edge Function 오류 및 운영 대응 문서

@@ -19,7 +19,13 @@ const PHOTO_SYNC_FALLBACK_ERROR_CODES = {
     http: "00031",
     unauthorized: "00032",
     locked: "00033",
-    server: "00038"
+    server: "00038",
+    payloadTooLarge: "00057",
+    gateway: "00058",
+    relay: "00059",
+    rateLimited: "00060",
+    responseParse: "00061",
+    authContext: "00062"
   },
   rollback: {
     transport: "00040",
@@ -68,8 +74,24 @@ function getFunctionFallbackErrorCode(action, error, response) {
   const fallbackCodes = PHOTO_SYNC_FALLBACK_ERROR_CODES[action] ?? PHOTO_SYNC_FALLBACK_ERROR_CODES.prepare;
   const status = getFunctionErrorStatus(error, response);
 
-  if (error?.name === "FunctionsFetchError" || error?.name === "FunctionsRelayError") {
+  if (error?.transportCode) {
+    return error.transportCode;
+  }
+
+  if (error?.name === "FunctionsRelayError") {
+    return fallbackCodes.relay ?? fallbackCodes.transport;
+  }
+
+  if (error?.name === "FunctionsFetchError") {
     return fallbackCodes.transport;
+  }
+
+  if (error?.name === "PhotoSyncResponseParseError") {
+    return fallbackCodes.responseParse ?? fallbackCodes.http;
+  }
+
+  if (error?.name === "PhotoSyncAuthContextError") {
+    return fallbackCodes.authContext ?? fallbackCodes.transport;
   }
 
   if (status === 403) {
@@ -78,6 +100,18 @@ function getFunctionFallbackErrorCode(action, error, response) {
 
   if (status === 409) {
     return fallbackCodes.locked ?? fallbackCodes.http;
+  }
+
+  if (status === 413) {
+    return fallbackCodes.payloadTooLarge ?? fallbackCodes.http;
+  }
+
+  if (status === 429) {
+    return fallbackCodes.rateLimited ?? fallbackCodes.http;
+  }
+
+  if (status === 502 || status === 503 || status === 504) {
+    return fallbackCodes.gateway ?? fallbackCodes.server ?? fallbackCodes.http;
   }
 
   if (status >= 500) {
@@ -98,11 +132,21 @@ function buildPhotoSyncFunctionError({ action, error, response, payload }) {
   normalizedError.status = status;
   normalizedError.originalErrorName = error?.name || "";
   normalizedError.originalMessage = error?.message || "";
+  normalizedError.originalContextName = error?.originalErrorName || error?.context?.name || "";
+  normalizedError.originalContextMessage = error?.originalMessage || error?.context?.message || "";
+  normalizedError.transportKind = error?.transportKind || "";
+  normalizedError.operationId = error?.operationId || "";
+  normalizedError.traceId = error?.traceId || "";
+  normalizedError.requestId = error?.requestId || "";
+  normalizedError.attempt = error?.attempt ?? null;
+  normalizedError.retryCount = error?.retryCount ?? 0;
+  normalizedError.attemptFailures = error?.attemptFailures ?? [];
+  normalizedError.networkContext = error?.networkContext ?? null;
 
   return normalizedError;
 }
 
-async function invokeReviewReceivePhotoSync(action, payload) {
+async function invokeReviewReceivePhotoSync(action, payload, options = {}) {
   const result = await invokeReviewReceivePhotoSyncRequest({
     action,
     payload,
@@ -110,7 +154,8 @@ async function invokeReviewReceivePhotoSync(action, payload) {
     getAccessToken: async () => {
       const { data } = await supabase.auth.getSession();
       return data.session?.access_token;
-    }
+    },
+    onTransportState: options.onTransportState
   });
 
   if (!result.error) {
@@ -238,7 +283,9 @@ export async function syncPublicReviewReceivePhotoUpload(payload) {
     formData.append("files", file, file.name);
   }
 
-  return invokeReviewReceivePhotoSync("sync", formData);
+  return invokeReviewReceivePhotoSync("sync", formData, {
+    onTransportState: payload.onTransportState
+  });
 }
 
 export async function rollbackPublicReviewReceivePhotoUpload(payload) {
