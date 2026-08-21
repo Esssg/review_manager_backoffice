@@ -1771,6 +1771,10 @@
   z-index: 1100;
 }
 
+.review-receive-modal-select-content {
+  z-index: 1150;
+}
+
 .review-receive-modal {
   width: min(980px, 100%);
   max-height: min(88vh, 920px);

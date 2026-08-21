@@ -2742,7 +2742,7 @@ export default function AdminReviewReceiveDetailPage() {
                         <SelectTrigger id="review-receive-item-product-fee-deposit-gb" className="table-cell-input">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="review-receive-modal-select-content">
                         {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -2762,7 +2762,7 @@ export default function AdminReviewReceiveDetailPage() {
                         <SelectTrigger id="review-receive-item-review-fee-deposit-gb" className="table-cell-input">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="review-receive-modal-select-content">
                         {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}

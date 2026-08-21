@@ -102,7 +102,7 @@ export default function AdminReviewReceiveProductReviewerBulkModal({
                     <SelectTrigger id="review-receive-detail-bulk-product-fee-deposit-gb" className="table-cell-input">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="review-receive-modal-select-content">
                     {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
@@ -123,7 +123,7 @@ export default function AdminReviewReceiveProductReviewerBulkModal({
                     <SelectTrigger id="review-receive-detail-bulk-review-fee-deposit-gb" className="table-cell-input">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="review-receive-modal-select-content">
                     {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}

@@ -1399,7 +1399,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         <SelectTrigger id="review-receive-bulk-product-fee-deposit-gb" className="table-cell-input">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="review-receive-modal-select-content">
                         {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -1420,7 +1420,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         <SelectTrigger id="review-receive-bulk-review-fee-deposit-gb" className="table-cell-input">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="review-receive-modal-select-content">
                         {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -1822,7 +1822,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         <SelectTrigger id="review-receive-product-fee-deposit-gb" className="table-cell-input">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="review-receive-modal-select-content">
                         {PRODUCT_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -1842,7 +1842,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                         <SelectTrigger id="review-receive-review-fee-deposit-gb" className="table-cell-input">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="review-receive-modal-select-content">
                         {REVIEW_FEE_DEPOSIT_PARTY_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
