@@ -9,6 +9,7 @@ import SubmissionTable from "@/components/admin/product-detail/SubmissionTable";
 import AppAlertDialog from "@/components/common/AppAlertDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 import { useAdminProductDetail } from "@/hooks/useAdminProductDetail";
 import { getLocalStorageValue } from "@/utils/browserStorage";
 
@@ -22,6 +23,13 @@ export default function AdminProductDetailPage() {
   const {
     activeTab,
     addSubmissionMessage,
+    canConfirmApplication,
+    canCreateSubmission,
+    canDeletePhoto,
+    canDeleteSubmission,
+    canReadPhotos,
+    canUpdateProductStep,
+    canUpdateSubmission,
     enabledSteps,
     errorMessage,
     handleAddSubmission,
@@ -109,6 +117,7 @@ export default function AdminProductDetailPage() {
             addSubmissionMessage={addSubmissionMessage}
             isAddSubmissionError={isAddSubmissionError}
             isAddingSubmission={isAddingSubmission}
+            canCreate={canCreateSubmission}
             newSubmissionText={newSubmissionText}
             onAddSubmission={handleAddSubmission}
             onSubmissionTextChange={setNewSubmissionText}
@@ -119,7 +128,7 @@ export default function AdminProductDetailPage() {
           <Checkbox
             checked={Boolean(enabledSteps[activeTab])}
             onCheckedChange={(checked) => handleStepEnabledChange(Boolean(checked))}
-            disabled={isUpdatingStep}
+            disabled={isUpdatingStep || !canUpdateProductStep}
           />
           <span>이 단계 활성화 하기</span>
         </label>
@@ -135,6 +144,8 @@ export default function AdminProductDetailPage() {
             adminId={adminId}
             product={product}
             rows={rows}
+            canConfirm={canConfirmApplication}
+            requireManagerMatch={!isAdminGatewayConfigured()}
             onConfirmChange={handleApplicationConfirmChange}
           />
         )}
@@ -147,6 +158,9 @@ export default function AdminProductDetailPage() {
                 activeTab={activeTab}
                 emptyText="미완료 데이터가 없습니다."
                 rows={unverifiedRows}
+                canDelete={canDeleteSubmission}
+                canReadPhotos={canReadPhotos}
+                canVerify={canUpdateSubmission}
                 onDeleteSubmission={openDeleteSubmissionDialog}
                 onOpenPhotoViewer={openPhotoViewer}
                 onVerifyChange={handleSubmissionVerifyChange}
@@ -159,6 +173,9 @@ export default function AdminProductDetailPage() {
                 activeTab={activeTab}
                 emptyText="완료 데이터가 없습니다."
                 rows={verifiedRows}
+                canDelete={canDeleteSubmission}
+                canReadPhotos={canReadPhotos}
+                canVerify={canUpdateSubmission}
                 onDeleteSubmission={openDeleteSubmissionDialog}
                 onOpenPhotoViewer={openPhotoViewer}
                 onVerifyChange={handleSubmissionVerifyChange}
@@ -173,7 +190,7 @@ export default function AdminProductDetailPage() {
         onClose={closePhotoViewer}
         onNext={showNextPhoto}
         onPrev={showPrevPhoto}
-        onRequestDelete={openDeletePhotoDialog}
+        onRequestDelete={canDeletePhoto ? openDeletePhotoDialog : undefined}
         isDeleting={isDeletingPhoto}
       />
       <AppAlertDialog

@@ -10,6 +10,7 @@ export default function ProductOverviewSection({
   filters,
   onFilterChange,
   onOpenPhotoViewer,
+  canReadPhotos = true,
   selectedSubmissionIds,
   onToggleRowSelection,
   onToggleAllSelection,
@@ -48,6 +49,7 @@ export default function ProductOverviewSection({
         filters={filters}
         onFilterChange={onFilterChange}
         onOpenPhotoViewer={onOpenPhotoViewer}
+        canReadPhotos={canReadPhotos}
         selectedSubmissionIds={selectedSubmissionIds}
         onToggleRowSelection={onToggleRowSelection}
         onToggleAllSelection={onToggleAllSelection}

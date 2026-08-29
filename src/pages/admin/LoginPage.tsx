@@ -1,12 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, KeyRound, LoaderCircle, ShieldCheck, UserRound } from "lucide-react";
+import AppAlertDialog from "@/components/common/AppAlertDialog";
+import { AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
 import { validateAdminCredentials } from "@/services/adminAuth";
-import { setLocalStorageValue } from "@/utils/browserStorage";
+import {
+  ADMIN_SESSION_EXPIRY_STORAGE_KEY,
+  SESSION_EXPIRY_ALERT
+} from "@/services/adminGateway";
+import {
+  getSessionStorageValue,
+  removeSessionStorageValue,
+  setLocalStorageValue
+} from "@/utils/browserStorage";
 
 const initialForm = {
   loginId: "",
@@ -30,7 +40,17 @@ export default function LoginPage() {
   const [form, setForm] = useState(initialForm);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isSessionExpiredDialogOpen, setIsSessionExpiredDialogOpen] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (getSessionStorageValue(ADMIN_SESSION_EXPIRY_STORAGE_KEY) !== "true") {
+      return;
+    }
+
+    removeSessionStorageValue(ADMIN_SESSION_EXPIRY_STORAGE_KEY);
+    setIsSessionExpiredDialogOpen(true);
+  }, []);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -65,7 +85,8 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="login-layout">
+    <>
+      <main className="login-layout">
       <section className="login-hero">
         <div className="login-hero-content">
           <div className="login-brand">
@@ -141,6 +162,26 @@ export default function LoginPage() {
           <p className="login-security-note"><ShieldCheck aria-hidden="true" /> 승인된 관리자 계정만 접근할 수 있습니다.</p>
         </form>
       </section>
-    </main>
+      </main>
+      <AppAlertDialog
+        isOpen={isSessionExpiredDialogOpen}
+        badgeLabel="세션 만료"
+        title="재 로그인이 필요합니다."
+        description={SESSION_EXPIRY_ALERT}
+        ariaLabel="인증 시간 만료 안내"
+        actionsChildren={(
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              setIsSessionExpiredDialogOpen(false);
+            }}
+          >
+            확인
+          </AlertDialogAction>
+        )}
+        onCancel={() => setIsSessionExpiredDialogOpen(false)}
+        onConfirm={() => setIsSessionExpiredDialogOpen(false)}
+      />
+    </>
   );
 }

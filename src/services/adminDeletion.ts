@@ -2,6 +2,12 @@
 
 import { supabase } from "@/lib/supabase";
 import { chunkValues } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 export const ADMIN_DELETION_STEP = Object.freeze({
   EVIDENCE_PHOTOS: "evidence_photos",
@@ -104,6 +110,26 @@ export async function deleteSubmissionsWithEvidencePhotos(submissionIds, scope =
   const result = createDeletionResult(scope);
   const normalizedSubmissionIds = normalizeIds(submissionIds);
 
+  if (isAdminGatewayConfigured()) {
+    const gatewayResult = await callAdminGatewayOperation(
+      ADMIN_GATEWAY_OPERATION.DELETION_SUBMISSIONS_WITH_PHOTOS,
+      { p_submission_ids: normalizedSubmissionIds }
+    );
+    const response = gatewayResult.data && typeof gatewayResult.data === "object" ? gatewayResult.data : {};
+
+    return {
+      ...result,
+      ...response,
+      data: response.data ?? response.deletedSubmissionIds ?? [],
+      error: gatewayResult.error,
+      scope: scope ?? response.scope ?? buildGatewayScope(null),
+      partial: Boolean(
+        gatewayResult.error &&
+          (response.partial || hasCompletedDeletion({ ...result, ...response }))
+      )
+    };
+  }
+
   if (
     !(await runDeletionStep(
       result,
@@ -131,6 +157,35 @@ export async function deleteProductsWithRelatedData({ productIds, submissionIds,
   const result = createDeletionResult(scope);
   const normalizedProductIds = normalizeIds(productIds);
   const normalizedManagerIds = normalizeManagerIds(managerIds);
+
+  if (isAdminGatewayConfigured()) {
+    if (normalizedProductIds.length === 0) {
+      result.error = new Error("삭제할 상품을 찾지 못했습니다.");
+      result.failedStep = ADMIN_DELETION_STEP.PRODUCTS;
+      return result;
+    }
+
+    const gatewayResult = await callAdminGatewayOperation(
+      ADMIN_GATEWAY_OPERATION.DELETION_PRODUCTS_WITH_RELATED_DATA,
+      {
+        p_product_ids: normalizedProductIds,
+        p_submission_ids: normalizeIds(submissionIds)
+      }
+    );
+    const response = gatewayResult.data && typeof gatewayResult.data === "object" ? gatewayResult.data : {};
+
+    return {
+      ...result,
+      ...response,
+      data: response.data ?? response.deletedProductIds ?? [],
+      error: gatewayResult.error,
+      scope: scope ?? response.scope ?? buildGatewayScope(null),
+      partial: Boolean(
+        gatewayResult.error &&
+          (response.partial || hasCompletedDeletion({ ...result, ...response }))
+      )
+    };
+  }
 
   if (normalizedProductIds.length === 0) {
     result.error = new Error("삭제할 상품을 찾지 못했습니다.");

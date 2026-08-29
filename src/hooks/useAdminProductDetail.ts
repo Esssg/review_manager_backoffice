@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { STEP_NUMBER_BY_TAB } from "@/constants/admin";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
+import { useAdminPermissions } from "@/hooks/useAdminPermission";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 import { deleteEvidencePhoto } from "@/services/evidencePhotos";
 import { deleteSubmissionsWithEvidencePhotos } from "@/services/adminDeletion";
 import {
@@ -20,7 +23,42 @@ import { getPhotoId, removePhotoById } from "@/utils/photoItems";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
 import { parseSubmissionText } from "@/utils/submissionParser";
 
+const PRODUCT_DETAIL_PERMISSION_CODES = Object.freeze([
+  ADMIN_PERMISSION_CODE.PRODUCT_READ,
+  ADMIN_PERMISSION_CODE.PRODUCT_STEP_READ,
+  ADMIN_PERMISSION_CODE.APPLICATION_READ,
+  ADMIN_PERMISSION_CODE.SUBMISSION_READ,
+  ADMIN_PERMISSION_CODE.APPLICATION_CONFIRM,
+  ADMIN_PERMISSION_CODE.SUBMISSION_CREATE,
+  ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE,
+  ADMIN_PERMISSION_CODE.SUBMISSION_DELETE,
+  ADMIN_PERMISSION_CODE.PRODUCT_STEP_UPDATE,
+  ADMIN_PERMISSION_CODE.PHOTO_READ,
+  ADMIN_PERMISSION_CODE.PHOTO_DELETE
+]);
+
 export function useAdminProductDetail({ adminId, productId }) {
+  const permissions = useAdminPermissions(PRODUCT_DETAIL_PERMISSION_CODES, {
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_PRODUCT]
+  });
+  const canReadProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_READ]?.allowed);
+  const canReadProductSteps = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_STEP_READ]?.allowed);
+  const canReadApplications = Boolean(permissions[ADMIN_PERMISSION_CODE.APPLICATION_READ]?.allowed);
+  const canReadSubmissions = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_READ]?.allowed);
+  const isReadPermissionReady = [
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.PRODUCT_STEP_READ,
+    ADMIN_PERMISSION_CODE.APPLICATION_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ
+  ].every((permissionCode) => permissions[permissionCode]?.isReady);
+  const canConfirmApplication = Boolean(permissions[ADMIN_PERMISSION_CODE.APPLICATION_CONFIRM]?.allowed);
+  const canCreateSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_CREATE]?.allowed);
+  const canUpdateSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE]?.allowed);
+  const canDeleteSubmissionPermission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_DELETE]?.allowed);
+  const canUpdateProductStep = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_STEP_UPDATE]?.allowed);
+  const canReadPhotos = Boolean(permissions[ADMIN_PERMISSION_CODE.PHOTO_READ]?.allowed);
+  const canDeletePhoto = Boolean(permissions[ADMIN_PERMISSION_CODE.PHOTO_DELETE]?.allowed);
+  const canDeleteSubmission = canDeleteSubmissionPermission && canDeletePhoto;
   const [activeTab, setActiveTab] = useState("applications");
   const [product, setProduct] = useState(null);
   const [enabledSteps, setEnabledSteps] = useState({
@@ -44,6 +82,16 @@ export function useAdminProductDetail({ adminId, productId }) {
 
   useEffect(() => {
     const loadProductMeta = async () => {
+      if (!isReadPermissionReady) {
+        return;
+      }
+
+      if (!canReadProduct || !canReadProductSteps) {
+        setErrorMessage("상품과 상품 단계 조회 권한이 필요합니다.");
+        setIsLoading(false);
+        return;
+      }
+
       const {
         productResult: { data: productData, error: productError },
         stepsResult: { data: stepsData, error: stepsError }
@@ -71,9 +119,13 @@ export function useAdminProductDetail({ adminId, productId }) {
     };
 
     loadProductMeta();
-  }, [adminId, productId]);
+  }, [adminId, canReadProduct, canReadProductSteps, isReadPermissionReady, productId]);
 
   useEffect(() => {
+    if (!isReadPermissionReady) {
+      return;
+    }
+
     const loadTabData = async () => {
       try {
         setIsLoading(true);
@@ -81,6 +133,11 @@ export function useAdminProductDetail({ adminId, productId }) {
         setRows([]);
 
         if (activeTab === "applications") {
+          if (!canReadApplications) {
+            setErrorMessage("신청자 조회 권한이 없습니다.");
+            return;
+          }
+
           const { data, error } = await fetchApplications(productId);
 
           if (error) {
@@ -90,6 +147,11 @@ export function useAdminProductDetail({ adminId, productId }) {
           }
 
           setRows(sortApplicationsByConfirmedAndCreatedAt(data ?? []));
+          return;
+        }
+
+        if (!canReadSubmissions) {
+          setErrorMessage("제출 조회 권한이 없습니다.");
           return;
         }
 
@@ -104,7 +166,7 @@ export function useAdminProductDetail({ adminId, productId }) {
         const submissionIds = (submissions ?? []).map((item) => item.id);
         let photoMap = {};
 
-        if (submissionIds.length > 0) {
+        if (submissionIds.length > 0 && canReadPhotos) {
           const photoType = activeTab === "purchase" ? "purchase" : "review";
           const { photos, photosError } = await fetchEvidencePhotos(submissionIds, photoType);
 
@@ -136,10 +198,10 @@ export function useAdminProductDetail({ adminId, productId }) {
     };
 
     loadTabData();
-  }, [activeTab, enabledSteps, productId]);
+  }, [activeTab, canReadApplications, canReadPhotos, canReadSubmissions, enabledSteps, isReadPermissionReady, productId]);
 
   const handleApplicationConfirmChange = async (applicationId, checked) => {
-    const canEdit = product?.manager_id === adminId;
+    const canEdit = canConfirmApplication && (isAdminGatewayConfigured() || product?.manager_id === adminId);
     if (!canEdit) return;
 
     const { error } = await updateApplicationConfirmed(applicationId, productId, checked);
@@ -156,6 +218,11 @@ export function useAdminProductDetail({ adminId, productId }) {
   };
 
   const handleSubmissionVerifyChange = async (submissionId, checked) => {
+    if (!canUpdateSubmission) {
+      setErrorMessage("제출 검증 권한이 없습니다.");
+      return;
+    }
+
     const targetColumn = activeTab === "purchase" ? "is_purchase_verified" : "is_review_verified";
     const { error } = await updateSubmissionVerified(submissionId, targetColumn, checked);
     if (error) {
@@ -169,6 +236,11 @@ export function useAdminProductDetail({ adminId, productId }) {
   };
 
   const handleDeleteSubmission = async (submissionId) => {
+    if (!canDeleteSubmission) {
+      setErrorMessage("제출 삭제 권한이 없습니다.");
+      return;
+    }
+
     setErrorMessage("");
     const result = await deleteSubmissionsWithEvidencePhotos([submissionId]);
 
@@ -187,6 +259,11 @@ export function useAdminProductDetail({ adminId, productId }) {
   };
 
   const handleDeletePhoto = async (photo) => {
+    if (!canDeletePhoto) {
+      setErrorMessage("증빙 사진 삭제 권한이 없습니다.");
+      return false;
+    }
+
     const photoId = getPhotoId(photo);
 
     if (!photoId) {
@@ -233,7 +310,10 @@ export function useAdminProductDetail({ adminId, productId }) {
   };
 
   const handleStepEnabledChange = async (checked) => {
-    if (!productId) return;
+    if (!productId || !canUpdateProductStep) {
+      setErrorMessage("상품 단계 수정 권한이 없습니다.");
+      return;
+    }
 
     const stepNumber = STEP_NUMBER_BY_TAB[activeTab];
     setIsUpdatingStep(true);
@@ -261,6 +341,12 @@ export function useAdminProductDetail({ adminId, productId }) {
   };
 
   const handleAddSubmission = async () => {
+    if (!canCreateSubmission) {
+      setIsAddSubmissionError(true);
+      setAddSubmissionMessage("제출 생성 권한이 없습니다.");
+      return;
+    }
+
     if (!newSubmissionText.trim()) {
       setIsAddSubmissionError(true);
       setAddSubmissionMessage("추가할 텍스트를 입력해주세요.");
@@ -327,6 +413,10 @@ export function useAdminProductDetail({ adminId, productId }) {
   };
 
   const openPhotoViewer = (photos, activeIndex) => {
+    if (!canReadPhotos) {
+      return;
+    }
+
     setPhotoViewer({
       isOpen: true,
       photos,
@@ -365,6 +455,13 @@ export function useAdminProductDetail({ adminId, productId }) {
     addSubmissionMessage,
     enabledSteps,
     errorMessage,
+    canConfirmApplication,
+    canCreateSubmission,
+    canDeletePhoto,
+    canDeleteSubmission,
+    canReadPhotos,
+    canUpdateProductStep,
+    canUpdateSubmission,
     isAddSubmissionError,
     isAddingSubmission,
     isLoading,

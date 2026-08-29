@@ -4,6 +4,23 @@ export const ADMIN_STORAGE_KEY = "review_manager_admin_id";
 export const ADMIN_INCLUDE_COMPANY_DATA_STORAGE_KEY = "review_manager_include_company_data";
 export const ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY = "review_manager_admin_sidebar_collapsed";
 
+/**
+ * 관리자 개인 화면 상태가 계정 간 공유되지 않도록 만드는 storage key다.
+ * login id는 gateway 세션의 보조 식별자일 뿐 권한 검증에는 사용하지 않는다.
+ */
+export function getAdminScopedStorageKey(baseKey, adminId) {
+  const normalizedBaseKey = String(baseKey ?? "").trim();
+  const normalizedAdminId = String(adminId ?? "").trim();
+
+  if (!normalizedBaseKey) {
+    return baseKey;
+  }
+
+  return normalizedAdminId
+    ? `${normalizedBaseKey}:${encodeURIComponent(normalizedAdminId)}`
+    : normalizedBaseKey;
+}
+
 export const ADMIN_MENU_NUMBER = {
   DASHBOARD: 1,
   PRODUCT: 2,

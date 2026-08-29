@@ -68,7 +68,8 @@ export default function AdminExportByProductPage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     includeApplications: true
   });
@@ -210,12 +211,14 @@ export default function AdminExportByProductPage() {
         <ExportWorkbookDownloadButton
           filename={buildExportFilename(config.filenameLabel)}
           sheets={workbookSheets}
-          disabled={disableWorkbookDownload}
+          disabled={!canExport || disableWorkbookDownload}
           isLoading={isLoading}
           buttonLabel={`Excel 다운로드 (제출 ${submissionRows.length}건 / 신청 ${applicationRows.length}건)`}
           emptyMessage="선택한 상품에 내보낼 제출/신청자 데이터가 없습니다."
           disabledMessage={
-            hasNoSelectedProduct
+            !canExport
+              ? "내보내기 실행 권한이 없습니다."
+              : hasNoSelectedProduct
               ? "내보낼 상품을 먼저 선택해주세요."
               : "제출 또는 신청자 컬럼을 1개 이상 선택해야 다운로드할 수 있습니다."
           }

@@ -49,7 +49,8 @@ export default function AdminExportByDepositDatePage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     dateFilter: appliedFilter,
     depositOnly: true,
@@ -139,6 +140,7 @@ export default function AdminExportByDepositDatePage() {
         submissionCount={submissionCount}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        canExport={canExport}
         hasNoRows={hasNoSubmissions}
         emptyHint={`선택한 기간(${appliedRangeSummary})에 맞는 입금완료 데이터가 없습니다. 기간을 넓히거나 조회 범위를 내 회사 전체로 바꿔 보세요.`}
         columnSelection={columnSelection}

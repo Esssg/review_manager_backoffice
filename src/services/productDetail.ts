@@ -2,12 +2,39 @@
 
 import { supabase } from "@/lib/supabase";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  callAdminGatewayOperation,
+  getGatewayArray,
+  omitClientIdentity
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const PRODUCT_META_SELECT = "id,title,product_name,description,product_link,manager_id";
 const SUBMISSION_LIST_SELECT =
   "id,assign_name,order_number,buyer_name,recipient_name,purchase_account,is_purchase_verified,is_review_verified,created_at";
 
 export async function fetchProductMeta(productId, adminId) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_META, {
+      p_product_id: Number(productId)
+    });
+    const gatewayData = result.data ?? {};
+    const product = gatewayData.product ?? gatewayData.productResult?.data ?? (gatewayData.id ? gatewayData : null);
+    const steps = getGatewayArray(gatewayData, ["steps", "productSteps", "product_steps"]);
+
+    return {
+      productResult: {
+        data: result.error ? null : product,
+        error: result.error
+      },
+      stepsResult: {
+        data: result.error ? [] : steps,
+        error: result.error
+      }
+    };
+  }
+
   const [productResult, stepsResult] = await Promise.all([
     supabase
       .from("products")
@@ -27,6 +54,22 @@ export async function fetchProductMeta(productId, adminId) {
 }
 
 export async function fetchApplications(productId) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_APPLICATIONS, {
+      p_product_id: Number(productId)
+    });
+    const data = getGatewayArray(result.data, ["applications", "rows"]);
+
+    if (data) {
+      data.sort((left, right) => compareByCreatedAtThenId(left, right));
+    }
+
+    return {
+      data: result.error ? null : data,
+      error: result.error
+    };
+  }
+
   const result = await fetchAllRows(() =>
     supabase
       .from("applications")
@@ -42,6 +85,22 @@ export async function fetchApplications(productId) {
 }
 
 export async function fetchSubmissions(productId) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_SUBMISSIONS, {
+      p_product_id: Number(productId)
+    });
+    const data = getGatewayArray(result.data, ["submissions", "rows"]);
+
+    if (data) {
+      data.sort((left, right) => compareByCreatedAtThenId(left, right));
+    }
+
+    return {
+      data: result.error ? null : data,
+      error: result.error
+    };
+  }
+
   const result = await fetchAllRows(() =>
     supabase
       .from("submissions")
@@ -61,6 +120,18 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
     return { photos: [], photosError: null };
   }
 
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_PHOTOS, {
+      p_submission_ids: submissionIds.map(Number).filter(Number.isSafeInteger),
+      p_photo_type: photoType
+    });
+
+    return {
+      photos: result.error ? [] : getGatewayArray(result.data, ["photos", "evidencePhotos", "evidence_photos"]),
+      photosError: result.error
+    };
+  }
+
   const result = await fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
     supabase
       .from("evidence_photos")
@@ -76,6 +147,19 @@ export async function fetchEvidencePhotos(submissionIds, photoType) {
 }
 
 export async function updateApplicationConfirmed(applicationId, productId, checked) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_APPLICATION_CONFIRM, {
+      p_application_id: Number(applicationId),
+      p_product_id: Number(productId),
+      p_checked: Boolean(checked)
+    });
+
+    return {
+      data: result.data ?? null,
+      error: result.error
+    };
+  }
+
   return supabase
     .from("applications")
     .update({ is_confirmed: checked })
@@ -84,6 +168,28 @@ export async function updateApplicationConfirmed(applicationId, productId, check
 }
 
 export async function updateSubmissionVerified(submissionId, targetColumn, checked) {
+  const allowedColumns = new Set(["is_purchase_verified", "is_review_verified", "is_deposit_verified"]);
+
+  if (!allowedColumns.has(targetColumn)) {
+    return {
+      data: null,
+      error: new Error("허용되지 않은 검증 항목입니다.")
+    };
+  }
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_SUBMISSION_VERIFY, {
+      p_submission_id: Number(submissionId),
+      p_target_column: targetColumn,
+      p_checked: Boolean(checked)
+    });
+
+    return {
+      data: result.data ?? null,
+      error: result.error
+    };
+  }
+
   return supabase
     .from("submissions")
     .update({ [targetColumn]: checked })
@@ -91,6 +197,19 @@ export async function updateSubmissionVerified(submissionId, targetColumn, check
 }
 
 export async function setProductStepEnabled(productId, stepNumber, checked) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_STEP_SET, {
+      p_product_id: Number(productId),
+      p_step_number: Number(stepNumber),
+      p_checked: Boolean(checked)
+    });
+
+    return {
+      data: result.data ?? null,
+      error: result.error
+    };
+  }
+
   if (checked) {
     return supabase
       .from("product_steps")
@@ -105,6 +224,19 @@ export async function setProductStepEnabled(productId, stepNumber, checked) {
 }
 
 export async function findSubmissionByOrderNumber(productId, orderNumber) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_SUBMISSION_BY_ORDER, {
+      p_product_id: Number(productId),
+      p_order_number: orderNumber
+    });
+    const data = result.data?.submission ?? result.data?.data ?? (result.data?.id ? result.data : null);
+
+    return {
+      data: result.error ? null : data,
+      error: result.error
+    };
+  }
+
   return supabase
     .from("submissions")
     .select("id")
@@ -114,5 +246,17 @@ export async function findSubmissionByOrderNumber(productId, orderNumber) {
 }
 
 export async function createSubmission(payload) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_DETAIL_SUBMISSION_CREATE, {
+      p_payload: omitClientIdentity(payload)
+    });
+    const data = result.data?.submission ?? result.data?.data ?? result.data;
+
+    return {
+      data: result.error ? null : data,
+      error: result.error
+    };
+  }
+
   return supabase.from("submissions").insert(payload).select(SUBMISSION_LIST_SELECT).single();
 }

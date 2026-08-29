@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import AdminReviewReceiveAllProductsPanel from "@/components/admin/review-receive/AdminReviewReceiveAllProductsPanel";
 import AdminReviewReceiveProductItems from "@/components/admin/review-receive/AdminReviewReceiveProductItems";
@@ -17,6 +17,9 @@ import { useAppToast } from "@/hooks/useAppToast";
 import { useBackdropDismiss } from "@/hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "@/hooks/useModalEnterConfirm";
 import { useAdminCapabilities } from "@/hooks/useAdminCapabilities";
+import { useAdminPermissions } from "@/hooks/useAdminPermission";
+import { useAdminAccessContext } from "@/contexts/AdminAccessContext";
+import { ADMIN_PERMISSION_CODE, ADMIN_SETTING_KEY } from "@/constants/adminAccess";
 import {
   ADMIN_STORAGE_KEY,
   PRODUCT_DEPOSIT_PARTY,
@@ -73,6 +76,7 @@ import { normalizeProductDescriptionAndLink } from "@/utils/productLink";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "@/utils/photoItems";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "@/utils/plannedDepositorName";
+import { readResolvedSetting } from "@/utils/settingsResolver";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
   formatMissingFieldLabels,
@@ -131,7 +135,7 @@ function formatDisplayDate(value) {
   return new Date(`${inputValue}T00:00:00`).toLocaleDateString("ko-KR");
 }
 
-function createProductItemForm(baseProduct = null) {
+function createProductItemForm(baseProduct = null, defaults = {}) {
   const depositGbParts = getProductDepositGbPartValues(baseProduct?.deposit_GB);
   const productDate = formatDateInputValue(baseProduct?.product_date ?? baseProduct?.created_at ?? new Date());
   const companyName = baseProduct?.company_name ?? "";
@@ -142,10 +146,13 @@ function createProductItemForm(baseProduct = null) {
     productName: baseProduct?.product_name ?? "",
     companyName,
     optionName: baseProduct?.option_name ?? "",
-    reviewType: baseProduct?.review_type ?? "",
-    plannedDepositorName: baseProduct?.planned_depositor_name ?? formatPlannedDepositorName(productDate, companyName),
-    productFeeDepositGb: depositGbParts.productFee,
-    reviewFeeDepositGb: depositGbParts.reviewFee,
+    reviewType: baseProduct?.review_type ?? defaults.reviewTypeDefault ?? "",
+    companyNameTrimLength: defaults.companyNameTrimLength ?? 0,
+    plannedDepositorName: baseProduct?.planned_depositor_name ?? formatPlannedDepositorName(productDate, companyName, {
+      companyNameTrimLength: defaults.companyNameTrimLength
+    }),
+    productFeeDepositGb: baseProduct ? depositGbParts.productFee : defaults.productFeeDepositParty ?? depositGbParts.productFee,
+    reviewFeeDepositGb: baseProduct ? depositGbParts.reviewFee : defaults.reviewFeeDepositParty ?? depositGbParts.reviewFee,
     productLink: baseProduct?.product_link ?? "",
     description: baseProduct?.description ?? ""
   };
@@ -202,12 +209,12 @@ function isProductItemEmptyShell(product) {
   ].every((value) => !String(value ?? "").trim());
 }
 
-function createProductReviewerBulkDepositForm(baseProduct = null) {
+function createProductReviewerBulkDepositForm(baseProduct = null, defaults = {}) {
   const depositGbParts = getProductDepositGbPartValues(baseProduct?.deposit_GB);
 
   return {
-    productFeeDepositGb: depositGbParts.productFee,
-    reviewFeeDepositGb: depositGbParts.reviewFee
+    productFeeDepositGb: baseProduct ? depositGbParts.productFee : defaults.productFeeDepositParty ?? depositGbParts.productFee,
+    reviewFeeDepositGb: baseProduct ? depositGbParts.reviewFee : defaults.reviewFeeDepositParty ?? depositGbParts.reviewFee
   };
 }
 
@@ -217,7 +224,7 @@ function createInitialProductReviewerBulkState(options = {}) {
     text: "",
     productGroups: [],
     reviewers: [],
-    depositForm: createProductReviewerBulkDepositForm(options.baseProduct),
+    depositForm: createProductReviewerBulkDepositForm(options.baseProduct, options.defaults),
     message: "",
     messageType: "info"
   };
@@ -431,14 +438,80 @@ function buildReviewReceiveDetailExportRows(rows, options = {}) {
 export default function AdminReviewReceiveDetailPage() {
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const { productId } = useParams();
+  const adminAccess = useAdminAccessContext();
+  const productDefaults = useMemo(() => {
+    const settings = adminAccess?.settings ?? [];
+
+    return {
+      companyNameTrimLength: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+        0
+      ),
+      productFeeDepositParty: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+        PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value
+      ),
+      reviewFeeDepositParty: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+        REVIEW_FEE_DEPOSIT_PARTY_OPTIONS[0].value
+      ),
+      reviewTypeDefault: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.REVIEW_TYPE_DEFAULT,
+        ""
+      )
+    };
+  }, [adminAccess?.settings]);
   const {
-    capabilities,
     adminProfile,
-    capabilitiesErrorMessage,
     isLoadingCapabilities
   } = useAdminCapabilities(adminId);
-  const canVerifyDeposit =
-    !isLoadingCapabilities && !capabilitiesErrorMessage && capabilities.canVerifyDeposit;
+  const permissions = useAdminPermissions([
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ,
+    ADMIN_PERMISSION_CODE.PRODUCT_CREATE,
+    ADMIN_PERMISSION_CODE.PRODUCT_UPDATE,
+    ADMIN_PERMISSION_CODE.PRODUCT_DELETE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_CREATE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_DELETE,
+    ADMIN_PERMISSION_CODE.APPLICATION_DELETE,
+    ADMIN_PERMISSION_CODE.PRODUCT_STEP_DELETE,
+    ADMIN_PERMISSION_CODE.DEPOSIT_VERIFY,
+    ADMIN_PERMISSION_CODE.DEPOSITOR_NAME_UPDATE,
+    ADMIN_PERMISSION_CODE.PHOTO_READ,
+    ADMIN_PERMISSION_CODE.PHOTO_DELETE,
+    ADMIN_PERMISSION_CODE.EXPORT_EXECUTE
+  ], {
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_REVIEW_RECEIVE]
+  });
+  const canReadProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_READ]?.allowed);
+  const canReadSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_READ]?.allowed);
+  const isReadPermissionReady = [
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ
+  ].every((permissionCode) => permissions[permissionCode]?.isReady);
+  const canCreateProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_CREATE]?.allowed);
+  const canUpdateProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_UPDATE]?.allowed);
+  const canDeleteProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_DELETE]?.allowed);
+  const canCreateSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_CREATE]?.allowed);
+  const canUpdateSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE]?.allowed);
+  const canDeleteSubmissionPermission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_DELETE]?.allowed);
+  const canVerifyDeposit = Boolean(permissions[ADMIN_PERMISSION_CODE.DEPOSIT_VERIFY]?.allowed);
+  const canUpdateDepositorName = Boolean(permissions[ADMIN_PERMISSION_CODE.DEPOSITOR_NAME_UPDATE]?.allowed);
+  const canReadPhotos = Boolean(permissions[ADMIN_PERMISSION_CODE.PHOTO_READ]?.allowed);
+  const canDeletePhoto = Boolean(permissions[ADMIN_PERMISSION_CODE.PHOTO_DELETE]?.allowed);
+  const canExport = Boolean(permissions[ADMIN_PERMISSION_CODE.EXPORT_EXECUTE]?.allowed);
+  const canDeleteSubmission = canDeleteSubmissionPermission && canDeletePhoto;
+  const canDeleteProductData =
+    canDeleteProduct &&
+    canDeleteSubmission &&
+    canDeletePhoto &&
+    Boolean(permissions[ADMIN_PERMISSION_CODE.APPLICATION_DELETE]?.allowed) &&
+    Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_STEP_DELETE]?.allowed);
   const [product, setProduct] = useState(null);
   const [bundleProducts, setBundleProducts] = useState([]);
   const [activeProductId, setActiveProductId] = useState(null);
@@ -527,13 +600,13 @@ export default function AdminReviewReceiveDetailPage() {
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   const [isProductItemModalOpen, setIsProductItemModalOpen] = useState(false);
   const [editingProductItem, setEditingProductItem] = useState(null);
-  const [productItemForm, setProductItemForm] = useState(() => createProductItemForm());
+  const [productItemForm, setProductItemForm] = useState(() => createProductItemForm(null, productDefaults));
   const [productItemErrorMessage, setProductItemErrorMessage] = useState("");
   const [isSavingProductItem, setIsSavingProductItem] = useState(false);
   const [deleteTargetProductItem, setDeleteTargetProductItem] = useState(null);
   const [isDeletingProductItem, setIsDeletingProductItem] = useState(false);
   const [isProductReviewerBulkModalOpen, setIsProductReviewerBulkModalOpen] = useState(false);
-  const [productReviewerBulk, setProductReviewerBulk] = useState(() => createInitialProductReviewerBulkState());
+  const [productReviewerBulk, setProductReviewerBulk] = useState(() => createInitialProductReviewerBulkState({ defaults: productDefaults }));
   const [isSavingProductReviewerBulk, setIsSavingProductReviewerBulk] = useState(false);
   const purchaseAssignConflictResolverRef = useRef(null);
   const sectionColumnFilterRef = useRef(null);
@@ -541,13 +614,45 @@ export default function AdminReviewReceiveDetailPage() {
   const { showToast } = useAppToast();
 
   useEffect(() => {
-    if (isLoadingCapabilities) {
+    if (!isProductItemModalOpen && !editingProductItem) {
+      setProductItemForm((previousForm) => ({
+        ...previousForm,
+        companyNameTrimLength: productDefaults.companyNameTrimLength,
+        productFeeDepositGb: productDefaults.productFeeDepositParty,
+        reviewFeeDepositGb: productDefaults.reviewFeeDepositParty,
+        reviewType: previousForm.reviewType || productDefaults.reviewTypeDefault
+      }));
+    }
+
+    if (!isProductReviewerBulkModalOpen) {
+      setProductReviewerBulk((previousState) => ({
+        ...previousState,
+        depositForm: {
+          ...previousState.depositForm,
+          productFeeDepositGb: productDefaults.productFeeDepositParty,
+          reviewFeeDepositGb: productDefaults.reviewFeeDepositParty
+        }
+      }));
+    }
+  }, [editingProductItem, isProductItemModalOpen, isProductReviewerBulkModalOpen, productDefaults]);
+
+  useEffect(() => {
+    if (isLoadingCapabilities || !isReadPermissionReady) {
       return;
     }
 
     const loadDetail = async () => {
       setIsLoading(true);
       setErrorMessage("");
+
+      if (!canReadProduct || !canReadSubmission) {
+        setProduct(null);
+        setBundleProducts([]);
+        setRows([]);
+        setErrorMessage("리뷰받기 상품과 제출 조회 권한이 필요합니다.");
+        setIsLoading(false);
+        return;
+      }
 
       const {
         productResult: { data: productData, error: productError },
@@ -576,7 +681,9 @@ export default function AdminReviewReceiveDetailPage() {
       }
 
       const submissionIds = (submissionData ?? []).map((item) => item.id);
-      const { data: photoData, error: photoError } = await fetchReviewReceiveEvidencePhotos(submissionIds);
+      const { data: photoData, error: photoError } = canReadPhotos
+        ? await fetchReviewReceiveEvidencePhotos(submissionIds)
+        : { data: [], error: null };
 
       if (photoError) {
         setErrorMessage(photoError.message);
@@ -613,7 +720,7 @@ export default function AdminReviewReceiveDetailPage() {
     };
 
     loadDetail();
-  }, [adminId, adminProfile, detailReloadKey, isLoadingCapabilities, productId]);
+  }, [adminId, adminProfile, canReadPhotos, canReadProduct, canReadSubmission, detailReloadKey, isLoadingCapabilities, isReadPermissionReady, productId]);
 
   const requestDetailReload = () => {
     setDetailReloadKey((value) => value + 1);
@@ -868,6 +975,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openSelectedRowsDeleteDialog = (targetRows) => {
+    if (!canDeleteSubmission) {
+      return;
+    }
+
     const rowsToDelete = targetRows.filter((row) => selectedRowIds.has(row.id));
 
     if (rowsToDelete.length === 0) {
@@ -878,6 +989,11 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleSectionExcelDownload = async (sectionKey, title, targetRows, options = {}) => {
+    if (!canExport) {
+      showToast("내보내기 실행 권한이 없습니다.", "error");
+      return;
+    }
+
     const {
       sectionRowNumberMap = rowNumberMap,
       sectionPlannedDepositorName = plannedDepositorName,
@@ -930,11 +1046,19 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleAddRow = () => {
+    if (!canCreateSubmission) {
+      return;
+    }
+
     setEditingRowId(null);
     setRows((prev) => sortReviewReceiveRowsByCreatedAt([...prev, createEmptyRow(activeProductId, getDefaultReviewFee(activeRows))]));
   };
 
   const openPurchaseBulkModal = () => {
+    if (!canCreateSubmission && !canUpdateSubmission) {
+      return;
+    }
+
     setPurchaseBulkMessage("");
     setPurchaseBulkMessageType("info");
     setIsPurchaseBulkModalOpen(true);
@@ -951,6 +1075,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openPurchaseAssignModal = () => {
+    if (!canCreateSubmission && !canUpdateSubmission) {
+      return;
+    }
+
     setPurchaseAssignMessage("");
     setPurchaseAssignMessageType("info");
     setIsPurchaseAssignModalOpen(true);
@@ -997,7 +1125,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openReviewBatchModal = () => {
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -1017,6 +1145,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openPhotoReviewBatchModal = () => {
+    if (!canUpdateSubmission) {
+      return;
+    }
+
     setPhotoReviewBatchMessage("");
     setPhotoReviewBatchMessageType("info");
     setIsPhotoReviewBatchModalOpen(true);
@@ -1033,6 +1165,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openReviewFeeBatchDialog = () => {
+    if (!canUpdateSubmission) {
+      return;
+    }
+
     setReviewFeeBatchStartRow("");
     setReviewFeeBatchEndRow("");
     setReviewFeeBatchValue("");
@@ -1061,7 +1197,7 @@ export default function AdminReviewReceiveDetailPage() {
     setIsProductItemModalOpen(false);
     setEditingProductItem(null);
     setProductItemErrorMessage("");
-    setProductItemForm(createProductItemForm(activeProduct));
+    setProductItemForm(createProductItemForm(activeProduct, productDefaults));
   };
   const productItemBackdropDismissProps = useBackdropDismiss(closeProductItemModal);
 
@@ -1070,15 +1206,19 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    setProductReviewerBulk(createInitialProductReviewerBulkState());
+    setProductReviewerBulk(createInitialProductReviewerBulkState({ defaults: productDefaults }));
     setIsProductReviewerBulkModalOpen(false);
   };
   const productReviewerBulkBackdropDismissProps = useBackdropDismiss(closeProductReviewerBulkModal);
 
   const openProductReviewerBulkModal = () => {
+    if ((!canCreateProduct && !canUpdateProduct) || !canCreateSubmission) {
+      return;
+    }
+
     const baseProductForDeposit = visibleBundleProducts[0] ?? product;
 
-    setProductReviewerBulk(createInitialProductReviewerBulkState({ baseProduct: baseProductForDeposit }));
+    setProductReviewerBulk(createInitialProductReviewerBulkState({ baseProduct: baseProductForDeposit, defaults: productDefaults }));
     setIsProductReviewerBulkModalOpen(true);
   };
 
@@ -1118,7 +1258,9 @@ export default function AdminReviewReceiveDetailPage() {
 
   const handleProductReviewerBulkParse = () => {
     try {
-      const parsed = parseProductReviewerBulkInput(productReviewerBulk.text);
+      const parsed = parseProductReviewerBulkInput(productReviewerBulk.text, {
+        companyNameTrimLength: productDefaults.companyNameTrimLength
+      });
       const productGroups = parsed.productGroups;
       const reviewers = productGroups.flatMap((group) => group.reviewers);
 
@@ -1148,13 +1290,18 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleProductReviewerBulkSave = async () => {
+    if ((!canCreateProduct && !canUpdateProduct) || !canCreateSubmission) {
+      setProductReviewerBulkMessage("상품 저장과 제출 생성 권한이 필요합니다.", "error");
+      return;
+    }
+
     if (!adminId) {
       setProductReviewerBulkMessage("로그인 정보가 없습니다. 다시 로그인해주세요.", "error");
       return;
     }
 
     const bundleId = product?.bundle_id ?? product?.id;
-    const baseProductForm = createProductItemForm(product);
+    const baseProductForm = createProductItemForm(product, productDefaults);
     const productGroups = productReviewerBulk.productGroups;
     let groupPayloads;
 
@@ -1178,11 +1325,31 @@ export default function AdminReviewReceiveDetailPage() {
           throw new Error(`${groupIndex + 1}번째 품목: ${validationErrorMessage}`);
         }
 
+        const reviewerPayloads = group.reviewers.map((row, index) =>
+          normalizeProductReviewerRowForSave(row, row.sourceLineNumber ?? index + 1)
+        );
+
+        reviewerPayloads.forEach((reviewerPayload, reviewerIndex) => {
+          if (reviewerPayload.is_deposit_verified && (!canVerifyDeposit || !canUpdateDepositorName)) {
+            throw new Error(`${groupIndex + 1}번째 품목 ${reviewerIndex + 1}번째 리뷰어: 입금완료와 실제입금자명 권한이 필요합니다.`);
+          }
+
+          if (reviewerPayload.actual_depositor_name && !canUpdateDepositorName) {
+            throw new Error(`${groupIndex + 1}번째 품목 ${reviewerIndex + 1}번째 리뷰어: 실제입금자명 수정 권한이 필요합니다.`);
+          }
+
+          if (!canVerifyDeposit) {
+            delete reviewerPayload.is_deposit_verified;
+          }
+
+          if (!canUpdateDepositorName) {
+            delete reviewerPayload.actual_depositor_name;
+          }
+        });
+
         return {
           productPayload: payload,
-          reviewerPayloads: group.reviewers.map((row, index) =>
-            normalizeProductReviewerRowForSave(row, row.sourceLineNumber ?? index + 1)
-          )
+          reviewerPayloads
         };
       });
     } catch (error) {
@@ -1191,6 +1358,21 @@ export default function AdminReviewReceiveDetailPage() {
     }
 
     const reusableShellProducts = bundleProducts.filter((item) => isProductItemEmptyShell(item));
+    const requiredCreateProduct = productGroups.length > reusableShellProducts.length;
+    const requiredUpdateProduct = Math.min(productGroups.length, reusableShellProducts.length) > 0;
+
+    if (
+      (requiredCreateProduct && !canCreateProduct) ||
+      (requiredUpdateProduct && !canUpdateProduct)
+    ) {
+      setProductReviewerBulkMessage(
+        requiredCreateProduct && !canCreateProduct
+          ? "새 품목 생성 권한이 없습니다."
+          : "기존 품목 수정 권한이 없습니다.",
+        "error"
+      );
+      return;
+    }
 
     setIsSavingProductReviewerBulk(true);
     setProductReviewerBulkMessage("");
@@ -1240,8 +1422,9 @@ export default function AdminReviewReceiveDetailPage() {
 
       if (productResult.error || !productResult.data) {
         reflectSavedProducts();
+        const productErrorMessage = productResult.error?.message;
         setProductReviewerBulkMessage(
-          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다. ${savedProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
+          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다.${productErrorMessage ? ` ${productErrorMessage}` : ""} ${savedProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
           "error"
         );
         setIsSavingProductReviewerBulk(false);
@@ -1271,14 +1454,18 @@ export default function AdminReviewReceiveDetailPage() {
     }
 
     reflectSavedProducts();
-    setProductReviewerBulk(createInitialProductReviewerBulkState());
+    setProductReviewerBulk(createInitialProductReviewerBulkState({ defaults: productDefaults }));
     setIsProductReviewerBulkModalOpen(false);
     setIsSavingProductReviewerBulk(false);
     showToast(`품목 ${savedProducts.length}건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
   };
 
   const openCreateProductItemModal = () => {
-    const baseForm = createProductItemForm(product);
+    if (!canCreateProduct && !canUpdateProduct) {
+      return;
+    }
+
+    const baseForm = createProductItemForm(product, productDefaults);
     const reusableShellProduct = bundleProducts.find((item) => isProductItemEmptyShell(item)) ?? null;
 
     setEditingProductItem(reusableShellProduct);
@@ -1288,17 +1475,23 @@ export default function AdminReviewReceiveDetailPage() {
       title: "",
       productName: "",
       optionName: "",
-      reviewType: "",
-      plannedDepositorName: formatPlannedDepositorName(baseForm.productDate, baseForm.companyName),
+      reviewType: productDefaults.reviewTypeDefault ?? "",
+      plannedDepositorName: formatPlannedDepositorName(baseForm.productDate, baseForm.companyName, {
+        companyNameTrimLength: productDefaults.companyNameTrimLength
+      }),
       description: ""
     });
     setIsProductItemModalOpen(true);
   };
 
   const openEditProductItemModal = (item) => {
+    if (!canUpdateProduct) {
+      return;
+    }
+
     setEditingProductItem(item);
     setProductItemErrorMessage("");
-    setProductItemForm(createProductItemForm(item));
+    setProductItemForm(createProductItemForm(item, productDefaults));
     setActiveProductId(Number(item.id));
     setIsProductItemModalOpen(true);
   };
@@ -1311,6 +1504,11 @@ export default function AdminReviewReceiveDetailPage() {
 
   const handleProductItemSubmit = async (event) => {
     event.preventDefault();
+
+    if (editingProductItem ? !canUpdateProduct : !canCreateProduct) {
+      setProductItemErrorMessage(editingProductItem ? "품목 수정 권한이 없습니다." : "품목 생성 권한이 없습니다.");
+      return;
+    }
 
     if (!adminId) {
       setProductItemErrorMessage("로그인 정보가 없습니다. 다시 로그인해주세요.");
@@ -1362,6 +1560,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openDeleteProductItemDialog = (item) => {
+    if (!canDeleteProductData) {
+      return;
+    }
+
     setDeleteTargetProductItem(item);
   };
 
@@ -1374,7 +1576,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const confirmDeleteProductItem = async () => {
-    if (!deleteTargetProductItem) {
+    if (!deleteTargetProductItem || !canDeleteProductData) {
       return;
     }
 
@@ -1419,6 +1621,12 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openRowEditor = (rowId) => {
+    const targetRow = rows.find((item) => item.id === rowId);
+
+    if (!targetRow || (targetRow.isNew ? !canCreateSubmission : !canUpdateSubmission)) {
+      return;
+    }
+
     setEditingRowId(rowId);
     setRows((prev) =>
       prev.map((item) => ({
@@ -1452,6 +1660,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const applyReviewVerifiedChange = async (row, checked) => {
+    if (!canUpdateSubmission || (!checked && canVerifyDeposit && !canUpdateDepositorName)) {
+      return;
+    }
+
     setUpdatingRowId(row.id);
     setErrorMessage("");
 
@@ -1491,6 +1703,13 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleReviewVerifiedChange = async (row, checked) => {
+    if (
+      (row.isNew ? !canCreateSubmission : !canUpdateSubmission) ||
+      (!checked && canVerifyDeposit && !canUpdateDepositorName)
+    ) {
+      return;
+    }
+
     if (row.isNew) {
       updateRowLocally(row.id, () => ({
         is_review_verified: checked,
@@ -1547,7 +1766,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const applyDepositVerifiedChange = async (row, checked) => {
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -1586,7 +1805,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleDepositVerifiedChange = async (row, checked) => {
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -1644,7 +1863,7 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -1652,7 +1871,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleReviewCompletionMetaSave = async (row) => {
-    if (!canVerifyDeposit) {
+    if (!canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -1685,6 +1904,16 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleSaveRow = async (row) => {
+    if (row.isNew ? !canCreateSubmission : !canUpdateSubmission) {
+      setErrorMessage(row.isNew ? "제출 생성 권한이 없습니다." : "제출 수정 권한이 없습니다.");
+      return;
+    }
+
+    if (Boolean(row.is_deposit_verified) && (!canVerifyDeposit || !canUpdateDepositorName)) {
+      setErrorMessage("입금완료 상태와 실제입금자명 권한이 필요합니다.");
+      return;
+    }
+
     setUpdatingRowId(row.id);
     setErrorMessage("");
 
@@ -1697,7 +1926,8 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    const nextIsDepositVerified = canVerifyDeposit
+    const canWriteDepositFields = canVerifyDeposit && canUpdateDepositorName;
+    const nextIsDepositVerified = canWriteDepositFields
       ? Boolean(row.is_deposit_verified)
       : Boolean(row.is_deposit_verified && !row.isNew);
     const payload = {
@@ -1712,11 +1942,16 @@ export default function AdminReviewReceiveDetailPage() {
       amount: parseAmount(row.amountInput),
       review_fee: reviewFee,
       is_review_verified: Boolean(row.is_review_verified),
-      is_deposit_verified: nextIsDepositVerified,
-      deposited_at: nextIsDepositVerified ? row.deposited_at || null : null,
-      actual_depositor_name: nextIsDepositVerified ? row.actual_depositor_name?.trim() || null : null,
       ...accountInfo
     };
+
+    if (canWriteDepositFields) {
+      Object.assign(payload, {
+        is_deposit_verified: nextIsDepositVerified,
+        deposited_at: nextIsDepositVerified ? row.deposited_at || null : null,
+        actual_depositor_name: nextIsDepositVerified ? row.actual_depositor_name?.trim() || null : null
+      });
+    }
 
     const result = row.isNew
       ? await createReviewReceiveSubmission(payload)
@@ -1751,6 +1986,10 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
+    if (!canDeleteSubmission) {
+      return;
+    }
+
     setDeleteTargetRow(row);
   };
 
@@ -1771,7 +2010,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const confirmDeleteRow = async () => {
-    if (!deleteTargetRow) {
+    if (!deleteTargetRow || !canDeleteSubmission) {
       return;
     }
 
@@ -1802,7 +2041,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const confirmDeleteSelectedRows = async () => {
-    if (selectedDeleteTargetRows.length === 0) {
+    if (selectedDeleteTargetRows.length === 0 || !canDeleteSubmission) {
       return;
     }
 
@@ -1853,6 +2092,11 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handlePurchaseBulkApply = async () => {
+    if (!canCreateSubmission && !canUpdateSubmission) {
+      setPurchaseBulkFeedback("제출 저장 권한이 없습니다.", "error");
+      return;
+    }
+
     setPurchaseBulkFeedback("");
 
     if (purchaseBulkPreview.status !== "ready") {
@@ -1860,11 +2104,20 @@ export default function AdminReviewReceiveDetailPage() {
       return;
     }
 
-    setIsApplyingPurchaseBulk(true);
-
     const targetRows = purchaseBulkPreview.targetRows;
     const parsedEntries = purchaseBulkPreview.parsedEntries;
     const shouldCreateNewRows = purchaseBulkPreview.create_new_rows;
+
+    if (shouldCreateNewRows ? !canCreateSubmission : !canUpdateSubmission) {
+      setPurchaseBulkFeedback(
+        shouldCreateNewRows ? "제출 생성 권한이 없습니다." : "제출 수정 권한이 없습니다.",
+        "error"
+      );
+      return;
+    }
+
+    setIsApplyingPurchaseBulk(true);
+
     const savedRows = [];
     const createdRows = [];
 
@@ -1886,7 +2139,6 @@ export default function AdminReviewReceiveDetailPage() {
         return;
       }
 
-      const nextIsDepositVerified = canVerifyDeposit ? Boolean(row?.is_deposit_verified) : Boolean(row?.is_deposit_verified);
       const payload = {
         product_id: Number(activeProductId),
         assign_name: (entry.assign_name ?? row?.assign_name ?? purchaseBulkAssignName)?.trim() || null,
@@ -1898,14 +2150,20 @@ export default function AdminReviewReceiveDetailPage() {
         address: entry.address,
         amount: entry.amount,
         review_fee: reviewFee,
-        deposited_at: nextIsDepositVerified ? row?.deposited_at || null : null,
-        actual_depositor_name: nextIsDepositVerified ? row?.actual_depositor_name?.trim() || null : null,
         is_review_verified: Boolean(row?.is_review_verified),
-        is_deposit_verified: nextIsDepositVerified,
         bank_name: entry.bank_name,
         bank_account: entry.bank_account,
         account_holder: entry.account_holder
       };
+
+      if (canVerifyDeposit && canUpdateDepositorName) {
+        const nextIsDepositVerified = Boolean(row?.is_deposit_verified);
+        Object.assign(payload, {
+          deposited_at: nextIsDepositVerified ? row?.deposited_at || null : null,
+          actual_depositor_name: nextIsDepositVerified ? row?.actual_depositor_name?.trim() || null : null,
+          is_deposit_verified: nextIsDepositVerified
+        });
+      }
 
       const result = row
         ? await updateReviewReceiveSubmission(row.id, payload)
@@ -1965,6 +2223,11 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handlePurchaseAssignApply = async () => {
+    if (!canCreateSubmission && !canUpdateSubmission) {
+      setPurchaseAssignFeedback("제출 저장 권한이 없습니다.", "error");
+      return;
+    }
+
     setPurchaseAssignFeedback("");
 
     let parsedRows;
@@ -1990,6 +2253,27 @@ export default function AdminReviewReceiveDetailPage() {
       }
 
       purchaseAssignMode = conflictResolution;
+    }
+
+    const purchaseAssignTargets = parsedRows.map((entry) =>
+      purchaseAssignMode !== "append" && entry.row_number != null
+        ? rowByNumberMap[entry.row_number] ?? null
+        : null
+    );
+    const requiresCreateSubmission = purchaseAssignTargets.some((row) => !row);
+    const requiresUpdateSubmission = purchaseAssignTargets.some(Boolean);
+
+    if (
+      (requiresCreateSubmission && !canCreateSubmission) ||
+      (requiresUpdateSubmission && !canUpdateSubmission)
+    ) {
+      setPurchaseAssignFeedback(
+        requiresCreateSubmission && !canCreateSubmission
+          ? "제출 생성 권한이 없습니다."
+          : "제출 수정 권한이 없습니다.",
+        "error"
+      );
+      return;
     }
 
     setIsApplyingPurchaseAssign(true);
@@ -2057,6 +2341,11 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const applyPhotoReviewBatch = async () => {
+    if (!canUpdateSubmission) {
+      setPhotoReviewBatchFeedback("제출 수정 권한이 없습니다.", "error");
+      return;
+    }
+
     setPhotoReviewBatchFeedback("");
 
     if (photoReviewBatchTargetRows.length === 0) {
@@ -2100,7 +2389,7 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const applyReviewBatch = async () => {
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -2146,7 +2435,7 @@ export default function AdminReviewReceiveDetailPage() {
   const handleReviewBatchApply = async () => {
     setReviewBatchFeedback("");
 
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -2187,7 +2476,7 @@ export default function AdminReviewReceiveDetailPage() {
       isOpen: false,
       missingLabels: []
     });
-    if (!canVerifyDeposit) {
+    if (!canVerifyDeposit || !canUpdateSubmission || !canUpdateDepositorName) {
       return;
     }
 
@@ -2195,6 +2484,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openPhotoViewer = (photos, activeIndex) => {
+    if (!canReadPhotos) {
+      return;
+    }
+
     setPhotoViewer({
       isOpen: true,
       photos,
@@ -2221,6 +2514,10 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const openDeletePhotoDialog = (photo) => {
+    if (!canDeletePhoto) {
+      return;
+    }
+
     setDeleteTargetPhoto(photo);
   };
 
@@ -2233,6 +2530,11 @@ export default function AdminReviewReceiveDetailPage() {
   };
 
   const handleDeletePhoto = async () => {
+    if (!canDeletePhoto) {
+      showToast("증빙 사진 삭제 권한이 없습니다.", "error");
+      return;
+    }
+
     const photoId = getPhotoId(deleteTargetPhoto);
 
     if (!photoId) {
@@ -2410,6 +2712,11 @@ export default function AdminReviewReceiveDetailPage() {
   });
 
   const handleReviewFeeBatchApply = async () => {
+    if (!canUpdateSubmission) {
+      setReviewFeeBatchMessage("제출 수정 권한이 없습니다.");
+      return;
+    }
+
     const start = Number(reviewFeeBatchStartRow);
     const end = Number(reviewFeeBatchEndRow);
     const parsedReviewFee = parseReviewFee(reviewFeeBatchValue);
@@ -2500,6 +2807,12 @@ export default function AdminReviewReceiveDetailPage() {
     openPurchaseBulkModal,
     openReviewBatchModal,
     canVerifyDeposit,
+    canCreateSubmission,
+    canUpdateSubmission,
+    canDeleteSubmission,
+    canReadPhotos,
+    canUpdateDepositorName,
+    canExport,
     filteredReviewCompletedRows,
     toggleRowsSelection,
     openSelectedRowsDeleteDialog,
@@ -2573,6 +2886,9 @@ export default function AdminReviewReceiveDetailPage() {
           onToggle={() => setIsAllProductsPanelCollapsed((prev) => !prev)}
           bodyId={allProductsPanelBodyId}
           onOpenProductReviewerBulkModal={openProductReviewerBulkModal}
+          canCreateProduct={canCreateProduct}
+          canUpdateProduct={canUpdateProduct}
+          canCreateSubmission={canCreateSubmission}
           selectedAllProduct={selectedAllProduct}
           renderSection={renderSection}
           allProductRows={allProductRows}
@@ -2600,6 +2916,10 @@ export default function AdminReviewReceiveDetailPage() {
           onOpenCreateProductItemModal={openCreateProductItemModal}
           onOpenEditProductItemModal={openEditProductItemModal}
           onOpenDeleteProductItemDialog={openDeleteProductItemDialog}
+          canCreateProduct={canCreateProduct}
+          canUpdateProduct={canUpdateProduct}
+          canDeleteProduct={canDeleteProductData}
+          canCreateSubmission={canCreateSubmission}
           onAddRow={handleAddRow}
           renderSection={renderSection}
           purchaseSectionRows={purchaseSectionRows}
@@ -2819,7 +3139,7 @@ export default function AdminReviewReceiveDetailPage() {
                 <Button type="button" className="admin-secondary-button" onClick={closeProductItemModal} disabled={isSavingProductItem}>
                   취소
                 </Button>
-                <Button type="submit" className="admin-primary-button" disabled={isSavingProductItem}>
+                <Button type="submit" className="admin-primary-button" disabled={isSavingProductItem || (editingProductItem ? !canUpdateProduct : !canCreateProduct)}>
                   {isSavingProductItem
                     ? "저장 중..."
                     : editingProductItem && !isProductItemEmptyShell(editingProductItem)
@@ -2837,6 +3157,7 @@ export default function AdminReviewReceiveDetailPage() {
         backdropDismissProps={productReviewerBulkBackdropDismissProps}
         productReviewerBulk={productReviewerBulk}
         isSaving={isSavingProductReviewerBulk}
+        canSave={Boolean((canCreateProduct || canUpdateProduct) && canCreateSubmission)}
         onClose={closeProductReviewerBulkModal}
         onTextChange={handleProductReviewerBulkTextChange}
         onDepositChange={handleProductReviewerBulkDepositChange}
@@ -2955,7 +3276,7 @@ export default function AdminReviewReceiveDetailPage() {
                 type="button"
                 className="admin-primary-button"
                 onClick={handlePurchaseBulkApply}
-                disabled={isApplyingPurchaseBulk || purchaseBulkPreview.status !== "ready"}
+                disabled={isApplyingPurchaseBulk || (!canCreateSubmission && !canUpdateSubmission) || purchaseBulkPreview.status !== "ready"}
               >
                 {isApplyingPurchaseBulk ? "입력 중..." : "완료하기"}
               </Button>
@@ -3018,6 +3339,7 @@ export default function AdminReviewReceiveDetailPage() {
                                 type="button"
                                 className="photo-thumb-button"
                                 onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                                disabled={!canReadPhotos}
                                 aria-label={`처리 대상 증빙 이미지 ${photoIndex + 1} 열기`}
                               >
                                 <img src={url} alt={`처리 대상 증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
@@ -3055,7 +3377,7 @@ export default function AdminReviewReceiveDetailPage() {
                 type="button"
                 className="admin-primary-button"
                 onClick={applyPhotoReviewBatch}
-                disabled={isApplyingPhotoReviewBatch || photoReviewBatchTargetRows.length === 0}
+                disabled={!canUpdateSubmission || isApplyingPhotoReviewBatch || photoReviewBatchTargetRows.length === 0}
               >
                 {isApplyingPhotoReviewBatch ? "처리 중..." : "처리하기"}
               </Button>
@@ -3169,7 +3491,7 @@ export default function AdminReviewReceiveDetailPage() {
                 type="button"
                 className="admin-primary-button"
                 onClick={handleReviewBatchApply}
-                disabled={!canVerifyDeposit || isApplyingReviewBatch || filteredReviewCompletedRows.length === 0}
+                disabled={!canVerifyDeposit || !canUpdateSubmission || isApplyingReviewBatch || filteredReviewCompletedRows.length === 0}
               >
                 {isApplyingReviewBatch ? "처리 중..." : "확인"}
               </Button>
@@ -3281,7 +3603,7 @@ export default function AdminReviewReceiveDetailPage() {
                 type="button"
                 className="admin-primary-button"
                 onClick={handlePurchaseAssignApply}
-                disabled={isApplyingPurchaseAssign || Boolean(purchaseAssignPreview.errorMessage) || purchaseAssignPreview.entries.length === 0}
+                disabled={(!canCreateSubmission && !canUpdateSubmission) || isApplyingPurchaseAssign || Boolean(purchaseAssignPreview.errorMessage) || purchaseAssignPreview.entries.length === 0}
               >
                 {isApplyingPurchaseAssign ? "추가 중..." : "완료하기"}
               </Button>
@@ -3553,7 +3875,7 @@ export default function AdminReviewReceiveDetailPage() {
         onClose={closePhotoViewer}
         onNext={showNextPhoto}
         onPrev={showPrevPhoto}
-        onRequestDelete={openDeletePhotoDialog}
+        onRequestDelete={canDeletePhoto ? openDeletePhotoDialog : undefined}
         isDeleting={isDeletingPhoto}
       />
 

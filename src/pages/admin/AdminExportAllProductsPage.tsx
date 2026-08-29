@@ -22,7 +22,8 @@ export default function AdminExportAllProductsPage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     selectedColumnKeys: columnSelection.selectedColumnKeys
   });
@@ -49,6 +50,7 @@ export default function AdminExportAllProductsPage() {
         submissionCount={submissionCount}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        canExport={canExport}
         hasNoRows={hasNoSubmissions}
         columnSelection={columnSelection}
       />

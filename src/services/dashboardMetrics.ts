@@ -3,6 +3,13 @@
 import { supabase } from "@/lib/supabase";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const DASHBOARD_PRODUCTS_SELECT =
   "id,manager_id,title,product_name,review_type,company_name,option_name,is_real_shipping,created_at";
@@ -25,6 +32,31 @@ function buildEmptyResult(scope) {
 }
 
 export async function fetchAdminDashboardData(adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.DASHBOARD_READ, {
+      p_include_company_data: options.includeCompanyData == null
+        ? options.scopePolicy === "company" || options.scopePolicy === "all"
+        : Boolean(options.includeCompanyData),
+      p_date_filter: options.dateFilter ?? null,
+      p_period: options.period ?? null
+    });
+    const gatewayData = result.data ?? {};
+    const scope = {
+      ...buildGatewayScope(adminId, options),
+      ...(gatewayData.scope && typeof gatewayData.scope === "object" ? gatewayData.scope : {})
+    };
+
+    return {
+      scope,
+      products: result.error ? [] : getGatewayArray(gatewayData, ["products"]),
+      submissions: result.error ? [] : getGatewayArray(gatewayData, ["submissions"]),
+      applications: result.error ? [] : getGatewayArray(gatewayData, ["applications"]),
+      evidencePhotos: result.error ? [] : getGatewayArray(gatewayData, ["evidencePhotos", "evidence_photos"]),
+      companyMembers: result.error ? [] : getGatewayArray(gatewayData, ["companyMembers", "company_members"]),
+      error: result.error
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {

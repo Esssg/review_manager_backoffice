@@ -35,7 +35,8 @@ export default function AdminExportByStatusPage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     selectedColumnKeys: columnSelection.selectedColumnKeys
   });
@@ -130,6 +131,7 @@ export default function AdminExportByStatusPage() {
         ]}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        canExport={canExport}
         hasNoRows={hasNoRows}
         disabled={hasNoStatuses}
         emptyHint={`선택한 상태(${selectedStatusLabels.join(", ") || "없음"})에 맞는 제출 데이터가 없습니다.`}

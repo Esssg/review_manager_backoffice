@@ -3,17 +3,23 @@
 export const ADMIN_SCOPE_POLICY = Object.freeze({
   PERSONAL: "personal",
   COMPANY: "company",
+  ALL: "all",
   REVIEW_RECEIVE_DETAIL: "review_receive_detail",
   BULK_EDIT: "bulk_edit"
 });
 
 const COMPANY_SCOPE_POLICIES = new Set([
   ADMIN_SCOPE_POLICY.COMPANY,
+  ADMIN_SCOPE_POLICY.ALL,
   ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
   ADMIN_SCOPE_POLICY.BULK_EDIT
 ]);
 
-export function getAdminScopePolicy(includeCompanyData = false) {
+export function getAdminScopePolicy(includeCompanyData = false, role = null) {
+  if (String(role ?? "").toLowerCase() === "developer" && includeCompanyData) {
+    return ADMIN_SCOPE_POLICY.ALL;
+  }
+
   return includeCompanyData ? ADMIN_SCOPE_POLICY.COMPANY : ADMIN_SCOPE_POLICY.PERSONAL;
 }
 
@@ -21,7 +27,9 @@ export function resolveAdminScopePolicy(options = {}) {
   const requestedPolicy = options.scopePolicy;
   const isKnownPolicy = Object.values(ADMIN_SCOPE_POLICY).includes(requestedPolicy);
 
-  return isKnownPolicy ? requestedPolicy : getAdminScopePolicy(options.includeCompanyData);
+  return isKnownPolicy
+    ? requestedPolicy
+    : getAdminScopePolicy(options.includeCompanyData, options.role ?? options.adminProfile?.role);
 }
 
 export function includesAdminScopeCompanyData(scopePolicy) {

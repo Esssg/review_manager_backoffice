@@ -217,3 +217,7 @@ export function hasBulkEditDepositChanges(changes) {
   const depositKeys = new Set(["is_deposit_verified", "deposited_at", "actual_depositor_name"]);
   return changes.some((change) => change.fields.some((field) => depositKeys.has(field.key)));
 }
+
+export function hasBulkEditDepositorNameChanges(changes) {
+  return changes.some((change) => change.fields.some((field) => field.key === "actual_depositor_name"));
+}

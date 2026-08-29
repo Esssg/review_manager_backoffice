@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppAlertDialog from "@/components/common/AppAlertDialog";
 import AdminScopeCard from "@/components/common/AdminScopeCard";
@@ -16,6 +16,10 @@ import { useAppToast } from "@/hooks/useAppToast";
 import { useBackdropDismiss } from "@/hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "@/hooks/useModalEnterConfirm";
 import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
+import { useAdminAccessContext } from "@/contexts/AdminAccessContext";
+import { ADMIN_PERMISSION_CODE, ADMIN_SETTING_KEY } from "@/constants/adminAccess";
+import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
+import { useAdminPermissions } from "@/hooks/useAdminPermission";
 import {
   ADMIN_STORAGE_KEY,
   PRODUCT_DEPOSIT_PARTY,
@@ -40,6 +44,7 @@ import {
 } from "@/utils/reviewReceiveProductReviewerBulkInput";
 import { normalizeProductDescriptionAndLink } from "@/utils/productLink";
 import { applyPlannedDepositorNameDefault, formatPlannedDepositorName } from "@/utils/plannedDepositorName";
+import { readResolvedSetting } from "@/utils/settingsResolver";
 import { sortReviewReceiveRowsByCreatedAt } from "@/utils/reviewReceiveRows";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
 import { readSessionStorageJson, writeSessionStorageJson, getLocalStorageValue } from "@/utils/browserStorage";
@@ -56,7 +61,7 @@ function normalizeOptionalValue(value) {
   return trimmedValue ? trimmedValue : null;
 }
 
-function createInitialProductForm() {
+function createInitialProductForm(defaults = {}) {
   const productDate = formatDateInputValue(new Date());
 
   return {
@@ -65,10 +70,13 @@ function createInitialProductForm() {
     productName: "",
     companyName: "",
     optionName: "",
-    reviewType: "",
-    plannedDepositorName: formatPlannedDepositorName(productDate, ""),
-    productFeeDepositGb: PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value,
-    reviewFeeDepositGb: PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value,
+    reviewType: defaults.reviewTypeDefault ?? "",
+    companyNameTrimLength: defaults.companyNameTrimLength ?? 0,
+    plannedDepositorName: formatPlannedDepositorName(productDate, "", {
+      companyNameTrimLength: defaults.companyNameTrimLength
+    }),
+    productFeeDepositGb: defaults.productFeeDepositParty ?? PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value,
+    reviewFeeDepositGb: defaults.reviewFeeDepositParty ?? PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value,
     productLink: "",
     description: ""
   };
@@ -85,11 +93,11 @@ function getPlannedDepositorNameForSave(productForm) {
   return productForm.plannedDepositorName;
 }
 
-function createInitialProductReviewerBulkState() {
+function createInitialProductReviewerBulkState(defaults = {}) {
   return {
     step: "input",
     text: "",
-    productForm: createInitialProductForm(),
+    productForm: createInitialProductForm(defaults),
     productGroups: [],
     reviewers: [],
     message: "",
@@ -153,7 +161,7 @@ function formatProductReviewerBulkGroupLabel(group, index) {
   return `${productName}${optionName}`;
 }
 
-function getProductFormFromProduct(product) {
+function getProductFormFromProduct(product, defaults = {}) {
   const depositGbParts = getProductDepositGbPartValues(product.deposit_GB);
 
   return {
@@ -162,7 +170,8 @@ function getProductFormFromProduct(product) {
     productName: product.product_name ?? "",
     companyName: product.company_name ?? "",
     optionName: product.option_name ?? "",
-    reviewType: product.review_type ?? "",
+    reviewType: product.review_type ?? defaults.reviewTypeDefault ?? "",
+    companyNameTrimLength: defaults.companyNameTrimLength ?? 0,
     plannedDepositorName: product.planned_depositor_name ?? "",
     productFeeDepositGb: depositGbParts.productFee,
     reviewFeeDepositGb: depositGbParts.reviewFee,
@@ -335,6 +344,33 @@ function hasActiveReviewReceiveProductFilters(filters) {
 export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const navigate = useNavigate();
+  const adminAccess = useAdminAccessContext();
+  const productDefaults = useMemo(() => {
+    const settings = adminAccess?.settings ?? [];
+
+    return {
+      companyNameTrimLength: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+        0
+      ),
+      productFeeDepositParty: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+        PRODUCT_DEPOSIT_PARTY_OPTIONS[0].value
+      ),
+      reviewFeeDepositParty: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+        REVIEW_FEE_DEPOSIT_PARTY_OPTIONS[0].value
+      ),
+      reviewTypeDefault: readResolvedSetting(
+        settings,
+        ADMIN_SETTING_KEY.REVIEW_TYPE_DEFAULT,
+        ""
+      )
+    };
+  }, [adminAccess?.settings]);
   const {
     includeCompanyData,
     adminProfile,
@@ -344,6 +380,40 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
   } = useAdminIncludeCompanyData(adminId);
+  const permissions = useAdminPermissions([
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ,
+    ADMIN_PERMISSION_CODE.PRODUCT_CREATE,
+    ADMIN_PERMISSION_CODE.PRODUCT_UPDATE,
+    ADMIN_PERMISSION_CODE.PRODUCT_DELETE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_CREATE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_DELETE,
+    ADMIN_PERMISSION_CODE.DEPOSIT_VERIFY,
+    ADMIN_PERMISSION_CODE.DEPOSITOR_NAME_UPDATE,
+    ADMIN_PERMISSION_CODE.PHOTO_DELETE,
+    ADMIN_PERMISSION_CODE.APPLICATION_DELETE,
+    ADMIN_PERMISSION_CODE.PRODUCT_STEP_DELETE
+  ], {
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_REVIEW_RECEIVE]
+  });
+  const canReadProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_READ]?.allowed);
+  const canReadSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_READ]?.allowed);
+  const isReadPermissionReady = [
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ
+  ].every((permissionCode) => permissions[permissionCode]?.isReady);
+  const canCreateProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_CREATE]?.allowed);
+  const canUpdateProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_UPDATE]?.allowed);
+  const canDeleteProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_DELETE]?.allowed);
+  const canCreateSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_CREATE]?.allowed);
+  const canVerifyDeposit = Boolean(permissions[ADMIN_PERMISSION_CODE.DEPOSIT_VERIFY]?.allowed);
+  const canUpdateDepositorName = Boolean(permissions[ADMIN_PERMISSION_CODE.DEPOSITOR_NAME_UPDATE]?.allowed);
+  const canDeleteProductCascade =
+    canDeleteProduct &&
+    Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_DELETE]?.allowed) &&
+    Boolean(permissions[ADMIN_PERMISSION_CODE.PHOTO_DELETE]?.allowed) &&
+    Boolean(permissions[ADMIN_PERMISSION_CODE.APPLICATION_DELETE]?.allowed) &&
+    Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_STEP_DELETE]?.allowed);
   const [products, setProducts] = useState([]);
   const [productFilters, setProductFilters] = useState(() => readStoredReviewReceiveProductFilters(adminId));
   const [debouncedProductFilters, setDebouncedProductFilters] = useState(productFilters);
@@ -370,9 +440,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [actionProductId, setActionProductId] = useState(null);
   const [productModalErrorMessage, setProductModalErrorMessage] = useState("");
-  const [productForm, setProductForm] = useState(() => createInitialProductForm());
+  const [productForm, setProductForm] = useState(() => createInitialProductForm(productDefaults));
   const [isProductReviewerBulkModalOpen, setIsProductReviewerBulkModalOpen] = useState(false);
-  const [productReviewerBulk, setProductReviewerBulk] = useState(() => createInitialProductReviewerBulkState());
+  const [productReviewerBulk, setProductReviewerBulk] = useState(() => createInitialProductReviewerBulkState(productDefaults));
   const [isSavingProductReviewerBulk, setIsSavingProductReviewerBulk] = useState(false);
   const productFormRef = useRef(null);
   const productFilterRef = useRef(null);
@@ -381,6 +451,32 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const productListRequestIdRef = useRef(0);
   const productListIsLoadingMoreRef = useRef(false);
   const { showToast } = useAppToast();
+
+  useEffect(() => {
+    if (!isProductModalOpen && !editingProduct) {
+      setProductForm((previousForm) => ({
+        ...previousForm,
+        companyNameTrimLength: productDefaults.companyNameTrimLength,
+        productFeeDepositGb: productDefaults.productFeeDepositParty,
+        reviewFeeDepositGb: productDefaults.reviewFeeDepositParty,
+        reviewType: previousForm.reviewType || productDefaults.reviewTypeDefault
+      }));
+    }
+
+    if (!isProductReviewerBulkModalOpen) {
+      setProductReviewerBulk((previousState) => ({
+        ...previousState,
+        productForm: {
+          ...previousState.productForm,
+          companyNameTrimLength: productDefaults.companyNameTrimLength,
+          productFeeDepositGb: productDefaults.productFeeDepositParty,
+          reviewFeeDepositGb: productDefaults.reviewFeeDepositParty,
+          reviewType: previousState.productForm.reviewType || productDefaults.reviewTypeDefault
+        }
+      }));
+    }
+  }, [editingProduct, isProductModalOpen, isProductReviewerBulkModalOpen, productDefaults]);
+
   const productModalEnterConfirm = useModalEnterConfirm({
     isOpen: isProductModalOpen,
     isDisabled: isSavingProduct,
@@ -402,7 +498,14 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         nextCursor: null
       });
 
-      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady || !isReadPermissionReady) {
+        return;
+      }
+
+      if (!canReadProduct || !canReadSubmission) {
+        setProducts([]);
+        setErrorMessage("리뷰받기 상품과 제출 조회 권한이 필요합니다.");
+        setIsLoading(false);
         return;
       }
 
@@ -453,6 +556,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
+    canReadProduct,
+    canReadSubmission,
+    isReadPermissionReady,
     listReloadKey,
     scopePolicy,
     viewMode
@@ -478,7 +584,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       !listPageInfo.nextCursor ||
       isLoadingCapabilities ||
       !isIncludeCompanyDataReady ||
-      capabilitiesErrorMessage
+      capabilitiesErrorMessage ||
+      !isReadPermissionReady ||
+      !canReadProduct ||
+      !canReadSubmission
     ) {
       return undefined;
     }
@@ -566,6 +675,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     isIncludeCompanyDataReady,
     isLoading,
     isLoadingCapabilities,
+    canReadProduct,
+    canReadSubmission,
+    isReadPermissionReady,
     listPageInfo.hasMore,
     listPageInfo.nextCursor,
     scopePolicy,
@@ -598,7 +710,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     };
   }, [openProductFilterKey]);
 
-  const scopeMessage = includeCompanyData
+  const scopeMessage = scopePolicy === ADMIN_SCOPE_POLICY.ALL
+    ? "모든 회사의 리뷰받기 상품을 함께 표시합니다."
+    : includeCompanyData
     ? scopeInfo.companyName
       ? `현재 계정과 같은 회사(${scopeInfo.companyName}) 소속 관리자 데이터까지 함께 표시합니다.`
       : "현재 계정에 회사 정보가 없어 내 계정 데이터만 표시합니다."
@@ -623,24 +737,36 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   };
 
   const openCreateTypeDialog = () => {
+    if (!canCreateProduct) {
+      return;
+    }
+
     setIsCreateTypeDialogOpen(true);
   };
 
   const openCreateModal = (mode = "single") => {
+    if (!canCreateProduct) {
+      return;
+    }
+
     setProductModalErrorMessage("");
     setEditingProduct(null);
     setProductModalMode(mode);
-    setProductForm(createInitialProductForm());
+    setProductForm(createInitialProductForm(productDefaults));
     setIsCreateTypeDialogOpen(false);
     setIsProductModalOpen(true);
   };
 
   const openEditModal = (product) => {
+    if (!canUpdateProduct) {
+      return;
+    }
+
     setProductModalErrorMessage("");
     setActiveActionProductId(null);
     setProductModalMode("single");
     setEditingProduct(product);
-    setProductForm(getProductFormFromProduct(product));
+    setProductForm(getProductFormFromProduct(product, productDefaults));
     setIsProductModalOpen(true);
   };
 
@@ -694,7 +820,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     setProductModalErrorMessage("");
     setEditingProduct(null);
     setProductModalMode("single");
-    setProductForm(createInitialProductForm());
+    setProductForm(createInitialProductForm(productDefaults));
     setIsProductModalOpen(false);
   };
   const productModalBackdropDismissProps = useBackdropDismiss(closeProductModal);
@@ -704,13 +830,17 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       return;
     }
 
-    setProductReviewerBulk(createInitialProductReviewerBulkState());
+    setProductReviewerBulk(createInitialProductReviewerBulkState(productDefaults));
     setIsProductReviewerBulkModalOpen(false);
   };
   const productReviewerBulkBackdropDismissProps = useBackdropDismiss(closeProductReviewerBulkModal);
 
   const openProductReviewerBulkModal = () => {
-    setProductReviewerBulk(createInitialProductReviewerBulkState());
+    if (!canCreateProduct || !canCreateSubmission) {
+      return;
+    }
+
+    setProductReviewerBulk(createInitialProductReviewerBulkState(productDefaults));
     setIsProductReviewerBulkModalOpen(true);
   };
 
@@ -793,11 +923,13 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
   const handleProductReviewerBulkParse = () => {
     try {
-      const parsed = parseProductReviewerBulkInput(productReviewerBulk.text);
+      const parsed = parseProductReviewerBulkInput(productReviewerBulk.text, {
+        companyNameTrimLength: productDefaults.companyNameTrimLength
+      });
       const productGroups = parsed.productGroups.map((group) => ({
         ...group,
         productForm: {
-          ...createInitialProductForm(),
+          ...createInitialProductForm(productDefaults),
           ...group.productForm
         }
       }));
@@ -808,7 +940,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         ...prev,
         step: "product",
         productForm: productGroups[0]?.productForm ?? {
-          ...createInitialProductForm(),
+          ...createInitialProductForm(productDefaults),
           ...parsed.productForm
         },
         productGroups,
@@ -877,6 +1009,11 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   };
 
   const handleProductReviewerBulkSave = async () => {
+    if (!canCreateProduct || !canCreateSubmission) {
+      setProductReviewerBulkMessage("상품 생성과 제출 생성 권한이 모두 필요합니다.", "error");
+      return;
+    }
+
     if (!adminId) {
       setProductReviewerBulkMessage("로그인 정보가 없습니다. 다시 로그인해주세요.", "error");
       return;
@@ -899,11 +1036,31 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
           throw new Error(`${groupIndex + 1}번째 품목: ${validationErrorMessage}`);
         }
 
+        const reviewerPayloads = group.reviewers.map((row, index) =>
+          normalizeProductReviewerRowForSave(row, row.sourceLineNumber ?? index + 1)
+        );
+
+        reviewerPayloads.forEach((reviewerPayload, reviewerIndex) => {
+          if (reviewerPayload.is_deposit_verified && (!canVerifyDeposit || !canUpdateDepositorName)) {
+            throw new Error(`${groupIndex + 1}번째 품목 ${reviewerIndex + 1}번째 리뷰어: 입금완료와 실제입금자명 권한이 필요합니다.`);
+          }
+
+          if (reviewerPayload.actual_depositor_name && !canUpdateDepositorName) {
+            throw new Error(`${groupIndex + 1}번째 품목 ${reviewerIndex + 1}번째 리뷰어: 실제입금자명 수정 권한이 필요합니다.`);
+          }
+
+          if (!canVerifyDeposit) {
+            delete reviewerPayload.is_deposit_verified;
+          }
+
+          if (!canUpdateDepositorName) {
+            delete reviewerPayload.actual_depositor_name;
+          }
+        });
+
         return {
           productPayload: payload,
-          reviewerPayloads: group.reviewers.map((row, index) =>
-            normalizeProductReviewerRowForSave(row, row.sourceLineNumber ?? index + 1)
-          )
+          reviewerPayloads
         };
       });
     } catch (error) {
@@ -936,8 +1093,9 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
       if (productResult.error || !productResult.data) {
         reflectPartialSave();
+        const productErrorMessage = productResult.error?.message;
         setProductReviewerBulkMessage(
-          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다. ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
+          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다.${productErrorMessage ? ` ${productErrorMessage}` : ""} ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
           "error"
         );
         setIsSavingProductReviewerBulk(false);
@@ -975,13 +1133,18 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
 
     requestProductListReload();
     showToast(`품목 ${createdProducts.length}건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
-    setProductReviewerBulk(createInitialProductReviewerBulkState());
+    setProductReviewerBulk(createInitialProductReviewerBulkState(productDefaults));
     setIsProductReviewerBulkModalOpen(false);
     setIsSavingProductReviewerBulk(false);
   };
 
   const handleProductFormSubmit = async (event) => {
     event.preventDefault();
+
+    if (editingProduct ? !canUpdateProduct : !canCreateProduct) {
+      setProductModalErrorMessage(editingProduct ? "상품 수정 권한이 없습니다." : "상품 생성 권한이 없습니다.");
+      return;
+    }
 
     if (!adminId) {
       setProductModalErrorMessage("로그인 정보가 없습니다. 다시 로그인해주세요.");
@@ -1020,12 +1183,16 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     showToast(editingProduct ? "리뷰받기 상품을 수정했습니다." : "리뷰받기 상품을 추가했습니다.", "success");
     setEditingProduct(null);
     setProductModalMode("single");
-    setProductForm(createInitialProductForm());
+    setProductForm(createInitialProductForm(productDefaults));
     setIsProductModalOpen(false);
     setIsSavingProduct(false);
   };
 
   const openDeleteDialog = (product) => {
+    if (!canDeleteProductCascade) {
+      return;
+    }
+
     setActiveActionProductId(null);
     setDeleteTargetProduct(product);
   };
@@ -1039,7 +1206,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   };
 
   const handleDeleteProduct = async () => {
-    if (!deleteTargetProduct) {
+    if (!deleteTargetProduct || !canDeleteProductCascade) {
       return;
     }
 
@@ -1112,10 +1279,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
           <div className="review-receive-page-actions">
             <span className="review-receive-tool-label">작업</span>
             <div className="review-receive-page-action-buttons">
-              <Button type="button" variant="outline" className="admin-secondary-button" onClick={openProductReviewerBulkModal}>
+              <Button type="button" variant="outline" className="admin-secondary-button" onClick={openProductReviewerBulkModal} disabled={!canCreateProduct || !canCreateSubmission}>
                 상품/리뷰어 일괄 입력
               </Button>
-              <Button type="button" className="admin-primary-button" onClick={openCreateTypeDialog}>
+              <Button type="button" className="admin-primary-button" onClick={openCreateTypeDialog} disabled={!canCreateProduct}>
                 상품 추가하기
               </Button>
             </div>
@@ -1150,6 +1317,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         onCopyReviewVerifiedRows={handleCopyReviewVerifiedRows}
         onOpenEditModal={openEditModal}
         onOpenDeleteDialog={openDeleteDialog}
+        canEditProduct={canUpdateProduct}
+        canDeleteProduct={canDeleteProductCascade}
         isLoadingMore={isLoadingMore}
         hasMore={listPageInfo.hasMore}
       />
@@ -1528,7 +1697,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                                 onChange={(event) =>
                                   handleProductReviewerBulkRowChange(row.clientId, field.key, event.target.value)
                                 }
-                                disabled={isSavingProductReviewerBulk}
+                                disabled={isSavingProductReviewerBulk || (field.key === "actual_depositor_name" && !canUpdateDepositorName)}
                               />
                             </TableCell>
                           ))}
@@ -1548,7 +1717,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                               onCheckedChange={(checked) =>
                                 handleProductReviewerBulkRowChange(row.clientId, "is_deposit_verified", Boolean(checked))
                               }
-                              disabled={isSavingProductReviewerBulk}
+                              disabled={isSavingProductReviewerBulk || !canVerifyDeposit || !canUpdateDepositorName}
                               aria-label={`${row.clientId} 입금완료`}
                             />
                           </TableCell>
@@ -1612,7 +1781,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                   type="button"
                   className="admin-primary-button"
                   onClick={handleProductReviewerBulkSave}
-                  disabled={isSavingProductReviewerBulk}
+                  disabled={isSavingProductReviewerBulk || !canCreateProduct || !canCreateSubmission}
                 >
                   {isSavingProductReviewerBulk ? "등록 중..." : "완료하기"}
                 </Button>
@@ -1633,10 +1802,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             <Button type="button" className="admin-secondary-button" onClick={() => setIsCreateTypeDialogOpen(false)}>
               취소
             </Button>
-          <Button type="button" className="admin-secondary-button" onClick={() => openCreateModal("single")}>
+            <Button type="button" className="admin-secondary-button" onClick={() => openCreateModal("single")} disabled={!canCreateProduct}>
               단일상품
             </Button>
-            <Button type="button" className="admin-primary-button" onClick={() => openCreateModal("bundle")}>
+            <Button type="button" className="admin-primary-button" onClick={() => openCreateModal("bundle")} disabled={!canCreateProduct}>
               여러상품
           </Button>
           </>
@@ -1876,7 +2045,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
                 <Button type="button" className="admin-secondary-button" onClick={closeProductModal} disabled={isSavingProduct}>
                   취소
                 </Button>
-                <Button type="submit" className="admin-primary-button" disabled={isSavingProduct}>
+                <Button type="submit" className="admin-primary-button" disabled={isSavingProduct || (editingProduct ? !canUpdateProduct : !canCreateProduct)}>
                   {isSavingProduct ? "저장 중..." : editingProduct ? "상품 수정하기" : "상품 추가하기"}
                 </Button>
               </div>

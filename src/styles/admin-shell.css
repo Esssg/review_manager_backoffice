@@ -2547,6 +2547,19 @@
   font-weight: 600;
 }
 
+.admin-setting-reset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0 2px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-setting-reset-row .admin-setting-muted {
+  flex: 1;
+}
+
 .admin-setting-buttons {
   display: flex;
   gap: 12px;
@@ -2639,6 +2652,11 @@
   }
 
   .admin-setting-buttons {
+    flex-direction: column;
+  }
+
+  .admin-setting-reset-row {
+    align-items: stretch;
     flex-direction: column;
   }
 }

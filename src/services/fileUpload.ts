@@ -3,6 +3,13 @@
 import { supabase } from "@/lib/supabase";
 import { fetchAllRowsInChunks } from "@/services/paginatedQuery";
 import {
+  ADMIN_GATEWAY_OPERATION,
+  callAdminGatewayOperation,
+  getGatewayObject,
+  omitClientIdentity
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
+import {
   buildSubmissionLookup,
   createFileUploadResult,
   finalizeFileUploadResult,
@@ -126,6 +133,26 @@ async function saveUploadSubmission(submission, productId, submissionLookup) {
 
 export async function uploadFileUploadData(parseResult) {
   const products = parseResult?.products ?? [];
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.FILE_UPLOAD_APPLY, {
+      p_parse_result: omitClientIdentity(parseResult)
+    });
+    const gatewayResult = getGatewayObject(result.data, ["result", "fileUpload", "file_upload"]);
+
+    return result.error
+      ? finalizeFileUploadResult({
+          ...createFileUploadResult(),
+          errors: [
+            buildUploadIssue({
+              code: result.error.code ?? "FILE_UPLOAD_GATEWAY_FAILED",
+              message: result.error.message
+            })
+          ]
+        })
+      : finalizeFileUploadResult(gatewayResult ?? createFileUploadResult());
+  }
+
   const orderNumbers = products.flatMap((product) =>
     (product.submissions ?? []).map((submission) => submission.payload.order_number).filter(Boolean)
   );

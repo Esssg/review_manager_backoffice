@@ -4,6 +4,13 @@ import { supabase } from "@/lib/supabase";
 import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const EXPORT_PRODUCTS_SELECT =
   "id,manager_id,product_date,title,description,product_link,product_name,deposit_date,company_name,option_name,review_type,planned_depositor_name,created_at";
@@ -70,12 +77,42 @@ export async function fetchAdminExportData(adminId, options = {}) {
     productId = null,
     depositOnly = false
   } = options;
-
-  const scope = await resolveAdminManagerScope(adminId, {
+  const scopeOptions = {
     ...options,
     scopePolicy: forcePersonalScope ? ADMIN_SCOPE_POLICY.PERSONAL : options.scopePolicy,
     adminProfile: options.adminProfile
-  });
+  };
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.EXPORT_READ, {
+      p_include_company_data: Boolean(includeCompanyData && !forcePersonalScope),
+      p_force_personal_scope: Boolean(forcePersonalScope),
+      p_include_applications: Boolean(includeApplications),
+      p_date_filter: dateFilter,
+      p_product_id: productId == null ? null : Number(productId),
+      p_deposit_only: Boolean(depositOnly)
+    });
+    const gatewayData = result.data ?? {};
+    const scope = {
+      ...buildGatewayScope(adminId, scopeOptions),
+      ...(gatewayData.scope && typeof gatewayData.scope === "object" ? gatewayData.scope : {})
+    };
+
+    if (result.error) {
+      return buildEmptyExportResult(scope, result.error);
+    }
+
+    return {
+      scope,
+      products: getGatewayArray(gatewayData, ["products"]),
+      submissions: getGatewayArray(gatewayData, ["submissions"]),
+      evidencePhotos: getGatewayArray(gatewayData, ["evidencePhotos", "evidence_photos"]),
+      applications: includeApplications ? getGatewayArray(gatewayData, ["applications"]) : [],
+      error: null
+    };
+  }
+
+  const scope = await resolveAdminManagerScope(adminId, scopeOptions);
 
   if (scope.error || scope.managerIds.length === 0) {
     return buildEmptyExportResult(scope);

@@ -22,6 +22,7 @@ const AdminProductsPage = lazy(() => import("@/pages/admin/AdminProductsPage"));
 const AdminReviewReceiveDetailPage = lazy(() => import("@/pages/admin/AdminReviewReceiveDetailPage"));
 const AdminReviewReceivePage = lazy(() => import("@/pages/admin/AdminReviewReceivePage"));
 const AdminSettingPage = lazy(() => import("@/pages/admin/AdminSettingPage"));
+const AdminMemberAccessPage = lazy(() => import("@/pages/admin/AdminMemberAccessPage"));
 const LoginPage = lazy(() => import("@/pages/admin/LoginPage"));
 const PublicReviewReceiveDetailPage = lazy(() => import("@/pages/public/PublicReviewReceiveDetailPage"));
 
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="file-upload" element={<AdminFileUploadPage />} />
           <Route path="bulk-edit" element={<AdminBulkEditPage />} />
           <Route path="setting" element={<AdminSettingPage />} />
+          <Route path="setting/access" element={<AdminMemberAccessPage />} />
         </Route>
         <Route
           path="/review-receive/specific/:productId"

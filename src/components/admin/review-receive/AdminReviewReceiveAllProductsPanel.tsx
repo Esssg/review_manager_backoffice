@@ -20,7 +20,10 @@ export default function AdminReviewReceiveAllProductsPanel({
   getSectionPlannedDepositorName,
   onRowActivate,
   activeRowId,
-  exportProductLabel
+  exportProductLabel,
+  canCreateProduct = true,
+  canUpdateProduct = true,
+  canCreateSubmission = true
 }) {
   return (
     <section className="dashboard-panel review-receive-all-products-panel" aria-label="전체 품목">
@@ -30,7 +33,7 @@ export default function AdminReviewReceiveAllProductsPanel({
           <p>아래 모든 품목의 제출 데이터를 상태별로 한 번에 보여줍니다.</p>
         </div>
         <div className="review-receive-section-header-actions">
-          <Button type="button" className="admin-secondary-button" onClick={onOpenProductReviewerBulkModal}>
+          <Button type="button" className="admin-secondary-button" onClick={onOpenProductReviewerBulkModal} disabled={(!canCreateProduct && !canUpdateProduct) || !canCreateSubmission}>
             상품/리뷰어 일괄 입력
           </Button>
           <Button

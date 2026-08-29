@@ -4,6 +4,8 @@
 테이블/컬럼 문서화 기준: 2026-07-21 KST (`일괄수정하기` 메뉴·적용 RPC 마이그레이션 파일 작성 기준)
 row count / 샘플 데이터 최종 확인 시각: 2026-04-30 KST (`파일 업로드` 메뉴 권한 추가 뒤 갱신)
 
+staging 메모: 2026-08-29 `vm-app-01`에서 정규화 권한·gateway RPC·Q49 binding·read RPC·export RPC migration을 적용하고 검증했다. staging 기준 집계는 admins 8, admin_menu_permissions 40, products 5,347, applications 630, submissions 25,664, product_steps 180, companies 3, permission_definitions 38, permission_bindings 206이며, RLS는 활성화하지 않았다. 같은 날 `vm-web-01`의 `hyejin2054` 인증 gateway write canary로 상품·제출 생성/수정/상태 변경/일괄수정/삭제를 검증했고 생성한 canary ID의 products/submissions/evidence_photos 잔여 count는 0이었다. 이 문서의 기존 테이블/샘플/row count는 운영 기준 snapshot으로 유지하며, 운영 DB 적용 전에는 staging 결과와 다시 대조한다.
+
 ## 1) 테이블 관계 요약
 
 - `admins` 1 --- N `products` (`products.manager_id -> admins.login_id`)

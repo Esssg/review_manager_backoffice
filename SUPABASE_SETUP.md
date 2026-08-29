@@ -25,6 +25,14 @@ cp .env.example .env
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+관리자 권한 개편용 gateway는 호환성 검증이 끝난 뒤에만 켭니다. 세 값이 모두 준비되지 않으면 프런트는 기존 직접 Supabase 호환 경로를 사용합니다.
+
+- `VITE_ADMIN_GATEWAY_URL`: `admin-gateway` Edge Function URL; self-hosted staging uses the same-origin `/api/admin-gateway` proxy
+- `VITE_ADMIN_GATEWAY_ENABLED`: gateway 사용 여부
+- `VITE_ADMIN_GATEWAY_READY`: 모든 관리자 데이터 서비스 전환 및 staging/canary 검증 완료 여부
+
+`VITE_ADMIN_GATEWAY_READY=true`는 migration·RPC·Edge Function이 실제 환경에 적용되고 전체 관리자 데이터 경로 회귀 검증을 통과한 뒤에만 설정합니다. 현재 staging `vm-app-01`에는 다섯 migration과 `admin-gateway` 함수를 적용하고 read/write·세션 경계를 검증했으며, `vm-web-01`에는 same-origin 프록시를 포함한 backoffice 이미지를 배포해 health/proxy smoke와 `hyejin2054` 인증 canary를 통과했습니다. 저장소 기본값은 `READY=false`이고 staging canary 이미지만 `READY=true`입니다. production에는 임직원 권한 저장 오류 대응을 위한 Edge Function nested action path 1·2차 수정, 상품/리뷰어 일괄입력 bundle 계약 후속 DB RPC, 해당 웹 수정이 포함된 app 이미지 배포를 적용했습니다. DB 백업·RPC ACL·local/external health·비인증 gateway 경계는 확인했지만, 실제 permission write/일괄입력 저장 canary는 현재 브라우저 세션 만료로 재로그인 후 확인해야 합니다. 공개 사진 흐름·RLS·production 전체 C4 전환은 아직 검증·적용하지 않았습니다.
+
 현재 홈서버 공개 origin:
 
 ```env
@@ -92,6 +100,28 @@ Supabase 기본 제공 시크릿:
 
 위 두 Supabase 값은 Edge Function 런타임에 제공되어야 합니다. `FILE_WRITER_TOKEN`과 service role key는 프런트 `.env`에 넣지 않습니다.
 
+## 5-1) 관리자 권한 gateway 초안
+
+함수 위치:
+
+- `supabase/functions/admin-gateway/index.ts`
+
+이 함수는 관리자 로그인, 짧은 httpOnly 세션 쿠키, 권한 bundle, 회사·개인 설정, 임직원 권한 변경을 서버에서 검증하기 위한 초안입니다. staging `vm-app-01`에는 배포했고 주요 read/write canary를 완료했으며, production `vm-app-01`에는 2026-08-29 기존 번들 호환과 두-segment 경로 처리를 위한 nested action path 1·2차 수정만 배포했습니다. 이번 bundle 계약 수정에서는 Edge Function 런타임을 재배포하지 않고 이미 배포된 함수와 DB RPC·웹 adapter를 호환시켰습니다. 공개 사진 흐름과 운영 전체 전환 전에는 production 프런트의 `VITE_ADMIN_GATEWAY_READY`를 별도 승인 없이 켜지 않습니다.
+
+함수 런타임 시크릿/환경변수:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ADMIN_GATEWAY_SESSION_SECRET` (충분히 긴 무작위 비밀값)
+- `ADMIN_WEB_ORIGIN` (프런트의 정확한 origin, trailing slash 없이)
+- `ADMIN_GATEWAY_COOKIE_SAMESITE` (`Lax`, `Strict`, `None` 중 하나; `None`은 HTTPS에서만 사용)
+
+gateway는 `ADMIN_WEB_ORIGIN`이 없거나 다른 origin이면 credentialed CORS 응답을 허용하지 않습니다. 요청의 `x-request-id`를 응답과 서버 오류 로그에 연결하며, 비밀번호·service role key·세션 쿠키 값은 로그에 기록하지 않습니다. migration/RPC가 없는 상태의 함수 응답은 schema 준비 오류로 분류되어야 합니다.
+
+Self-hosted staging의 Kong `functions-v1` route는 여러 Edge Function이 공유하는 wildcard CORS를 사용하므로, 관리자 gateway는 브라우저에서 직접 Edge Function URL을 호출하지 않는다. `nginx/default.conf`의 `/api/admin-gateway/` same-origin proxy를 통해 `http://192.168.20.30:8080/api/admin-gateway`로 호출하고, `VITE_ADMIN_GATEWAY_URL`도 이 경로로 설정한다. 이 proxy를 포함한 staging backoffice 이미지는 `vm-web-01`에 배포했고 현재 `READY=true` 인증 read/write canary에서 관리자 데이터 요청이 gateway-only임을 확인했다. 공개 Edge Function의 공통 CORS를 바꾸는 작업은 별도 영향 검토 대상이다.
+
+운영 반영은 `normalized access migration → gateway data RPC → Q49 binding backfill → read/export RPC 최적화 → admin-gateway 함수 → 전체 관리자 데이터 서비스가 포함된 backoffice 이미지` 순서로 staging과 canary에서 확인한 뒤 진행합니다. 다섯 migration은 staging `vm-app-01`에 적용·검증했고 production 사전 점검에서 대응 객체가 이미 존재해 재실행하지 않았습니다. 후속 `20260829220000_fix_admin_review_receive_product_bundle_contract.sql`은 production DB custom dump·RPC 정의 백업 후 적용했고, bundle 계약을 포함한 웹 app 이미지도 app-only로 배포했습니다. 실제 운영 일괄입력 저장 canary는 재로그인 후 남아 있으며, 전체 운영 전환·RLS는 별도 승인 대상입니다. `VITE_ADMIN_GATEWAY_ENABLED=true`만으로는 활성화되지 않으며, 세 값(`URL`, `ENABLED=true`, `READY=true`)이 모두 준비된 새 이미지를 별도로 배포해야 합니다.
+
 ## 6) 배포 및 운영 체크
 
 배포 대상 함수명:
@@ -126,6 +156,7 @@ Nginx 설정은 다음을 담당합니다.
 - React Router 경로를 `index.html`로 fallback
 - `/assets/` 장기 캐시
 - `/api/review-receive-photo-sync` same-origin 업로드 프록시
+- `/api/admin-gateway/` same-origin 관리자 gateway 프록시
 - `/rmb-images/` 홈서버 이미지 프록시
 - `/healthz` 컨테이너 healthcheck
 

@@ -100,6 +100,10 @@ export function setSessionStorageValue(key, value) {
   return writeStorageValue(getBrowserStorage("sessionStorage"), key, value);
 }
 
+export function removeSessionStorageValue(key) {
+  return removeStorageValue(getBrowserStorage("sessionStorage"), key);
+}
+
 export function readSessionStorageJson(key, fallback = null) {
   return readStorageJson(getBrowserStorage("sessionStorage"), key, fallback);
 }

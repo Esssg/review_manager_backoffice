@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import {
   AlertDialog,
@@ -15,8 +15,21 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
-import { fetchAdminSetting, updateAdminSetting } from "@/services/adminSettings";
+import { ADMIN_ROLE, ADMIN_SETTING_KEY } from "@/constants/adminAccess";
+import { useAdminAccessContext } from "@/contexts/AdminAccessContext";
+import {
+  fetchAdminAccessSettings,
+  fetchAdminSetting,
+  updateAdminAccessSetting,
+  updateAdminSetting
+} from "@/services/adminSettings";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 import { getLocalStorageValue } from "@/utils/browserStorage";
+import {
+  normalizeSettingValue,
+  readResolvedSetting,
+  validateSettingForScope
+} from "@/utils/settingsResolver";
 
 type PasswordFieldName = "newPassword" | "confirmPassword";
 
@@ -174,6 +187,43 @@ export default function AdminSettingPage() {
 
 function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
   const navigate = useNavigate();
+  const adminAccess = useAdminAccessContext();
+  const adminRole = adminAccess?.role ?? null;
+  const canEditCompanySettings =
+    adminRole === ADMIN_ROLE.DEVELOPER || adminRole === ADMIN_ROLE.COMPANY_ADMIN;
+  const settingsScope = canEditCompanySettings ? "company" : "admin";
+  const defaultSettingForm = useMemo(
+    () => ({
+      companyNameTrimLength: (() => {
+        const result = normalizeSettingValue(
+          ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+          readResolvedSetting(
+            adminAccess?.settings,
+            ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+            0
+          )
+        );
+
+        return result.ok ? result.value : 0;
+      })(),
+      productFeeDepositParty: readResolvedSetting(
+        adminAccess?.settings,
+        ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+        "self"
+      ),
+      reviewFeeDepositParty: readResolvedSetting(
+        adminAccess?.settings,
+        ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+        "self"
+      )
+    }),
+    [adminAccess?.settings]
+  );
+  const settingsInitialRef = useRef(defaultSettingForm);
+  const [settingsForm, setSettingsForm] = useState(defaultSettingForm);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsLoadedFromGateway, setSettingsLoadedFromGateway] = useState(false);
+  const [personalSettingsReset, setPersonalSettingsReset] = useState(false);
 
   const [adminData, setAdminData] = useState<AdminSetting | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -203,6 +253,55 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
     onConfirm: null,
     variant: "normal"
   });
+
+  useEffect(() => {
+    settingsInitialRef.current = defaultSettingForm;
+    setSettingsForm(defaultSettingForm);
+  }, [defaultSettingForm]);
+
+  useEffect(() => {
+    if (!isAdminGatewayConfigured() || adminAccess?.settings?.length) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadSettings = async () => {
+      const result = await fetchAdminAccessSettings();
+
+      if (!isMounted || result.error || !result.data?.length) {
+        return;
+      }
+
+      const nextForm = {
+        companyNameTrimLength: readResolvedSetting(
+          result.data,
+          ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+          0
+        ),
+        productFeeDepositParty: readResolvedSetting(
+          result.data,
+          ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+          "self"
+        ),
+        reviewFeeDepositParty: readResolvedSetting(
+          result.data,
+          ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+          "self"
+        )
+      };
+
+      settingsInitialRef.current = nextForm;
+      setSettingsForm(nextForm);
+      setSettingsLoadedFromGateway(true);
+    };
+
+    loadSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [adminAccess?.settings]);
 
   useEffect(() => {
     const fetchAdminData = async () => {
@@ -274,6 +373,100 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
     return "";
   };
 
+  const validateAccessSettings = () => {
+    if (!adminRole) {
+      return "";
+    }
+
+    const entries = [
+      ...(canEditCompanySettings
+        ? [
+            {
+              key: ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+              value: settingsForm.companyNameTrimLength
+            }
+          ]
+        : []),
+      {
+        key: ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+        value: settingsForm.productFeeDepositParty
+      },
+      {
+        key: ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+        value: settingsForm.reviewFeeDepositParty
+      }
+    ];
+
+    for (const entry of entries) {
+      const result = validateSettingForScope(entry.key, entry.value, settingsScope);
+
+      if (!result.ok) {
+        return result.errorMessage;
+      }
+    }
+
+    return "";
+  };
+
+  const getValidatedAccessSettingEntries = () => {
+    if (!adminRole) {
+      return [];
+    }
+
+    const entries = [
+      ...(canEditCompanySettings
+        ? [
+            {
+              key: ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+              value: settingsForm.companyNameTrimLength
+            }
+          ]
+        : []),
+      {
+        key: ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+        value: settingsForm.productFeeDepositParty
+      },
+      {
+        key: ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+        value: settingsForm.reviewFeeDepositParty
+      }
+    ];
+
+    return entries.map((entry) => {
+      const result = validateSettingForScope(entry.key, entry.value, settingsScope);
+
+      return {
+        ...entry,
+        value: result.ok ? result.value : entry.value
+      };
+    });
+  };
+
+  const hasAccessSettingChanges = Boolean(
+    adminRole &&
+      getValidatedAccessSettingEntries().some((entry) => {
+        const initialKey =
+          entry.key === ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH
+            ? "companyNameTrimLength"
+            : entry.key === ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY
+              ? "productFeeDepositParty"
+              : "reviewFeeDepositParty";
+
+        return entry.value !== settingsInitialRef.current[initialKey];
+      })
+  );
+
+  const hasPersonalSettingOverrides = useMemo(
+    () =>
+      adminRole === ADMIN_ROLE.EMPLOYEE &&
+      (adminAccess?.settings ?? []).some(
+        (row) =>
+          (row?.key ?? row?.setting_key ?? row?.settingKey) &&
+          (row?.hasOverride === true || row?.has_override === true || row?.source === "admin")
+      ),
+    [adminAccess?.settings, adminRole]
+  );
+
   const handleSave = async () => {
     setSaveError("");
     setSaveSuccess(false);
@@ -284,7 +477,15 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
       return;
     }
 
+    const settingsValidationError = validateAccessSettings();
+    if (settingsValidationError) {
+      setSettingsError(settingsValidationError);
+      setSaveError(settingsValidationError);
+      return;
+    }
+
     setIsSaving(true);
+    setSettingsError("");
 
     const updatePayload: Partial<AdminFormData> & { password?: string } = {
       username: formData.username,
@@ -299,16 +500,128 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
 
     const { error } = await updateAdminSetting(adminId, updatePayload);
 
-    setIsSaving(false);
-
     if (error) {
       setSaveError(`저장 실패: ${error.message}`);
+      setIsSaving(false);
       return;
     }
+
+    if (isAdminGatewayConfigured() && adminRole && hasAccessSettingChanges) {
+      const normalizedEntries = getValidatedAccessSettingEntries();
+      const settingsToSave = normalizedEntries.filter(
+        (entry) =>
+          entry.value !==
+          settingsInitialRef.current[
+            entry.key === ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH
+              ? "companyNameTrimLength"
+              : entry.key === ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY
+                ? "productFeeDepositParty"
+                : "reviewFeeDepositParty"
+          ]
+      );
+
+      for (const entry of settingsToSave) {
+        const result = await updateAdminAccessSetting({
+          key: entry.key,
+          settingKey: entry.key,
+          value: entry.value,
+          scopeType: settingsScope
+        });
+
+        if (result.error) {
+          setIsSaving(false);
+          setSettingsError(`DB 설정 저장 실패: ${result.error.message}`);
+          setSaveError(`DB 설정 저장 실패: ${result.error.message}`);
+          return;
+        }
+      }
+
+      const normalizedForm = {
+        ...settingsForm,
+        companyNameTrimLength:
+          normalizedEntries.find((entry) => entry.key === ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH)?.value ??
+          settingsForm.companyNameTrimLength,
+        productFeeDepositParty:
+          normalizedEntries.find((entry) => entry.key === ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY)?.value ??
+          settingsForm.productFeeDepositParty,
+        reviewFeeDepositParty:
+          normalizedEntries.find((entry) => entry.key === ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY)?.value ??
+          settingsForm.reviewFeeDepositParty
+      };
+      settingsInitialRef.current = normalizedForm;
+      setSettingsForm(normalizedForm);
+    }
+
+    setIsSaving(false);
 
     setPasswordForm(EMPTY_PASSWORD_FORM);
     setIsPasswordChangeOpen(false);
     setVisiblePasswordField(null);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  const handleResetPersonalSettings = async () => {
+    if (adminRole !== ADMIN_ROLE.EMPLOYEE || !isAdminGatewayConfigured()) {
+      setSettingsError("개인 설정 해제는 gateway가 활성화된 임직원 계정에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    setIsSaving(true);
+    setSettingsError("");
+    setSaveError("");
+
+    const keys = [
+      ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+      ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY
+    ];
+
+    for (const key of keys) {
+      const result = await updateAdminAccessSetting({
+        key,
+        settingKey: key,
+        scopeType: "admin",
+        scopeId: adminId,
+        remove: true
+      });
+
+      if (result.error) {
+        setIsSaving(false);
+        setSettingsError(`개인 설정 해제 실패: ${result.error.message}`);
+        setSaveError(`개인 설정 해제 실패: ${result.error.message}`);
+        return;
+      }
+    }
+
+    const refreshed = await fetchAdminAccessSettings();
+    if (refreshed.error) {
+      setIsSaving(false);
+      setSettingsError(`회사 기본값을 다시 불러오지 못했습니다: ${refreshed.error.message}`);
+      setSaveError(`개인 설정 해제는 완료됐지만 화면을 갱신하지 못했습니다: ${refreshed.error.message}`);
+      return;
+    }
+
+    const nextForm = {
+      companyNameTrimLength: readResolvedSetting(
+        refreshed.data,
+        ADMIN_SETTING_KEY.COMPANY_NAME_TRIM_LENGTH,
+        0
+      ),
+      productFeeDepositParty: readResolvedSetting(
+        refreshed.data,
+        ADMIN_SETTING_KEY.PRODUCT_FEE_DEPOSIT_PARTY,
+        "self"
+      ),
+      reviewFeeDepositParty: readResolvedSetting(
+        refreshed.data,
+        ADMIN_SETTING_KEY.REVIEW_FEE_DEPOSIT_PARTY,
+        "self"
+      )
+    };
+    settingsInitialRef.current = nextForm;
+    setSettingsForm(nextForm);
+    setPersonalSettingsReset(true);
+    setIsSaving(false);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
   };
@@ -321,6 +634,14 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
       return;
     }
 
+    const settingsValidationError = validateAccessSettings();
+    if (settingsValidationError) {
+      setSettingsError(settingsValidationError);
+      setSaveError(settingsValidationError);
+      setSaveSuccess(false);
+      return;
+    }
+
     const hasPasswordChange = isPasswordChangeOpen && passwordForm.newPassword.length > 0;
 
     setAlertDialog({
@@ -328,7 +649,9 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
       title: "정보 저장 확인",
       message: hasPasswordChange
         ? "변경된 정보와 비밀번호를 저장하시겠습니까?"
-        : "변경된 정보를 저장하시겠습니까?",
+        : hasAccessSettingChanges
+          ? "변경된 프로필과 DB 설정을 저장하시겠습니까?"
+          : "변경된 정보를 저장하시겠습니까?",
       confirmLabel: "저장",
       cancelLabel: "취소",
       isLoading: false,
@@ -457,6 +780,133 @@ function AuthenticatedAdminSettingPage({ adminId }: { adminId: string }) {
             />
           </div>
         </div>
+
+        {adminRole && (
+          <div className="admin-setting-section">
+            <div className="admin-setting-section-header">
+              <h2>{canEditCompanySettings ? "회사·상품 기본값" : "내 웹·상품 기본값"}</h2>
+              {canEditCompanySettings && isAdminGatewayConfigured() && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="admin-secondary-button"
+                  onClick={() => navigate("/admin/setting/access")}
+                  disabled={isSaving}
+                >
+                  임직원 권한 관리
+                </Button>
+              )}
+            </div>
+            <p className="admin-setting-muted">
+              {settingsLoadedFromGateway || adminAccess?.settings?.length
+                ? "DB에 저장된 상속값입니다. 저장하지 않은 입력값은 현재 작업에만 적용됩니다."
+                : "현재는 호환 모드입니다. gateway가 활성화되면 이 값이 DB에 저장됩니다."}
+            </p>
+
+            {canEditCompanySettings && (
+              <div className="form-group">
+                <Label htmlFor="company-name-trim-length">예정 입금자명 회사명 자르기</Label>
+                <Input
+                  id="company-name-trim-length"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={settingsForm.companyNameTrimLength}
+                  onChange={(event) => {
+                    setSettingsForm((previous) => ({
+                      ...previous,
+                      companyNameTrimLength: event.target.value
+                    }));
+                    setPersonalSettingsReset(false);
+                    setSettingsError("");
+                    setSaveError("");
+                  }}
+                  className="form-input"
+                  aria-describedby="company-name-trim-length-help"
+                  disabled={isSaving}
+                />
+                <p id="company-name-trim-length-help" className="admin-setting-muted">
+                  0이면 회사명 전체, 1~100이면 앞 글자만 표시합니다. 100을 초과하면 저장되지 않습니다.
+                </p>
+              </div>
+            )}
+
+            <div className="form-group">
+              <Label htmlFor="product-fee-deposit-party">제품비 입금구분 기본값</Label>
+              <select
+                id="product-fee-deposit-party"
+                className="form-input"
+                value={settingsForm.productFeeDepositParty}
+                onChange={(event) => {
+                  setSettingsForm((previous) => ({
+                    ...previous,
+                    productFeeDepositParty: event.target.value
+                  }));
+                  setPersonalSettingsReset(false);
+                  setSettingsError("");
+                  setSaveError("");
+                }}
+                disabled={isSaving}
+              >
+                <option value="self">자체입금</option>
+                <option value="company">업체입금</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <Label htmlFor="review-fee-deposit-party">리뷰비 입금구분 기본값</Label>
+              <select
+                id="review-fee-deposit-party"
+                className="form-input"
+                value={settingsForm.reviewFeeDepositParty}
+                onChange={(event) => {
+                  setSettingsForm((previous) => ({
+                    ...previous,
+                    reviewFeeDepositParty: event.target.value
+                  }));
+                  setPersonalSettingsReset(false);
+                  setSettingsError("");
+                  setSaveError("");
+                }}
+                disabled={isSaving}
+              >
+                <option value="self">자체입금</option>
+                <option value="company">없음</option>
+              </select>
+            </div>
+
+            {settingsError && <p className="admin-setting-error" role="alert">{settingsError}</p>}
+
+            {adminRole === ADMIN_ROLE.EMPLOYEE && hasPersonalSettingOverrides && !personalSettingsReset && (
+              <div className="admin-setting-reset-row">
+                <p className="admin-setting-muted">
+                  개인 override를 해제하면 회사 기본값을 다시 사용합니다. 기존 상품·제출 값은 변경되지 않습니다.
+                </p>
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="admin-secondary-button"
+                  onClick={() => {
+                    setAlertDialog({
+                      isOpen: true,
+                      title: "개인 설정 해제",
+                      message: "개인 설정 override를 모두 해제하고 회사 기본값을 사용하시겠습니까?",
+                      confirmLabel: "해제",
+                      cancelLabel: "취소",
+                      isLoading: false,
+                      onConfirm: handleResetPersonalSettings,
+                      variant: "danger"
+                    });
+                  }}
+                  disabled={isSaving}
+                >
+                  회사 기본값 다시 사용
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="admin-setting-section">
           <div className="admin-setting-section-header">

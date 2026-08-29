@@ -18,19 +18,26 @@ import AdminTutorialOverlay from "@/components/common/AdminTutorialOverlay";
 import AppAlertDialog from "@/components/common/AppAlertDialog";
 import { AdminTutorialContext } from "@/contexts/AdminTutorialContext";
 import {
+  ADMIN_MENU_ITEMS,
   ADMIN_MENU_NUMBER,
   ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY,
   ADMIN_STORAGE_KEY,
-  getAdminMenuItemByNumber,
+  getAdminScopedStorageKey,
   getAdminMenuItemByPathname
 } from "@/constants/admin";
-import { fetchAdminMenuPermissions, logoutAdmin } from "@/services/adminAuth";
+import { getPermissionCodeForMenuNumber } from "@/constants/adminAccess";
+import { logoutAdmin } from "@/services/adminAuth";
+import {
+  isAdminGatewayConfigured,
+  requestAdminGatewayLogout
+} from "@/services/adminGateway";
 import { useAdminCapabilities } from "@/hooks/useAdminCapabilities";
 import { useAdminTutorial } from "@/hooks/useAdminTutorial";
 import { AdminAccessContext } from "@/contexts/AdminAccessContext";
 import { APP_VERSION } from "@/constants/appVersion";
 import { ADMIN_TUTORIAL_STEPS } from "@/constants/adminTutorial";
 import { emitAdminTutorialAction } from "@/utils/adminTutorialEvents";
+import { resolvePermission } from "@/utils/permissionResolver";
 import { getLocalStorageValue, setLocalStorageValue } from "@/utils/browserStorage";
 import {
   AlertDialog,
@@ -121,16 +128,49 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
   const {
     capabilities,
     adminProfile,
+    role,
+    companyId,
+    menuPermissions,
+    permissionBindings,
+    settings,
     isLoadingCapabilities,
-    capabilitiesErrorMessage
+    capabilitiesErrorMessage,
+    menuErrorMessage: accessMenuErrorMessage
   } = useAdminCapabilities(adminId);
   const location = useLocation();
   const navigate = useNavigate();
-  const [allowedMenus, setAllowedMenus] = useState<MenuItem[]>([]);
-  const [isLoadingMenus, setIsLoadingMenus] = useState(true);
-  const [menuErrorMessage, setMenuErrorMessage] = useState("");
+  const sidebarStorageKey = getAdminScopedStorageKey(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY, adminId);
+  const allowedMenus = useMemo(
+    () => {
+      const normalizedMenuPermissions = Array.isArray(menuPermissions) ? menuPermissions : [];
+      const normalizedBindings = Array.isArray(permissionBindings) ? permissionBindings : [];
+      const hasPermissionBindings = normalizedBindings.some((binding) =>
+        String(binding?.permissionCode ?? binding?.permission_code ?? "").startsWith("menu.")
+      );
+      const principal = { adminId, companyId, role };
+
+      return ADMIN_MENU_ITEMS.filter((menuItem) => {
+        if (!hasPermissionBindings) {
+          return normalizedMenuPermissions.some(
+            (permission: { menu_number?: number; menuNumber?: number }) =>
+              Number(permission.menu_number ?? permission.menuNumber) === menuItem.menuNumber
+          );
+        }
+
+        const permissionCode = getPermissionCodeForMenuNumber(menuItem.menuNumber);
+        return Boolean(permissionCode && resolvePermission(permissionCode, principal, normalizedBindings).allowed);
+      }) as MenuItem[];
+    },
+    [adminId, companyId, menuPermissions, permissionBindings, role]
+  );
+  const isLoadingMenus = isLoadingCapabilities;
+  const menuErrorMessage = accessMenuErrorMessage ?? "";
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
-    () => getLocalStorageValue(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY) === "true"
+    () => {
+      const scopedValue = getLocalStorageValue(sidebarStorageKey);
+      const legacyValue = getLocalStorageValue(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY);
+      return (scopedValue ?? legacyValue) === "true";
+    }
   );
   const [openMenuNumbers, setOpenMenuNumbers] = useState(() =>
     getExpandableMenuNumbersForPath(location.pathname)
@@ -141,45 +181,8 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
   });
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadMenuPermissions = async () => {
-      setIsLoadingMenus(true);
-      setMenuErrorMessage("");
-
-      const { data, error } = await fetchAdminMenuPermissions(adminId);
-
-      if (!isMounted) {
-        return;
-      }
-
-      if (error) {
-        setAllowedMenus([]);
-        setMenuErrorMessage(error.message);
-        setIsLoadingMenus(false);
-        return;
-      }
-
-      const nextAllowedMenus = (data ?? [])
-        .map((permission: { menu_number: number }) =>
-          getAdminMenuItemByNumber(permission.menu_number) as MenuItem | null
-        )
-        .filter((menuItem): menuItem is MenuItem => Boolean(menuItem));
-
-      setAllowedMenus(nextAllowedMenus);
-      setIsLoadingMenus(false);
-    };
-
-    loadMenuPermissions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [adminId]);
-
-  useEffect(() => {
-    setLocalStorageValue(ADMIN_SIDEBAR_COLLAPSED_STORAGE_KEY, String(isSidebarCollapsed));
-  }, [isSidebarCollapsed]);
+    setLocalStorageValue(sidebarStorageKey, String(isSidebarCollapsed));
+  }, [isSidebarCollapsed, sidebarStorageKey]);
 
   useEffect(() => {
     const nextOpenMenuNumbers = getExpandableMenuNumbersForPath(location.pathname);
@@ -233,8 +236,17 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
     setLogoutAlert({ isOpen: true, isLoading: false });
   };
 
-  const handleConfirmLogout = () => {
+  const handleConfirmLogout = async () => {
     setLogoutAlert((previousState) => ({ ...previousState, isLoading: true }));
+
+    if (isAdminGatewayConfigured()) {
+      try {
+        await requestAdminGatewayLogout();
+      } catch {
+        // 로컬 세션/라우팅은 gateway 오류가 있어도 종료해 계정 노출을 막는다.
+      }
+    }
+
     logoutAdmin();
     navigate("/admin/login", { replace: true });
   };
@@ -248,10 +260,28 @@ function AuthenticatedAdminLayout({ adminId }: { adminId: string }) {
       adminId,
       capabilities,
       adminProfile,
+      role,
+      companyId,
+      menuPermissions,
+      permissionBindings,
+      settings,
       isLoadingCapabilities,
-      capabilitiesErrorMessage
+      capabilitiesErrorMessage,
+      menuErrorMessage
     }),
-    [adminId, adminProfile, capabilities, capabilitiesErrorMessage, isLoadingCapabilities]
+    [
+      adminId,
+      adminProfile,
+      capabilities,
+      capabilitiesErrorMessage,
+      companyId,
+      isLoadingCapabilities,
+      menuErrorMessage,
+      menuPermissions,
+      permissionBindings,
+      role,
+      settings
+    ]
   );
 
   if (!isLoadingMenus && !menuErrorMessage && !hasCurrentPathPermission && fallbackMenuPath) {

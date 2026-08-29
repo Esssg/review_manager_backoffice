@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ADMIN_MENU_NUMBER,
+  getAdminScopedStorageKey,
   getAdminMenuItemByNumber,
   getAdminMenuItemByPathname
 } from "../src/constants/admin.ts";
@@ -27,4 +28,15 @@ test("설정·공개 경로는 관리자 메뉴 권한 경계에 포함되지 �
   assert.equal(getAdminMenuItemByPathname("/admin/setting"), null);
   assert.equal(getAdminMenuItemByPathname("/review/84"), null);
   assert.equal(getAdminMenuItemByPathname("/"), null);
+});
+
+test("개인 화면 상태 storage key는 관리자 계정별로 분리된다", () => {
+  assert.equal(
+    getAdminScopedStorageKey("review_manager_export_columns", "employee-1"),
+    "review_manager_export_columns:employee-1"
+  );
+  assert.notEqual(
+    getAdminScopedStorageKey("review_manager_export_columns", "employee-1"),
+    getAdminScopedStorageKey("review_manager_export_columns", "employee-2")
+  );
 });

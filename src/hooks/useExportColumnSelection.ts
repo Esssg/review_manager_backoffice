@@ -1,8 +1,9 @@
 // @ts-nocheck
 
 import { useCallback, useState } from "react";
+import { ADMIN_STORAGE_KEY, getAdminScopedStorageKey } from "@/constants/admin";
 import { EXPORT_COLUMN_PRESET, EXPORT_COLUMN_PRESETS, getPresetColumnKeys } from "@/utils/exportColumns";
-import { readLocalStorageJson, writeLocalStorageJson } from "@/utils/browserStorage";
+import { getLocalStorageValue, readLocalStorageJson, writeLocalStorageJson } from "@/utils/browserStorage";
 
 const DEFAULT_PRESET_KEYS = EXPORT_COLUMN_PRESETS.map((preset) => preset.key);
 const PRODUCT_DATE_COLUMN_KEY = "products.product_date";
@@ -68,7 +69,13 @@ function resolveLegacyPresetColumnKeys(columnKeys, presetKeys, resolvePresetColu
   });
 }
 
-function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetColumnKeys, presetKeys) {
+function readInitialColumnSelection(
+  storageKey,
+  fallbackPreset,
+  resolvePresetColumnKeys,
+  presetKeys,
+  legacyStorageKey = null
+) {
   const fallbackColumnKeys = normalizeProductDateColumnPosition(resolvePresetColumnKeys(fallbackPreset));
 
   if (!storageKey) {
@@ -78,7 +85,17 @@ function readInitialColumnSelection(storageKey, fallbackPreset, resolvePresetCol
     };
   }
 
-  const parsedValue = readLocalStorageJson(storageKey, null);
+  let parsedValue = readLocalStorageJson(storageKey, null);
+
+  // 계정별 key가 처음 도입되는 시점에는 기존 공용 key를 한 번만 복사한다.
+  // 이후 읽기·쓰기는 항상 계정별 key를 사용해 계정 간 상태가 섞이지 않는다.
+  if (parsedValue == null && legacyStorageKey && legacyStorageKey !== storageKey) {
+    parsedValue = readLocalStorageJson(legacyStorageKey, null);
+
+    if (Array.isArray(parsedValue)) {
+      writeLocalStorageJson(storageKey, parsedValue);
+    }
+  }
 
   if (Array.isArray(parsedValue)) {
     const activePreset = resolveActivePreset(parsedValue, presetKeys, resolvePresetColumnKeys);
@@ -133,19 +150,27 @@ export default function useExportColumnSelection({
   getPresetColumnKeysFn = getPresetColumnKeys,
   presetKeys = DEFAULT_PRESET_KEYS
 }: any = {}) {
+  const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
+  const scopedStorageKey = getAdminScopedStorageKey(storageKey, adminId);
   const [initialSelection] = useState(() =>
-    readInitialColumnSelection(storageKey, defaultPreset, getPresetColumnKeysFn, presetKeys)
+    readInitialColumnSelection(
+      scopedStorageKey,
+      defaultPreset,
+      getPresetColumnKeysFn,
+      presetKeys,
+      storageKey
+    )
   );
   const [activePreset, setActivePreset] = useState(initialSelection.activePreset);
   const [selectedColumnKeys, setSelectedColumnKeys] = useState(initialSelection.selectedColumnKeys);
 
   const persistColumnKeys = useCallback(
     (nextColumnKeys) => {
-      if (storageKey) {
-        writeLocalStorageJson(storageKey, nextColumnKeys);
+      if (scopedStorageKey) {
+        writeLocalStorageJson(scopedStorageKey, nextColumnKeys);
       }
     },
-    [storageKey]
+    [scopedStorageKey]
   );
 
   const applyPreset = useCallback(

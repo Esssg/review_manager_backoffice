@@ -8,6 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
 import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
+import { useAdminPermissions } from "@/hooks/useAdminPermission";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
 import { useAppToast } from "@/hooks/useAppToast";
 import { useBackdropDismiss } from "@/hooks/useBackdropDismiss";
 import { applyBulkEditChanges, fetchBulkEditCurrentRows } from "@/services/bulkEdit";
@@ -23,6 +25,7 @@ import {
   buildBulkEditExcelRows,
   formatBulkEditValue,
   hasBulkEditDepositChanges,
+  hasBulkEditDepositorNameChanges,
   parseBulkEditExcelFile
 } from "@/utils/bulkEditExcel";
 import { createEmptyProductOverviewFilters } from "@/utils/productOverviewRows";
@@ -47,7 +50,6 @@ function BulkEditPreviewValue({ value, column }) {
 export default function AdminBulkEditPage() {
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const {
-    capabilities,
     adminProfile,
     includeCompanyData,
     scopePolicy,
@@ -58,6 +60,33 @@ export default function AdminBulkEditPage() {
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
   } = useAdminIncludeCompanyData(adminId);
+  const permissions = useAdminPermissions(
+    [
+      ADMIN_PERMISSION_CODE.PRODUCT_READ,
+      ADMIN_PERMISSION_CODE.SUBMISSION_READ,
+      ADMIN_PERMISSION_CODE.BULK_EDIT_EXECUTE,
+      ADMIN_PERMISSION_CODE.EXPORT_EXECUTE,
+      ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE,
+      ADMIN_PERMISSION_CODE.DEPOSIT_VERIFY,
+      ADMIN_PERMISSION_CODE.DEPOSITOR_NAME_UPDATE
+    ],
+    { legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_BULK_EDIT] }
+  );
+  const canReadProduct = Boolean(permissions[ADMIN_PERMISSION_CODE.PRODUCT_READ]?.allowed);
+  const canReadSubmission = Boolean(permissions[ADMIN_PERMISSION_CODE.SUBMISSION_READ]?.allowed);
+  const isReadPermissionReady = [
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ
+  ].every((permissionCode) => permissions[permissionCode]?.isReady);
+  const canBulkEdit = Boolean(
+    canReadProduct &&
+      canReadSubmission &&
+      permissions[ADMIN_PERMISSION_CODE.BULK_EDIT_EXECUTE]?.allowed &&
+      permissions[ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE]?.allowed
+  );
+  const canExport = Boolean(permissions[ADMIN_PERMISSION_CODE.EXPORT_EXECUTE]?.allowed);
+  const canVerifyDeposit = Boolean(permissions[ADMIN_PERMISSION_CODE.DEPOSIT_VERIFY]?.allowed);
+  const canUpdateDepositorName = Boolean(permissions[ADMIN_PERMISSION_CODE.DEPOSITOR_NAME_UPDATE]?.allowed);
   const [rows, setRows] = useState([]);
   const [filters, setFilters] = useState(createEmptyProductOverviewFilters);
   const [debouncedFilters, setDebouncedFilters] = useState(createEmptyProductOverviewFilters);
@@ -97,7 +126,15 @@ export default function AdminBulkEditPage() {
       setRows([]);
       setPageInfo(createEmptyPageInfo());
 
-      if (isLoadingCapabilities || !isIncludeCompanyDataReady) return;
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady || !isReadPermissionReady) return;
+
+      if (!canReadProduct || !canReadSubmission) {
+        if (isMounted) {
+          setErrorMessage("일괄수정 상품과 제출 조회 권한이 필요합니다.");
+          setIsLoading(false);
+        }
+        return;
+      }
 
       if (capabilitiesErrorMessage) {
         if (isMounted) {
@@ -131,7 +168,20 @@ export default function AdminBulkEditPage() {
     return () => {
       isMounted = false;
     };
-  }, [adminId, adminProfile, capabilitiesErrorMessage, debouncedFilters, includeCompanyData, isIncludeCompanyDataReady, isLoadingCapabilities, reloadKey, scopePolicy]);
+  }, [
+    adminId,
+    adminProfile,
+    canReadProduct,
+    canReadSubmission,
+    capabilitiesErrorMessage,
+    debouncedFilters,
+    includeCompanyData,
+    isIncludeCompanyDataReady,
+    isLoadingCapabilities,
+    isReadPermissionReady,
+    reloadKey,
+    scopePolicy
+  ]);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -179,6 +229,8 @@ export default function AdminBulkEditPage() {
   const modalBackdropDismissProps = useBackdropDismiss(closeModal);
 
   const openModal = () => {
+    if (!canBulkEdit) return;
+
     setUploadResult(null);
     setUploadMessage("");
     setModalStep("upload");
@@ -186,6 +238,8 @@ export default function AdminBulkEditPage() {
   };
 
   const handleExport = async () => {
+    if (!canExport) return;
+
     setIsExporting(true);
     const result = await fetchAllAdminProductOverviewRows(adminId, {
       scopePolicy,
@@ -224,6 +278,11 @@ export default function AdminBulkEditPage() {
   };
 
   const handleFileChange = async (event) => {
+    if (!canBulkEdit) {
+      event.target.value = "";
+      return;
+    }
+
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -249,8 +308,12 @@ export default function AdminBulkEditPage() {
           errors.push(...changeSet.errors);
           changes = changeSet.changes;
 
-          if (hasBulkEditDepositChanges(changes) && !capabilities.canVerifyDeposit) {
+          if (hasBulkEditDepositChanges(changes) && !canVerifyDeposit) {
             errors.push({ rowNumber: null, column: "", message: "입금완료 관련 열을 수정할 권한이 없습니다." });
+          }
+
+          if (hasBulkEditDepositorNameChanges(changes) && !canUpdateDepositorName) {
+            errors.push({ rowNumber: null, column: "", message: "실제입금자명을 수정할 권한이 없습니다." });
           }
         }
       }
@@ -270,10 +333,22 @@ export default function AdminBulkEditPage() {
     }
   };
 
-  const canProceed = Boolean(uploadResult && uploadResult.errors.length === 0 && uploadResult.changes.length > 0);
+  const canProceed = Boolean(
+    canBulkEdit && uploadResult && uploadResult.errors.length === 0 && uploadResult.changes.length > 0
+  );
 
   const handleConfirmApply = async () => {
-    if (!uploadResult || isApplying) return;
+    if (!canBulkEdit || !uploadResult || isApplying) return;
+
+    if (hasBulkEditDepositChanges(uploadResult.changes) && !canVerifyDeposit) {
+      showToast("입금완료 관련 열을 수정할 권한이 없습니다.", "error");
+      return;
+    }
+
+    if (hasBulkEditDepositorNameChanges(uploadResult.changes) && !canUpdateDepositorName) {
+      showToast("실제입금자명을 수정할 권한이 없습니다.", "error");
+      return;
+    }
 
     setIsApplying(true);
     const result = await applyBulkEditChanges(adminId, uploadResult.changes);
@@ -325,8 +400,8 @@ export default function AdminBulkEditPage() {
           <div className="review-receive-section-toolbar product-overview-section-toolbar">
             <div className="review-receive-toolbar-actions product-overview-reset-actions bulk-edit-actions">
               <Button type="button" variant="outline" className="admin-secondary-button" onClick={resetFilters} disabled={!hasActiveFilters}>필터 초기화</Button>
-              <Button type="button" variant="outline" className="admin-secondary-button product-overview-export-button" onClick={handleExport} disabled={isExporting}>{isExporting ? "양식 만드는 중..." : "현재화면으로 양식 다운로드"}</Button>
-              <Button type="button" className="admin-primary-button" onClick={openModal}>일괄수정하기</Button>
+              <Button type="button" variant="outline" className="admin-secondary-button product-overview-export-button" onClick={handleExport} disabled={!canExport || isExporting}>{isExporting ? "양식 만드는 중..." : "현재화면으로 양식 다운로드"}</Button>
+              <Button type="button" className="admin-primary-button" onClick={openModal} disabled={!canBulkEdit}>일괄수정하기</Button>
             </div>
           </div>
           <TableHorizontalScroll scrollTargetRef={tableScrollRef} ariaLabel="일괄수정 목록 표 가로 스크롤" />
@@ -373,7 +448,7 @@ export default function AdminBulkEditPage() {
                     <strong>수정한 Excel 파일을 선택하세요</strong>
                     <span>클릭해서 `.xlsx` 또는 `.xls` 파일을 선택할 수 있습니다.</span>
                     <span className="bulk-edit-file-button">파일 선택</span>
-                    <Input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleFileChange} disabled={isParsing} />
+                    <Input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={handleFileChange} disabled={!canBulkEdit || isParsing} />
                   </label>
                   <aside className="bulk-edit-upload-guide">
                     <h3>업로드 전 확인</h3>
@@ -415,7 +490,7 @@ export default function AdminBulkEditPage() {
             <div className="review-receive-modal-actions">
               {modalStep === "preview" && <Button type="button" className="admin-secondary-button" onClick={() => setModalStep("upload")} disabled={isApplying}>이전</Button>}
               <Button type="button" className="admin-secondary-button" onClick={closeModal} disabled={isParsing || isApplying}>취소</Button>
-              {modalStep === "upload" ? <Button type="button" className="admin-primary-button" onClick={() => setModalStep("preview")} disabled={!canProceed}>다음</Button> : <Button type="button" className="admin-primary-button" onClick={() => setIsConfirmOpen(true)} disabled={isApplying}>{isApplying ? "적용 중..." : "적용하기"}</Button>}
+              {modalStep === "upload" ? <Button type="button" className="admin-primary-button" onClick={() => setModalStep("preview")} disabled={!canProceed}>다음</Button> : <Button type="button" className="admin-primary-button" onClick={() => setIsConfirmOpen(true)} disabled={!canBulkEdit || isApplying}>{isApplying ? "적용 중..." : "적용하기"}</Button>}
             </div>
           </div>
         </div>

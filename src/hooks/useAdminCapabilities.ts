@@ -2,14 +2,20 @@
 
 import { useCallback, useContext, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { getAdminScopePolicy } from "@/constants/adminScope";
+import { ADMIN_SCOPE_POLICY, getAdminScopePolicy } from "@/constants/adminScope";
 import { AdminAccessContext } from "@/contexts/AdminAccessContext";
-import { fetchAdminCapabilities } from "@/services/adminAuth";
+import { fetchAdminAccessBundle } from "@/services/adminAccess";
 import { getFallbackAdminCapabilities } from "@/utils/adminCapabilities";
 
 function useLocalAdminCapabilities(adminId, skipFetch) {
   const [capabilities, setCapabilities] = useState(() => getFallbackAdminCapabilities(adminId));
   const [adminProfile, setAdminProfile] = useState(null);
+  const [role, setRole] = useState(null);
+  const [companyId, setCompanyId] = useState(null);
+  const [menuPermissions, setMenuPermissions] = useState([]);
+  const [permissionBindings, setPermissionBindings] = useState([]);
+  const [settings, setSettings] = useState([]);
+  const [menuErrorMessage, setMenuErrorMessage] = useState("");
   const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(Boolean(adminId));
   const [capabilitiesErrorMessage, setCapabilitiesErrorMessage] = useState("");
 
@@ -26,6 +32,12 @@ function useLocalAdminCapabilities(adminId, skipFetch) {
       if (!adminId) {
         setCapabilities(getFallbackAdminCapabilities(adminId));
         setAdminProfile(null);
+        setRole(null);
+        setCompanyId(null);
+        setMenuPermissions([]);
+        setPermissionBindings([]);
+        setSettings([]);
+        setMenuErrorMessage("");
         setCapabilitiesErrorMessage("로그인 정보가 없습니다. 다시 로그인해주세요.");
         setIsLoadingCapabilities(false);
         return;
@@ -33,16 +45,23 @@ function useLocalAdminCapabilities(adminId, skipFetch) {
 
       setIsLoadingCapabilities(true);
       setCapabilitiesErrorMessage("");
+      setMenuErrorMessage("");
 
-      const { capabilities: nextCapabilities, adminProfile: nextAdminProfile, error } = await fetchAdminCapabilities(adminId);
+      const access = await fetchAdminAccessBundle(adminId);
 
       if (!isMounted) {
         return;
       }
 
-      setCapabilities(nextCapabilities ?? getFallbackAdminCapabilities(adminId));
-      setAdminProfile(nextAdminProfile ?? null);
-      setCapabilitiesErrorMessage(error?.message ?? "");
+      setCapabilities(access.capabilities ?? getFallbackAdminCapabilities(adminId));
+      setAdminProfile(access.adminProfile ?? null);
+      setRole(access.role ?? null);
+      setCompanyId(access.companyId ?? null);
+      setMenuPermissions(Array.isArray(access.menuPermissions) ? access.menuPermissions : []);
+      setPermissionBindings(Array.isArray(access.permissionBindings) ? access.permissionBindings : []);
+      setSettings(Array.isArray(access.settings) ? access.settings : []);
+      setCapabilitiesErrorMessage(access.capabilitiesError?.message ?? "");
+      setMenuErrorMessage(access.menuError?.message ?? "");
       setIsLoadingCapabilities(false);
     };
 
@@ -56,8 +75,14 @@ function useLocalAdminCapabilities(adminId, skipFetch) {
   return {
     capabilities,
     adminProfile,
+    role,
+    companyId,
+    menuPermissions,
+    permissionBindings,
+    settings,
     isLoadingCapabilities,
-    capabilitiesErrorMessage
+    capabilitiesErrorMessage,
+    menuErrorMessage
   };
 }
 
@@ -74,6 +99,9 @@ export function useAdminIncludeCompanyData(adminId) {
   const {
     capabilities,
     adminProfile,
+    role,
+    companyId,
+    permissionBindings,
     isLoadingCapabilities,
     capabilitiesErrorMessage
   } = useAdminCapabilities(adminId);
@@ -103,7 +131,10 @@ export function useAdminIncludeCompanyData(adminId) {
   );
   const companyName = typeof adminProfile?.company === "string" ? adminProfile.company.trim() : "";
   const isCompanyScopeAvailable = Boolean(companyName);
-  const scopeMessage = includeCompanyData
+  const scopePolicy = getAdminScopePolicy(includeCompanyData, role);
+  const scopeMessage = scopePolicy === ADMIN_SCOPE_POLICY.ALL
+    ? "모든 회사의 관리자 데이터를 함께 표시합니다."
+    : includeCompanyData
     ? companyName
       ? `현재 계정과 같은 회사(${companyName}) 데이터를 함께 표시합니다.`
       : "현재 계정에 회사 정보가 없어 내 계정 데이터만 표시합니다."
@@ -112,8 +143,11 @@ export function useAdminIncludeCompanyData(adminId) {
   return {
     capabilities,
     adminProfile,
+    role,
+    companyId,
+    permissionBindings,
     includeCompanyData,
-    scopePolicy: getAdminScopePolicy(includeCompanyData),
+    scopePolicy,
     handleIncludeCompanyDataChange,
     isCompanyScopeAvailable,
     scopeMessage,

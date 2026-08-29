@@ -44,7 +44,8 @@ export default function AdminExportByDatePage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     dateFilter: appliedFilter,
     selectedColumnKeys: columnSelection.selectedColumnKeys
@@ -144,6 +145,7 @@ export default function AdminExportByDatePage() {
         submissionCount={submissionCount}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        canExport={canExport}
         hasNoRows={hasNoSubmissions}
         filenameLabel={downloadLabel}
         emptyHint={`선택한 기간(${appliedRangeSummary})에 맞는 제출 데이터가 없습니다. 일자 기준을 바꾸거나 기간을 넓혀 다시 조회해 보세요.`}

@@ -12,6 +12,7 @@ export default function AdminReviewReceiveProductReviewerBulkModal({
   backdropDismissProps,
   productReviewerBulk,
   isSaving,
+  canSave = true,
   onClose,
   onTextChange,
   onDepositChange,
@@ -216,7 +217,7 @@ export default function AdminReviewReceiveProductReviewerBulkModal({
               type="button"
               className="admin-primary-button"
               onClick={onSave}
-              disabled={isSaving}
+              disabled={isSaving || !canSave}
             >
               {isSaving ? "등록 중..." : "등록하기"}
             </Button>

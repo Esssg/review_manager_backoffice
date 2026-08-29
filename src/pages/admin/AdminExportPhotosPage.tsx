@@ -7,7 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EXPORT_PAGE_CONFIGS } from "@/constants/exportPages";
 import { ADMIN_STORAGE_KEY, getProductDepositGbPartLabels } from "@/constants/admin";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
+import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
+import { useAdminPermission } from "@/hooks/useAdminPermission";
 import { fetchAdminPhotoExportData } from "@/services/exportPhotos";
 import { runWithConcurrency } from "@/utils/asyncPool";
 import { getLocalStorageValue } from "@/utils/browserStorage";
@@ -171,6 +174,9 @@ export default function AdminExportPhotosPage() {
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
   } = useAdminIncludeCompanyData(adminId);
+  const exportPermission = useAdminPermission(ADMIN_PERMISSION_CODE.EXPORT_EXECUTE, {
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_EXPORT]
+  });
   const [exportData, setExportData] = useState({
     products: [],
     submissions: [],
@@ -200,7 +206,7 @@ export default function AdminExportPhotosPage() {
       setIsLoading(true);
       setErrorMessage("");
 
-      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady || !exportPermission.isReady) {
         return;
       }
 
@@ -220,6 +226,19 @@ export default function AdminExportPhotosPage() {
             evidencePhotos: []
           });
           setErrorMessage(capabilitiesErrorMessage);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (!exportPermission.allowed) {
+        if (isMounted) {
+          setExportData({
+            products: [],
+            submissions: [],
+            evidencePhotos: []
+          });
+          setErrorMessage("내보내기 실행 권한이 없습니다.");
           setIsLoading(false);
         }
         return;
@@ -268,6 +287,8 @@ export default function AdminExportPhotosPage() {
     adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
+    exportPermission.allowed,
+    exportPermission.isReady,
     refreshKey,
     scopePolicy
   ]);
@@ -287,7 +308,9 @@ export default function AdminExportPhotosPage() {
       }),
     [exportData.evidencePhotos, exportData.products, exportData.submissions, filteredRows]
   );
-  const scopeMessage = includeCompanyData
+  const scopeMessage = scopePolicy === ADMIN_SCOPE_POLICY.ALL
+    ? "모든 회사의 관리자 상품까지 함께 보여줍니다."
+    : includeCompanyData
     ? scopeInfo.companyName
       ? `현재 계정과 같은 회사(${scopeInfo.companyName}) 소속 관리자 상품까지 함께 보여줍니다.`
       : "현재 계정에 회사 정보가 없어 내 계정 상품만 보여줍니다."
@@ -305,6 +328,10 @@ export default function AdminExportPhotosPage() {
   };
 
   const downloadFilteredPhotos = async () => {
+    if (!exportPermission.allowed) {
+      return;
+    }
+
     if (photoTargets.length === 0) {
       setDownloadState({
         isDownloading: false,
@@ -426,7 +453,7 @@ export default function AdminExportPhotosPage() {
             type="button"
             className="admin-primary-button"
             onClick={downloadFilteredPhotos}
-            disabled={isLoading || downloadState.isDownloading || photoTargets.length === 0}
+            disabled={!exportPermission.allowed || isLoading || downloadState.isDownloading || photoTargets.length === 0}
           >
             {downloadState.isDownloading ? "ZIP 생성 중..." : "필터링된 사진 ZIP 다운로드"}
           </Button>

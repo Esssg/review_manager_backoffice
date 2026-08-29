@@ -19,7 +19,8 @@ export default function AdminExportMyProductsPage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     forcePersonalScope: config.forcePersonalScope,
     selectedColumnKeys: columnSelection.selectedColumnKeys
@@ -44,6 +45,7 @@ export default function AdminExportMyProductsPage() {
         submissionCount={submissionCount}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        canExport={canExport}
         hasNoRows={hasNoSubmissions}
         columnSelection={columnSelection}
       />

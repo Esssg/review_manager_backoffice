@@ -4,6 +4,16 @@ import { supabase } from "@/lib/supabase";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { deleteProductsWithRelatedData } from "@/services/adminDeletion";
 import { fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import { includesAdminScopeCompanyData } from "@/constants/adminScope";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray,
+  getGatewayPageInfo,
+  omitManagerIdentity
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE =
@@ -115,7 +125,27 @@ function buildMissingProductColumnError(error) {
   return new Error("products.product_date 컬럼이 아직 없습니다. product_date 추가 마이그레이션을 먼저 적용해주세요.");
 }
 
+function omitProductBundleRelation(payload = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+
+  const { bundle_id: _bundleId, bundleId: _camelCaseBundleId, ...editablePayload } = payload;
+  return editablePayload;
+}
+
 export async function fetchAdminProducts(adminId) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCTS_LIST);
+    const data = getGatewayArray(result.data, ["products", "rows"]);
+
+    if (data) {
+      data.sort((left, right) => Number(right.id) - Number(left.id));
+    }
+
+    return { data, error: result.error };
+  }
+
   const result = await fetchAllRows(() =>
     supabase
       .from("products")
@@ -131,6 +161,42 @@ export async function fetchAdminProducts(adminId) {
 }
 
 export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const pageSize = Math.max(1, Math.min(Number(options.pageSize ?? REVIEW_RECEIVE_SUMMARY_PAGE_SIZE), 200));
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_LIST, {
+      p_include_company_data:
+        options.includeCompanyData == null
+          ? includesAdminScopeCompanyData(options.scopePolicy)
+          : Boolean(options.includeCompanyData),
+      p_view_mode: options.viewMode ?? "all",
+      p_filters: options.filters ?? {},
+      p_page_size: pageSize,
+      p_cursor_product_date: options.cursor?.productDate ?? null,
+      p_cursor_product_id: options.cursor?.productId ?? null
+    });
+    const gatewayRows = getGatewayArray(result.data, ["rows", "products"]);
+    const pageInfo = getGatewayPageInfo(result.data, pageSize);
+    const hasMore = Boolean(pageInfo.hasMore || gatewayRows.length > pageSize);
+    const pageRows = gatewayRows.length > pageSize ? gatewayRows.slice(0, pageSize) : gatewayRows;
+    const normalizedRows = pageRows.map(normalizeReviewReceiveSummaryRow);
+    const nextCursor = pageInfo.nextCursor ?? (hasMore ? getReviewReceiveSummaryCursor(normalizedRows.at(-1)) : null);
+    const scope = {
+      ...buildGatewayScope(adminId, options),
+      ...(result.data?.scope && typeof result.data.scope === "object" ? result.data.scope : {})
+    };
+
+    return {
+      data: result.error ? null : normalizedRows,
+      error: result.error,
+      scope,
+      pageInfo: {
+        hasMore: Boolean(hasMore && nextCursor),
+        nextCursor,
+        pageSize
+      }
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {
@@ -188,6 +254,18 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
 }
 
 export async function createAdminReviewReceiveProduct(payload) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PRODUCT_CREATE, {
+      p_payload: omitManagerIdentity(payload)
+    });
+    const data = result.data?.product ?? result.data?.data ?? result.data;
+
+    return {
+      data: data ?? null,
+      error: buildMissingProductColumnError(result.error)
+    };
+  }
+
   const result = await supabase.from("products").insert(payload).select(ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT).single();
 
   if (result.error || !result.data || result.data.bundle_id != null) {
@@ -211,6 +289,22 @@ export async function createAdminReviewReceiveProduct(payload) {
 }
 
 export async function updateAdminReviewReceiveProduct(productId, adminId, payload, options = {}) {
+  const updatePayload = omitProductBundleRelation(omitManagerIdentity(payload));
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PRODUCT_UPDATE, {
+      p_product_id: Number(productId),
+      p_payload: updatePayload
+    });
+    const data = result.data?.product ?? result.data?.data ?? result.data;
+
+    return {
+      data: data ?? null,
+      error: buildMissingProductColumnError(result.error),
+      scope: buildGatewayScope(adminId, options)
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {
@@ -231,7 +325,7 @@ export async function updateAdminReviewReceiveProduct(productId, adminId, payloa
 
   const result = await supabase
     .from("products")
-    .update(payload)
+    .update(updatePayload)
     .eq("id", productId)
     .in("manager_id", scope.managerIds)
     .select(ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT)
@@ -245,6 +339,18 @@ export async function updateAdminReviewReceiveProduct(productId, adminId, payloa
 }
 
 export async function deleteAdminReviewReceiveProduct(productId, adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PRODUCT_DELETE, {
+      p_product_id: Number(productId)
+    });
+
+    return {
+      ...(result.data && typeof result.data === "object" ? result.data : { data: result.data ?? [] }),
+      error: result.error,
+      scope: buildGatewayScope(adminId, options)
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {
@@ -300,6 +406,18 @@ export async function deleteAdminReviewReceiveProduct(productId, adminId, option
 }
 
 export async function deleteAdminReviewReceiveProductBundle(bundleId, adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PRODUCT_BUNDLE_DELETE, {
+      p_bundle_id: Number(bundleId)
+    });
+
+    return {
+      ...(result.data && typeof result.data === "object" ? result.data : { data: result.data ?? [] }),
+      error: result.error,
+      scope: buildGatewayScope(adminId, options)
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {

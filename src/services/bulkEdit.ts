@@ -4,6 +4,14 @@ import { supabase } from "@/lib/supabase";
 import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray,
+  omitClientIdentity
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const BULK_EDIT_SUBMISSION_SELECT =
   "id,product_id,assign_name,order_number,buyer_name,recipient_name,purchase_account,contact,address,bank_name,bank_account,account_holder,amount,review_fee,is_review_verified,is_deposit_verified,deposited_at,actual_depositor_name";
@@ -11,6 +19,28 @@ const BULK_EDIT_APPLY_RPC = "apply_admin_bulk_submission_updates";
 
 export async function fetchBulkEditCurrentRows(adminId, submissionIds, options = {}) {
   const uniqueSubmissionIds = Array.from(new Set((submissionIds ?? []).map(Number).filter(Number.isSafeInteger)));
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.BULK_EDIT_ROWS, {
+      p_submission_ids: uniqueSubmissionIds
+    });
+    const rows = getGatewayArray(result.data, ["rows", "submissions"]);
+
+    return {
+      data: result.error
+        ? []
+        : rows.map((submission) => ({
+            ...submission,
+            submission_id: Number(submission.submission_id ?? submission.id)
+          })),
+      error: result.error,
+      scope: {
+        ...buildGatewayScope(adminId, { ...options, scopePolicy: ADMIN_SCOPE_POLICY.BULK_EDIT }),
+        ...(result.data?.scope && typeof result.data.scope === "object" ? result.data.scope : {})
+      }
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, {
     ...options,
     scopePolicy: ADMIN_SCOPE_POLICY.BULK_EDIT
@@ -56,8 +86,19 @@ export async function fetchBulkEditCurrentRows(adminId, submissionIds, options =
 export async function applyBulkEditChanges(adminId, changes) {
   const updates = (changes ?? []).map((change) => ({
     submission_id: change.submissionId,
-    ...change.payload
+    ...omitClientIdentity(change.payload)
   }));
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.BULK_EDIT_APPLY, {
+      p_updates: updates
+    });
+
+    return {
+      data: result.error ? [] : getGatewayArray(result.data, ["rows", "submissions", "updated"]),
+      error: result.error
+    };
+  }
 
   const { data, error } = await supabase.rpc(BULK_EDIT_APPLY_RPC, {
     p_admin_id: adminId,

@@ -1,3 +1,5 @@
+plans.md
+
 # Dependencies
 node_modules/
 
@@ -56,3 +58,9 @@ supabase/migrations
 !supabase/migrations/20260627183058_optimize_product_overview_rows_rpc.sql
 !supabase/migrations/20260814124722_create_admin_tutorial_progress.sql
 !supabase/migrations/20260818143000_add_review_receive_photo_sync_rpc.sql
+!supabase/migrations/20260828190000_add_normalized_admin_access_control.sql
+!supabase/migrations/20260829120000_add_admin_gateway_data_rpcs.sql
+!supabase/migrations/20260829150000_backfill_admin_resource_permission_bindings.sql
+!supabase/migrations/20260829180000_optimize_admin_gateway_read_rpcs.sql
+!supabase/migrations/20260829200000_optimize_admin_gateway_export_read_rpcs.sql
+!supabase/migrations/20260829220000_fix_admin_review_receive_product_bundle_contract.sql

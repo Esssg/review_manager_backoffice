@@ -59,14 +59,14 @@ function formatCellValue(value, type) {
   return String(value);
 }
 
-function renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly) {
+function renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly, canReadPhotos) {
   const rowPhotos = Array.isArray(row.review_photos) ? row.review_photos : [];
 
   if (rowPhotos.length === 0) {
     return <span>제출 전</span>;
   }
 
-  if (isReadOnly) {
+  if (isReadOnly || !canReadPhotos) {
     return <span>제출 완료</span>;
   }
 
@@ -96,9 +96,9 @@ function renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly) {
   );
 }
 
-function renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly = false) {
+function renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly = false, canReadPhotos = true) {
   if (column.type === "photo") {
-    return renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly);
+    return renderOverviewPhotoCell(row, onOpenPhotoViewer, isReadOnly, canReadPhotos);
   }
 
   if (column.key === "product_link") {
@@ -113,6 +113,7 @@ const ProductOverviewTableRow = memo(function ProductOverviewTableRow({
   isSelected,
   showSelection,
   isReadOnly,
+  canReadPhotos,
   onOpenPhotoViewer = NOOP,
   onToggleRowSelection
 }: {
@@ -148,7 +149,7 @@ const ProductOverviewTableRow = memo(function ProductOverviewTableRow({
           key={`${row.submission_id}-${column.key}`}
           className={column.type === "photo" ? "product-overview-photo-cell" : ""}
         >
-          {renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly)}
+          {renderOverviewCell(row, column, onOpenPhotoViewer, isReadOnly, canReadPhotos)}
         </TableCell>
       ))}
     </TableRow>
@@ -166,6 +167,7 @@ export function ProductOverviewTable({
   onToggleAllSelection = NOOP,
   showSelection = true,
   isReadOnly = false,
+  canReadPhotos = true,
   isAllMatchingSelected = false,
   isAllMatchingSelectionActive = false,
   loadMoreRef = null,
@@ -260,6 +262,7 @@ export function ProductOverviewTable({
                 isSelected={selectedSubmissionIds.has(row.submission_id)}
                 showSelection={showSelection}
                 isReadOnly={isReadOnly}
+                canReadPhotos={canReadPhotos}
                 onOpenPhotoViewer={onOpenPhotoViewer}
                 onToggleRowSelection={onToggleRowSelection}
               />

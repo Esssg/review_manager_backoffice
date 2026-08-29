@@ -115,14 +115,16 @@ function getProductIdentity(cells, currentYear, currentProductForm = null) {
   };
 }
 
-function buildProductFormFromCells(cells, identity) {
+function buildProductFormFromCells(cells, identity, options = {}) {
   const productDate = identity.productDate;
   const companyName = identity.companyName;
   const productName = identity.productName;
   const optionName = identity.optionName;
   const reviewType = identity.reviewType;
   const plannedDepositorSourceName = normalizeCell(cells[18]) || companyName;
-  const plannedDepositorName = formatPlannedDepositorName(productDate, plannedDepositorSourceName);
+  const plannedDepositorName = formatPlannedDepositorName(productDate, plannedDepositorSourceName, {
+    companyNameTrimLength: options.companyNameTrimLength
+  });
   const { description, productLink } = normalizeProductDescriptionAndLink(cells[2]);
 
   return {
@@ -205,7 +207,7 @@ export function parseProductReviewerBulkInput(rawText, options = {}) {
       currentGroup = {
         clientId: `product-group-${productGroups.length + 1}`,
         identityKey: identity.key,
-        productForm: buildProductFormFromCells(cells, identity),
+        productForm: buildProductFormFromCells(cells, identity, options),
         reviewers: []
       };
       productGroups.push(currentGroup);

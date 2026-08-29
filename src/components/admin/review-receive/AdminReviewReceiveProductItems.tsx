@@ -18,7 +18,11 @@ export default function AdminReviewReceiveProductItems({
   reviewCompletedRows,
   filteredReviewCompletedRows,
   fullyCompletedRows,
-  filteredFullyCompletedRows
+  filteredFullyCompletedRows,
+  canCreateProduct = true,
+  canUpdateProduct = true,
+  canDeleteProduct = true,
+  canCreateSubmission = true
 }) {
   return (
     <section className="dashboard-panel review-receive-bundle-panel" aria-label="리뷰받기 품목 목록">
@@ -28,10 +32,10 @@ export default function AdminReviewReceiveProductItems({
           <p>같은 bundle_id를 가진 products row를 품목별로 접거나 펼쳐 관리합니다.</p>
         </div>
         <div className="review-receive-product-item-actions">
-          <Button type="button" className="admin-secondary-button" onClick={onOpenProductReviewerBulkModal}>
+          <Button type="button" className="admin-secondary-button" onClick={onOpenProductReviewerBulkModal} disabled={(!canCreateProduct && !canUpdateProduct) || !canCreateSubmission}>
             상품/리뷰어 일괄 입력
           </Button>
-          <Button type="button" className="admin-primary-button" onClick={onOpenCreateProductItemModal}>
+          <Button type="button" className="admin-primary-button" onClick={onOpenCreateProductItemModal} disabled={!canCreateProduct && !canUpdateProduct}>
             품목 추가
           </Button>
         </div>
@@ -41,7 +45,7 @@ export default function AdminReviewReceiveProductItems({
         {visibleBundleProducts.length === 0 ? (
           <div className="review-receive-empty-product-items">
             <p>등록된 품목이 없습니다.</p>
-            <Button type="button" className="admin-primary-button" onClick={onOpenCreateProductItemModal}>
+            <Button type="button" className="admin-primary-button" onClick={onOpenCreateProductItemModal} disabled={!canCreateProduct && !canUpdateProduct}>
               첫 품목 추가
             </Button>
           </div>
@@ -58,14 +62,14 @@ export default function AdminReviewReceiveProductItems({
                   <p>{`${itemRows.length}개 제출 데이터 / 상품 ID ${item.id}`}</p>
                 </div>
                 <div className="review-receive-product-item-actions">
-                  <Button type="button" className="admin-secondary-button" onClick={() => onOpenEditProductItemModal(item)}>
+                  <Button type="button" className="admin-secondary-button" onClick={() => onOpenEditProductItemModal(item)} disabled={!canUpdateProduct}>
                     정보 입력/수정
                   </Button>
                   <Button
                     type="button"
                     className="admin-danger-button"
                     onClick={() => onOpenDeleteProductItemDialog(item)}
-                    disabled={visibleBundleProducts.length <= 1}
+                    disabled={visibleBundleProducts.length <= 1 || !canDeleteProduct}
                   >
                     품목 삭제
                   </Button>
@@ -118,7 +122,7 @@ export default function AdminReviewReceiveProductItems({
                 </div>
 
                 <div className="review-receive-product-item-row-actions">
-                  <Button type="button" className="admin-primary-button" onClick={onAddRow}>
+                  <Button type="button" className="admin-primary-button" onClick={onAddRow} disabled={!canCreateSubmission}>
                     행 추가
                   </Button>
                 </div>

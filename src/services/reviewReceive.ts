@@ -5,6 +5,14 @@ import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { deleteSubmissionsWithEvidencePhotos } from "@/services/adminDeletion";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray,
+  omitClientIdentity
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const REVIEW_RECEIVE_PRODUCT_SELECT =
   "id,title,product_name,description,product_link,company_name,option_name,review_type,planned_depositor_name,manager_id,product_date,created_at,bundle_id";
@@ -51,6 +59,36 @@ async function fetchBundleProducts(product, managerIds) {
 }
 
 export async function fetchReviewReceiveDetail(productId, adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_DETAIL, {
+      p_product_id: Number(productId)
+    });
+    const gatewayData = result.data ?? {};
+    const product = gatewayData.product ?? gatewayData.productResult?.data ?? (gatewayData.id ? gatewayData : null);
+    const products = getGatewayArray(gatewayData, ["products", "bundleProducts", "bundle_products"]);
+    const submissions = getGatewayArray(gatewayData, ["submissions", "rows"]);
+    const scope = {
+      ...buildGatewayScope(adminId, options),
+      ...(gatewayData.scope && typeof gatewayData.scope === "object" ? gatewayData.scope : {})
+    };
+
+    return {
+      scope,
+      productResult: {
+        data: result.error ? null : product,
+        error: result.error
+      },
+      productsResult: {
+        data: result.error ? [] : products,
+        error: result.error
+      },
+      submissionsResult: {
+        data: result.error ? [] : submissions,
+        error: result.error
+      }
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, {
     ...options,
     scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL
@@ -143,12 +181,36 @@ export async function fetchReviewReceiveDetail(productId, adminId, options = {})
 }
 
 export async function updateReviewReceiveSubmissionStatus(submissionId, updates) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_SUBMISSION_STATUS, {
+      p_submission_id: Number(submissionId),
+      p_updates: omitClientIdentity(updates)
+    });
+
+    return {
+      data: result.data ?? null,
+      error: result.error
+    };
+  }
+
   return supabase.from("submissions").update(updates).eq("id", submissionId);
 }
 
 export async function fetchReviewReceiveEvidencePhotos(submissionIds) {
   if (submissionIds.length === 0) {
     return { data: [], error: null };
+  }
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PHOTOS, {
+      p_submission_ids: submissionIds.map(Number).filter(Number.isSafeInteger),
+      p_photo_type: "review"
+    });
+
+    return {
+      data: result.error ? [] : getGatewayArray(result.data, ["photos", "evidencePhotos", "evidence_photos"]),
+      error: result.error
+    };
   }
 
   return fetchAllRowsInChunks(submissionIds, (submissionIdChunk) =>
@@ -161,13 +223,54 @@ export async function fetchReviewReceiveEvidencePhotos(submissionIds) {
 }
 
 export async function createReviewReceiveSubmission(payload) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_SUBMISSION_CREATE, {
+      p_payload: omitClientIdentity(payload)
+    });
+    const data = result.data?.submission ?? result.data?.data ?? result.data;
+
+    return {
+      data: result.error ? null : data,
+      error: result.error
+    };
+  }
+
   return supabase.from("submissions").insert(payload).select(REVIEW_RECEIVE_SUBMISSIONS_SELECT).single();
 }
 
 export async function updateReviewReceiveSubmission(submissionId, payload) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_SUBMISSION_UPDATE, {
+      p_submission_id: Number(submissionId),
+      p_payload: omitClientIdentity(payload)
+    });
+    const data = result.data?.submission ?? result.data?.data ?? result.data;
+
+    return {
+      data: result.error ? null : data,
+      error: result.error
+    };
+  }
+
   return supabase.from("submissions").update(payload).eq("id", submissionId).select(REVIEW_RECEIVE_SUBMISSIONS_SELECT).single();
 }
 
 export async function deleteReviewReceiveSubmission(submissionId) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_SUBMISSION_DELETE, {
+      p_submission_id: Number(submissionId)
+    });
+    const deletionResult = result.data && typeof result.data === "object" ? result.data : {};
+
+    return {
+      ...deletionResult,
+      data: Array.isArray(result.data) ? result.data : deletionResult.data ?? [],
+      error: result.error,
+      partial: Boolean(deletionResult.partial),
+      deletedEvidenceSubmissionIds: deletionResult.deletedEvidenceSubmissionIds ?? [],
+      deletedSubmissionIds: deletionResult.deletedSubmissionIds ?? []
+    };
+  }
+
   return deleteSubmissionsWithEvidencePhotos([submissionId]);
 }

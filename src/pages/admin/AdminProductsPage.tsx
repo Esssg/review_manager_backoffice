@@ -3,12 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
+import { useAdminPermission } from "@/hooks/useAdminPermission";
 import { fetchAdminProducts } from "@/services/adminProducts";
 import { getLocalStorageValue } from "@/utils/browserStorage";
 
 export default function AdminProductsPage() {
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
   const navigate = useNavigate();
+  const productReadPermission = useAdminPermission(ADMIN_PERMISSION_CODE.PRODUCT_READ, {
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_PRODUCT]
+  });
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -17,6 +22,17 @@ export default function AdminProductsPage() {
     const loadProducts = async () => {
       setIsLoading(true);
       setErrorMessage("");
+
+      if (!productReadPermission.isReady) {
+        return;
+      }
+
+      if (!productReadPermission.allowed) {
+        setProducts([]);
+        setErrorMessage("상품 조회 권한이 없습니다.");
+        setIsLoading(false);
+        return;
+      }
 
       const { data, error } = await fetchAdminProducts(adminId);
 
@@ -30,7 +46,7 @@ export default function AdminProductsPage() {
     };
 
     loadProducts();
-  }, [adminId]);
+  }, [adminId, productReadPermission.allowed, productReadPermission.isReady]);
 
   return (
     <>

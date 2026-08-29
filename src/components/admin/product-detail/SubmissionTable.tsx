@@ -16,7 +16,10 @@ export default function SubmissionTable({
   rows,
   onDeleteSubmission,
   onOpenPhotoViewer,
-  onVerifyChange
+  onVerifyChange,
+  canDelete = true,
+  canReadPhotos = true,
+  canVerify = true
 }) {
   return (
     <Table className="submission-table">
@@ -73,6 +76,7 @@ export default function SubmissionTable({
                             size="icon-sm"
                             className="photo-thumb-button"
                             onClick={() => onOpenPhotoViewer(rowPhotos, index)}
+                            disabled={!canReadPhotos}
                           >
                             <img src={url} alt={`증빙 이미지 ${index + 1}`} className="photo-thumb-image" />
                           </Button>
@@ -85,10 +89,11 @@ export default function SubmissionTable({
                   <div className="submission-actions">
                     <Checkbox
                       checked={Boolean(isDone)}
+                      disabled={!canVerify}
                       onCheckedChange={(checked) => onVerifyChange(row.id, checked === true)}
                       aria-label={`${row.id} 완료 여부`}
                     />
-                    <Button type="button" variant="destructive" size="sm" className="admin-danger-button" onClick={() => onDeleteSubmission(row.id)}>
+                    <Button type="button" variant="destructive" size="sm" className="admin-danger-button" onClick={() => onDeleteSubmission(row.id)} disabled={!canDelete}>
                       삭제
                     </Button>
                   </div>

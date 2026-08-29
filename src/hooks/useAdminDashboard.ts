@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
+import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
 import { fetchAdminDashboardData } from "@/services/dashboardMetrics";
 import { buildDashboardMetrics } from "@/utils/dashboardMetrics";
@@ -138,7 +139,9 @@ export default function useAdminDashboard() {
     setRefreshKey((prev) => prev + 1);
   }, []);
 
-  const scopeMessage = includeCompanyData
+  const scopeMessage = scopePolicy === ADMIN_SCOPE_POLICY.ALL
+    ? "모든 회사의 관리자 데이터를 함께 표시합니다."
+    : includeCompanyData
     ? scopeInfo.companyName
       ? `현재 계정과 같은 회사(${scopeInfo.companyName}) 소속 관리자 데이터까지 함께 표시합니다.`
       : "현재 계정에 회사 정보가 없어 내 계정 데이터만 표시합니다."

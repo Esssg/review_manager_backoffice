@@ -8,7 +8,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 
-export default function ApplicationsTable({ adminId, product, rows, onConfirmChange }) {
+export default function ApplicationsTable({ adminId, product, rows, onConfirmChange, canConfirm = true, requireManagerMatch = true }) {
   return (
     <div className="applications-table-wrap">
       <Table className="applications-table">
@@ -32,7 +32,7 @@ export default function ApplicationsTable({ adminId, product, rows, onConfirmCha
                 <TableCell>
                   <Checkbox
                     checked={Boolean(row.is_confirmed)}
-                    disabled={product?.manager_id !== adminId}
+                    disabled={!canConfirm || (requireManagerMatch && product?.manager_id !== adminId)}
                     onCheckedChange={(checked) => onConfirmChange(row.id, checked === true)}
                     aria-label={`${row.applicant_name || "신청자"} 확정 여부`}
                   />

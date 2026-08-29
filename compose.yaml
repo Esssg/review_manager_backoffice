@@ -5,9 +5,11 @@ services:
       args:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?VITE_SUPABASE_URL is required}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?VITE_SUPABASE_ANON_KEY is required}
+        VITE_ADMIN_GATEWAY_URL: ${VITE_ADMIN_GATEWAY_URL:-}
+        VITE_ADMIN_GATEWAY_ENABLED: ${VITE_ADMIN_GATEWAY_ENABLED:-false}
+        VITE_ADMIN_GATEWAY_READY: ${VITE_ADMIN_GATEWAY_READY:-false}
     image: review-manager-backoffice:local
     container_name: review-manager-backoffice
     ports:
       - "${APP_PORT:-8080}:80"
     restart: unless-stopped
-

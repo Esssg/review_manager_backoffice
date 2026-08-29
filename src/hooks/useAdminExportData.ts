@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
+import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
+import { useAdminPermission } from "@/hooks/useAdminPermission";
 import { fetchAdminExportData } from "@/services/exportData";
 import { buildSubmissionExportRows } from "@/utils/exportColumns";
 import { getLocalStorageValue } from "@/utils/browserStorage";
@@ -26,6 +29,9 @@ export default function useAdminExportData(options = {}) {
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
   } = useAdminIncludeCompanyData(adminId);
+  const exportPermission = useAdminPermission(ADMIN_PERMISSION_CODE.EXPORT_EXECUTE, {
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_EXPORT]
+  });
   const [exportData, setExportData] = useState({
     products: [],
     submissions: [],
@@ -48,7 +54,7 @@ export default function useAdminExportData(options = {}) {
       setIsLoading(true);
       setErrorMessage("");
 
-      if (isLoadingCapabilities || !isIncludeCompanyDataReady) {
+      if (isLoadingCapabilities || !isIncludeCompanyDataReady || !exportPermission.isReady) {
         return;
       }
 
@@ -69,6 +75,20 @@ export default function useAdminExportData(options = {}) {
             applications: []
           });
           setErrorMessage(capabilitiesErrorMessage);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      if (!exportPermission.allowed) {
+        if (isMounted) {
+          setExportData({
+            products: [],
+            submissions: [],
+            evidencePhotos: [],
+            applications: []
+          });
+          setErrorMessage("내보내기 실행 권한이 없습니다.");
           setIsLoading(false);
         }
         return;
@@ -131,6 +151,8 @@ export default function useAdminExportData(options = {}) {
     adminProfile,
     isIncludeCompanyDataReady,
     isLoadingCapabilities,
+    exportPermission.allowed,
+    exportPermission.isReady,
     productId,
     refreshKey,
     scopePolicy
@@ -155,6 +177,8 @@ export default function useAdminExportData(options = {}) {
   const submissionCount = exportData.submissions.length;
   const scopeMessage = forcePersonalScope
     ? "현재 로그인한 계정의 데이터만 내보냅니다."
+    : scopePolicy === ADMIN_SCOPE_POLICY.ALL
+      ? "모든 회사의 데이터를 함께 내보냅니다."
     : includeCompanyData
       ? scopeInfo.companyName
         ? `현재 계정과 같은 회사(${scopeInfo.companyName}) 소속 관리자 데이터까지 함께 내보냅니다.`
@@ -175,6 +199,7 @@ export default function useAdminExportData(options = {}) {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport: exportPermission.allowed
   };
 }

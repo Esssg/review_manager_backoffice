@@ -3,6 +3,13 @@
 import { supabase } from "@/lib/supabase";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { compareByCreatedAtThenId, fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const PHOTO_EXPORT_PRODUCTS_SELECT =
   "id,manager_id,product_date,title,description,product_link,product_name,company_name,option_name,review_type,planned_depositor_name,deposit_GB,created_at";
@@ -50,6 +57,33 @@ async function fetchEvidencePhotos(submissionIds) {
 }
 
 export async function fetchAdminPhotoExportData(adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.EXPORT_PHOTOS_READ, {
+      p_include_company_data: options.includeCompanyData == null
+        ? options.scopePolicy === "company" || options.scopePolicy === "all"
+        : Boolean(options.includeCompanyData),
+      p_filters: options.filters ?? {},
+      p_product_id: options.productId == null ? null : Number(options.productId)
+    });
+    const gatewayData = result.data ?? {};
+    const scope = {
+      ...buildGatewayScope(adminId, options),
+      ...(gatewayData.scope && typeof gatewayData.scope === "object" ? gatewayData.scope : {})
+    };
+
+    if (result.error) {
+      return buildEmptyPhotoExportResult(scope, result.error);
+    }
+
+    return {
+      scope,
+      products: getGatewayArray(gatewayData, ["products"]),
+      submissions: getGatewayArray(gatewayData, ["submissions"]),
+      evidencePhotos: getGatewayArray(gatewayData, ["evidencePhotos", "evidence_photos"]),
+      error: null
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error || scope.managerIds.length === 0) {

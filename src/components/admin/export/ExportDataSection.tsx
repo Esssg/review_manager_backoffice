@@ -14,6 +14,7 @@ export default function ExportDataSection({
   errorMessage = "",
   hasNoRows = undefined,
   disabled = false,
+  canExport = true,
   emptyHint = undefined,
   filenameLabel = config.filenameLabel,
   sheetName = config.sheetName,
@@ -26,6 +27,7 @@ export default function ExportDataSection({
   const resolvedHasNoRows =
     hasNoRows ?? (!isLoading && !errorMessage && submissionCount === 0);
   const resolvedEmptyHint = emptyHint ?? config.emptyHint;
+  const exportDisabled = disabled || !canExport;
 
   return (
     <>
@@ -41,7 +43,10 @@ export default function ExportDataSection({
           filename={buildExportFilename(filenameLabel)}
           sheetName={sheetName}
           rows={exportRows}
-          disabled={isColumnEmpty || disabled}
+          disabled={isColumnEmpty || exportDisabled}
+          disabledMessage={
+            !canExport ? "내보내기 실행 권한이 없습니다." : "다운로드할 컬럼을 1개 이상 선택해주세요."
+          }
           isLoading={isLoading}
           emptyMessage={emptyMessage}
         />

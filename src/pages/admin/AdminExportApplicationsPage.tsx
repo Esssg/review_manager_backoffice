@@ -47,7 +47,8 @@ export default function AdminExportApplicationsPage() {
     lastUpdatedAt,
     refreshExportData,
     isLoading,
-    errorMessage
+    errorMessage,
+    canExport
   } = useAdminExportData({
     includeApplications: true
   });
@@ -125,6 +126,7 @@ export default function AdminExportApplicationsPage() {
         ]}
         isLoading={isLoading}
         errorMessage={errorMessage}
+        canExport={canExport}
         hasNoRows={hasNoRows}
         emptyHint="선택한 신청 상태에 맞는 명단이 없습니다."
         columns={APPLICATION_EXPORT_COLUMNS}

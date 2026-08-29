@@ -14,6 +14,15 @@ test("사용자 토글은 개인/회사 scope policy로 변환된다", () => {
   assert.equal(includesAdminScopeCompanyData(ADMIN_SCOPE_POLICY.COMPANY), true);
 });
 
+test("developer가 회사 범위를 켜면 전체 회사 scope를 사용한다", () => {
+  assert.equal(getAdminScopePolicy(true, "developer"), ADMIN_SCOPE_POLICY.ALL);
+  assert.equal(includesAdminScopeCompanyData(ADMIN_SCOPE_POLICY.ALL), true);
+  assert.equal(
+    resolveAdminScopePolicy({ includeCompanyData: true, role: "developer" }),
+    ADMIN_SCOPE_POLICY.ALL
+  );
+});
+
 test("고정 feature policy는 토글 값보다 우선해 현재 회사 범위를 유지한다", () => {
   assert.equal(
     resolveAdminScopePolicy({ scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL, includeCompanyData: false }),

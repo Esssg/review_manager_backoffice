@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
+import { useAdminPermissions } from "@/hooks/useAdminPermission";
 import { useAppToast } from "@/hooks/useAppToast";
 import { uploadFileUploadData } from "@/services/fileUpload";
 import { buildUploadableFileUploadResult } from "@/utils/fileUploadParser";
@@ -136,6 +138,24 @@ export default function AdminFileUploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false });
   const { showToast } = useAppToast();
+  const permissions = useAdminPermissions(
+    [
+      ADMIN_PERMISSION_CODE.PRODUCT_CREATE,
+      ADMIN_PERMISSION_CODE.SUBMISSION_CREATE,
+      ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE
+    ],
+    { legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_FILE_UPLOAD] }
+  );
+  const canApplyFileUpload = Boolean(
+    permissions[ADMIN_PERMISSION_CODE.PRODUCT_CREATE]?.allowed &&
+      permissions[ADMIN_PERMISSION_CODE.SUBMISSION_CREATE]?.allowed &&
+      permissions[ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE]?.allowed
+  );
+  const isFileUploadPermissionReady = [
+    ADMIN_PERMISSION_CODE.PRODUCT_CREATE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_CREATE,
+    ADMIN_PERMISSION_CODE.SUBMISSION_UPDATE
+  ].every((permissionCode) => permissions[permissionCode]?.isReady);
   const productTitleByKey = useMemo(() => getProductTitleByKey(parseResult?.products ?? []), [parseResult]);
   const rowDataByNumber = useMemo(() => getRowDataByNumber(parseResult), [parseResult]);
   const uploadableParseResult = useMemo(
@@ -147,7 +167,9 @@ export default function AdminFileUploadPage() {
     [uploadableParseResult]
   );
   const previewRows = useMemo(() => (uploadableParseResult?.submissions ?? []).slice(0, PREVIEW_LIMIT), [uploadableParseResult]);
-  const canPrepareUpload = Boolean(uploadableParseResult?.summary.submissionCount > 0 && !isUploading);
+  const canPrepareUpload = Boolean(
+    canApplyFileUpload && uploadableParseResult?.summary.submissionCount > 0 && !isUploading
+  );
 
   const resetFileState = () => {
     setSelectedFileName("");
@@ -218,7 +240,7 @@ export default function AdminFileUploadPage() {
   };
 
   const handlePrepareClick = () => {
-    if (!canPrepareUpload) {
+    if (!canPrepareUpload || !canApplyFileUpload) {
       return;
     }
 
@@ -226,7 +248,7 @@ export default function AdminFileUploadPage() {
   };
 
   const handleConfirmPrepare = async () => {
-    if (!uploadableParseResult || isUploading) {
+    if (!canApplyFileUpload || !uploadableParseResult || isUploading) {
       return;
     }
 
@@ -267,6 +289,10 @@ export default function AdminFileUploadPage() {
           </Button>
         </div>
       </header>
+      {!isFileUploadPermissionReady && <p className="login-message">파일 업로드 권한을 확인하는 중...</p>}
+      {isFileUploadPermissionReady && !canApplyFileUpload && (
+        <p className="login-error">상품 생성 및 제출 생성·수정 권한이 있어야 DB 반영을 실행할 수 있습니다.</p>
+      )}
 
       <section className="dashboard-panel file-upload-drop-panel" aria-label="파일 선택">
         <div

@@ -123,6 +123,8 @@ export default function ReviewReceiveProductList({
   onCopyReviewVerifiedRows,
   onOpenEditModal,
   onOpenDeleteDialog,
+  canEditProduct = true,
+  canDeleteProduct = true,
   isLoadingMore,
   hasMore
 }) {
@@ -265,7 +267,7 @@ export default function ReviewReceiveProductList({
                                     <Button type="button" variant="ghost" size="sm" onClick={() => onCopyReviewVerifiedRows(product)}>
                                       리뷰작성복사
                                     </Button>
-                                    <Button type="button" variant="ghost" size="sm" onClick={() => onOpenEditModal(product)}>
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => onOpenEditModal(product)} disabled={!canEditProduct}>
                                       수정하기
                                     </Button>
                                   </>
@@ -276,7 +278,7 @@ export default function ReviewReceiveProductList({
                                   size="sm"
                                   className="is-danger"
                                   onClick={() => onOpenDeleteDialog(product)}
-                                  disabled={actionProductId === product.id}
+                                  disabled={actionProductId === product.id || !canDeleteProduct}
                                 >
                                   {actionProductId === product.id ? "삭제 중..." : "삭제하기"}
                                 </Button>

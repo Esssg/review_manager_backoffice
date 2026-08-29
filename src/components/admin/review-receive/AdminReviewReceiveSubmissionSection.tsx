@@ -38,6 +38,12 @@ export default function AdminReviewReceiveSubmissionSection({
     openPurchaseBulkModal,
     openReviewBatchModal,
     canVerifyDeposit,
+    canCreateSubmission,
+    canUpdateSubmission,
+    canDeleteSubmission,
+    canReadPhotos,
+    canUpdateDepositorName,
+    canExport,
     filteredReviewCompletedRows,
     toggleRowsSelection,
     openSelectedRowsDeleteDialog,
@@ -156,7 +162,7 @@ export default function AdminReviewReceiveSubmissionSection({
                   productLabel: exportProductLabel
                 })
               }
-              disabled={filteredRows.length === 0}
+              disabled={filteredRows.length === 0 || !canExport}
             >
               엑셀로 내려받기
             </Button>
@@ -181,14 +187,14 @@ export default function AdminReviewReceiveSubmissionSection({
                   <Button type="button" className="admin-secondary-button" onClick={handleCopyPurchaseBuyers}>
                     구매자 복사하기
                   </Button>
-                  <Button type="button" className="admin-secondary-button" onClick={openPurchaseAssignModal}>
+                  <Button type="button" className="admin-secondary-button" onClick={openPurchaseAssignModal} disabled={!canCreateSubmission && !canUpdateSubmission}>
                     구매자 일괄 입력
                   </Button>
                   <Button
                     type="button"
                     className="admin-secondary-button"
                     onClick={openReviewFeeBatchDialog}
-                    disabled={filteredPurchaseSectionRows.length === 0}
+                    disabled={filteredPurchaseSectionRows.length === 0 || !canUpdateSubmission}
                   >
                     리뷰비 일괄 입력하기
                   </Button>
@@ -196,11 +202,11 @@ export default function AdminReviewReceiveSubmissionSection({
                     type="button"
                     className="admin-secondary-button"
                     onClick={openPhotoReviewBatchModal}
-                    disabled={photoReviewBatchTargetRows.length === 0}
+                    disabled={photoReviewBatchTargetRows.length === 0 || !canUpdateSubmission}
                   >
                     리뷰완료 일괄처리
                   </Button>
-                  <Button type="button" className="admin-primary-button" onClick={openPurchaseBulkModal}>
+                  <Button type="button" className="admin-primary-button" onClick={openPurchaseBulkModal} disabled={!canCreateSubmission && !canUpdateSubmission}>
                     구매정보 입력하기
                   </Button>
                 </div>
@@ -212,7 +218,7 @@ export default function AdminReviewReceiveSubmissionSection({
                   type="button"
                   className="admin-primary-button"
                   onClick={openReviewBatchModal}
-                  disabled={!canVerifyDeposit || filteredReviewCompletedRows.length === 0}
+                  disabled={!canVerifyDeposit || !canUpdateSubmission || filteredReviewCompletedRows.length === 0}
                 >
                   일괄처리하기
                 </Button>
@@ -234,7 +240,7 @@ export default function AdminReviewReceiveSubmissionSection({
                   type="button"
                   className="review-receive-delete-selected-button"
                   onClick={() => openSelectedRowsDeleteDialog(filteredRows)}
-                  disabled={selectedRowsInSectionCount === 0}
+                  disabled={selectedRowsInSectionCount === 0 || !canDeleteSubmission}
                 >
                   {selectedRowsInSectionCount > 0 ? `삭제하기 ${selectedRowsInSectionCount}` : "삭제하기"}
                 </Button>
@@ -433,6 +439,7 @@ export default function AdminReviewReceiveSubmissionSection({
                                   type="button"
                                   className="photo-thumb-button"
                                   onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                                  disabled={!canReadPhotos}
                                 >
                                   <img src={url} alt={`증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />
                                 </Button>
@@ -447,7 +454,11 @@ export default function AdminReviewReceiveSubmissionSection({
                       <TableCell>
                         <Checkbox
                           checked={Boolean(row.is_review_verified)}
-                          disabled={updatingRowId === row.id}
+                          disabled={
+                            updatingRowId === row.id ||
+                            (row.isNew ? !canCreateSubmission : !canUpdateSubmission) ||
+                            (Boolean(row.is_review_verified) && canVerifyDeposit && !canUpdateDepositorName)
+                          }
                           onCheckedChange={(checked) => handleReviewVerifiedChange(row, Boolean(checked))}
                           aria-label={`${row.id} 리뷰완료`}
                         />
@@ -455,7 +466,13 @@ export default function AdminReviewReceiveSubmissionSection({
                       <TableCell>
                         <Checkbox
                           checked={Boolean(row.is_deposit_verified)}
-                          disabled={updatingRowId === row.id || !row.is_review_verified || !canVerifyDeposit}
+                          disabled={
+                            updatingRowId === row.id ||
+                            !row.is_review_verified ||
+                            (row.isNew ? !canCreateSubmission : !canUpdateSubmission) ||
+                            !canVerifyDeposit ||
+                            !canUpdateDepositorName
+                          }
                           onCheckedChange={(checked) => handleDepositVerifiedChange(row, Boolean(checked))}
                           aria-label={`${row.id} 입금완료`}
                         />
@@ -470,7 +487,7 @@ export default function AdminReviewReceiveSubmissionSection({
                                 value={row.deposited_at ?? ""}
                                 onChange={(event) => handleFieldChange(row.id, "deposited_at", event.target.value)}
                                 onBlur={() => handleReviewCompletionMetaSave(row)}
-                                disabled={updatingRowId === row.id || !canVerifyDeposit}
+                                disabled={updatingRowId === row.id || !canUpdateSubmission || !canUpdateDepositorName}
                               />
                             </TableCell>
                             <TableCell>
@@ -480,7 +497,7 @@ export default function AdminReviewReceiveSubmissionSection({
                                 onChange={(event) => handleFieldChange(row.id, "actual_depositor_name", event.target.value)}
                                 onBlur={() => handleReviewCompletionMetaSave(row)}
                                 placeholder="실제입금자명"
-                                disabled={updatingRowId === row.id || !canVerifyDeposit}
+                                disabled={updatingRowId === row.id || !canUpdateSubmission || !canUpdateDepositorName}
                               />
                             </TableCell>
                           </>
@@ -498,7 +515,12 @@ export default function AdminReviewReceiveSubmissionSection({
                                 type="button"
                                 className="admin-small-button"
                                 onClick={() => handleSaveRow(row)}
-                                disabled={updatingRowId === row.id || (!row.isDirty && !row.isNew)}
+                                disabled={
+                                  updatingRowId === row.id ||
+                                  (!row.isDirty && !row.isNew) ||
+                                  (row.isNew ? !canCreateSubmission : !canUpdateSubmission) ||
+                                  (Boolean(row.is_deposit_verified) && (!canVerifyDeposit || !canUpdateDepositorName))
+                                }
                               >
                                 {row.isNew ? "추가" : "저장"}
                               </Button>
@@ -515,7 +537,7 @@ export default function AdminReviewReceiveSubmissionSection({
 
                                 openRowEditor(row.id);
                               }}
-                              disabled={updatingRowId === row.id}
+                              disabled={updatingRowId === row.id || (row.isNew ? !canCreateSubmission : !canUpdateSubmission)}
                             >
                               구매정보
                             </Button>
@@ -523,7 +545,7 @@ export default function AdminReviewReceiveSubmissionSection({
                               type="button"
                               className="admin-danger-button"
                               onClick={() => handleDeleteRow(row)}
-                              disabled={updatingRowId === row.id}
+                              disabled={updatingRowId === row.id || (!row.isNew && !canDeleteSubmission)}
                             >
                               삭제
                             </Button>
@@ -568,6 +590,7 @@ export default function AdminReviewReceiveSubmissionSection({
                       type="button"
                       className="review-receive-add-row-button"
                       onClick={handleAddRow}
+                      disabled={!canCreateSubmission}
                       aria-label="구매완료 행 추가"
                     >
                       +

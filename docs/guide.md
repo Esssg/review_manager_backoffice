@@ -71,3 +71,22 @@
 - 파일 object key는 `operationId + 파일 순번`으로 결정되며 file-writer는 임시 파일 후 atomic replace를 사용합니다.
 - DB row 변경은 `sync_review_receive_photo_rows(...)`가 submission별 advisory transaction lock으로 직렬화하고 이미 존재하는 URL을 다시 insert하지 않습니다.
 - HTTP 4xx/5xx, relay 오류, 응답 parse 오류는 자동 재시도하지 않습니다.
+
+## 관리자 권한 gateway 전환 초안
+
+`supabase/functions/admin-gateway/index.ts`는 관리자 로그인·세션·권한 bundle·설정·임직원 권한 변경을 서버에서 검증하기 위한 원본입니다. staging `vm-app-01`에는 배포·경계 검증했지만 production Supabase에는 배포하지 않았습니다.
+
+- 관리자 세션은 `rmb_admin_session` httpOnly 서명 쿠키를 사용하고, 브라우저의 `review_manager_admin_id`를 권한 신원으로 신뢰하지 않습니다.
+- 함수 시크릿 `ADMIN_GATEWAY_SESSION_SECRET`, `ADMIN_WEB_ORIGIN`, `ADMIN_GATEWAY_COOKIE_SAMESITE`와 Supabase service role key는 함수 런타임에만 설정합니다. service role key를 프런트 환경변수나 로그에 넣지 않습니다.
+- 프런트는 `VITE_ADMIN_GATEWAY_URL`, `VITE_ADMIN_GATEWAY_ENABLED=true`, `VITE_ADMIN_GATEWAY_READY=true`가 모두 있어야 gateway를 사용합니다. `READY`는 migration/RPC, 함수 배포, 전체 관리자 데이터 서비스 전환, staging·canary 회귀 검증 뒤에만 켭니다. 저장소 기본값은 `false`이며 staging canary 이미지에서만 `true`입니다.
+- staging `vm-web-01`은 `/api/admin-gateway` same-origin proxy를 사용해 Kong의 공유 wildcard CORS를 우회하고, 인증 read/write canary에서 대시보드·리뷰받기·상품전체보기·일괄수정·전체/사진 내보내기와 상품·제출 mutation 요청이 gateway-only로 동작하는 것을 확인했습니다. proxy는 세션 없는 요청에 `401 ADMIN_SESSION_REQUIRED`를 반환합니다. canary로 생성한 row는 정리 후 DB 잔여 count 0을 확인했으며, legacy 호환 경로는 rollback을 위해 유지합니다.
+
+운영 전환 전 확인 순서:
+
+1. additive migration/RPC와 gateway 함수를 staging에 적용하고 기존 번들의 로그인·메뉴·조회·쓰기·공개 리뷰받기 사진 흐름을 먼저 비교합니다.
+2. gateway 함수의 origin/cookie 설정, 세션 만료·ID 변조·권한 부족·schema 미준비 오류를 확인합니다.
+3. 모든 관리자 데이터 서비스가 gateway/RPC를 통과하고 developer·company_admin·employee별 scope가 서버에서 재검증되는지 확인합니다.
+4. 개발자·테스트 계정 read-only canary와 제한된 staging write canary 후 새 staging 웹 이미지에서만 `VITE_ADMIN_GATEWAY_READY=true`를 설정하고, 공개 사진 흐름은 별도로 완료합니다.
+5. 오류가 생기면 웹 이미지를 이전 버전으로 되돌리고 `READY=false`로 호환 경로를 복구합니다. rollback window가 끝나기 전에는 기존 테이블/RPC 삭제나 restrictive RLS를 실행하지 않습니다.
+
+운영 DB migration, Edge Function 배포, Docker/Nginx 재시작은 이 초안과 별개의 승인 대상이며 사용자의 명시적 승인을 받은 뒤에만 실행합니다.

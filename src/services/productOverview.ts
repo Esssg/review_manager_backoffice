@@ -5,6 +5,14 @@ import { resolveAdminManagerScope } from "@/services/adminScope";
 import { deleteSubmissionsWithEvidencePhotos } from "@/services/adminDeletion";
 import { fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
 import { sliceProductOverviewPage } from "@/utils/productOverviewPagination";
+import {
+  ADMIN_GATEWAY_OPERATION,
+  buildGatewayScope,
+  callAdminGatewayOperation,
+  getGatewayArray,
+  getGatewayPageInfo
+} from "@/services/adminGatewayData";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 
 const PRODUCT_OVERVIEW_ROWS_RPC = "get_admin_product_overview_rows";
 export const PRODUCT_OVERVIEW_PAGE_SIZE = 300;
@@ -112,6 +120,68 @@ function buildProductOverviewCursor(row) {
 }
 
 export async function fetchAdminProductOverview(adminId, options = {}) {
+  if (isAdminGatewayConfigured()) {
+    const pageSize = Math.max(1, Math.min(Number(options.pageSize ?? PRODUCT_OVERVIEW_PAGE_SIZE), 1000));
+    const cursor = options.cursor ?? null;
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_OVERVIEW_LIST, {
+      p_include_company_data:
+        options.includeCompanyData == null
+          ? options.scopePolicy === "company" || options.scopePolicy === "all"
+          : Boolean(options.includeCompanyData),
+      p_status: options.status ?? "all",
+      p_filters: options.filters ?? {},
+      p_page_size: pageSize,
+      p_cursor_product_created_at: cursor?.productCreatedAt ?? null,
+      p_cursor_product_id: cursor?.productId ?? null,
+      p_cursor_submission_created_at: cursor?.submissionCreatedAt ?? null,
+      p_cursor_submission_id: cursor?.submissionId ?? null
+    });
+    const gatewayRows = getGatewayArray(result.data, ["rows", "submissions"]);
+    const pageInfo = getGatewayPageInfo(result.data, pageSize);
+    const { pageRows } = sliceProductOverviewPage(gatewayRows, pageSize);
+    const normalizedRows = pageRows.map(normalizeProductOverviewRow);
+    const productMap = new Map();
+
+    pageRows.forEach((row) => {
+      const product = buildProductOverviewProduct(row);
+      productMap.set(product.id, product);
+    });
+
+    const remainingCount =
+      pageInfo.totalCount || Number(gatewayRows?.[0]?.total_count ?? gatewayRows?.[0]?.totalCount ?? 0);
+    const hasMore = Boolean(
+      pageInfo.hasMore || gatewayRows.length > pageSize || remainingCount > normalizedRows.length
+    );
+    const nextCursor = pageInfo.nextCursor ?? (hasMore ? buildProductOverviewCursor(normalizedRows.at(-1)) : null);
+    const scope = {
+      ...buildGatewayScope(adminId, options),
+      ...(result.data?.scope && typeof result.data.scope === "object" ? result.data.scope : {})
+    };
+
+    return {
+      scope,
+      rowsResult: {
+        data: result.error ? null : normalizedRows,
+        error: result.error
+      },
+      productsResult: {
+        data: result.error ? [] : Array.from(productMap.values()),
+        error: null
+      },
+      submissionsResult: {
+        data: result.error ? [] : normalizedRows,
+        error: null
+      },
+      evidencePhotosResult: { data: [], error: null },
+      pageInfo: {
+        hasMore: Boolean(hasMore && nextCursor),
+        nextCursor,
+        pageSize,
+        totalCount: remainingCount
+      }
+    };
+  }
+
   const scope = await resolveAdminManagerScope(adminId, options);
 
   if (scope.error) {
@@ -255,6 +325,22 @@ export async function deleteAdminProductOverviewSubmissions(submissionIds, admin
     return {
       data: [],
       error: new Error("삭제할 행을 선택해주세요.")
+    };
+  }
+
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.PRODUCT_OVERVIEW_SUBMISSIONS_DELETE, {
+      p_submission_ids: uniqueSubmissionIds
+    });
+    const deletedIds = Array.isArray(result.data)
+      ? result.data
+      : result.data?.deletedSubmissionIds ?? result.data?.data ?? [];
+
+    return {
+      ...(result.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data : {}),
+      data: deletedIds,
+      error: result.error,
+      scope: buildGatewayScope(adminId, options)
     };
   }
 
