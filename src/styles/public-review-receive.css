@@ -463,7 +463,7 @@
 .public-photo-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .public-photo-modal-note {
@@ -562,19 +562,23 @@
 
 .public-photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .public-photo-card,
 .public-photo-empty-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 12px;
+  padding: 8px;
   background: var(--card);
+}
+
+.public-photo-empty-card {
+  grid-column: 1 / -1;
 }
 
 .public-photo-card.is-removed {
@@ -589,8 +593,10 @@
 }
 
 .public-photo-card-image {
-  width: 100%;
+  width: min(100%, 100px);
   aspect-ratio: 1 / 1;
+  height: auto;
+  margin-inline: auto;
   object-fit: cover;
   border-radius: var(--radius-md);
   background: var(--muted);
@@ -608,6 +614,16 @@
   margin: 0;
 }
 
+.public-photo-card-body strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.public-photo-modal .review-receive-modal-actions {
+  margin-top: 12px;
+}
+
 .public-photo-card-body p,
 .public-photo-empty-card p {
   color: var(--text-subtle);
@@ -615,6 +631,10 @@
 }
 
 @media (min-width: 769px) and (pointer: fine) {
+  .public-photo-modal .review-receive-modal-header {
+    flex-direction: row;
+  }
+
   .public-photo-dropzone {
     display: block;
     border: 1px dashed var(--ring);
