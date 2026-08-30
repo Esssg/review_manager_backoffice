@@ -763,7 +763,7 @@ export default function PublicReviewReceiveDetailPage() {
     setPhotoEditor((prev) => ({
       ...prev,
       newPhotos: [...prev.newPhotos, ...previewPhotos],
-      feedbackMessage: `${selectedFiles.length}장의 이미지를 초안에 추가했습니다.`
+      feedbackMessage: ""
     }));
   };
 

@@ -12,18 +12,6 @@ import {
 import AppAlertDialog from "@/components/common/AppAlertDialog";
 import { useModalEnterConfirm } from "@/hooks/useModalEnterConfirm";
 
-function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 102.4) / 10} KB`;
-  }
-
-  return `${Math.round(bytes / (1024 * 102.4)) / 10} MB`;
-}
-
 export default function PublicPhotoUploadModal({
   editorState,
   onClose,
@@ -133,7 +121,6 @@ export default function PublicPhotoUploadModal({
     isSaving
   } = editorState;
 
-  const totalAfterSave = newPhotos.length;
   const isDropDisabled = !isDesktopDragEnabled || isLocked || isSaving;
   const canSubmitReplacement = newPhotos.length > 0;
   const isFeedbackError = /^\[\d{5}\]/.test(feedbackMessage);
@@ -223,13 +210,9 @@ export default function PublicPhotoUploadModal({
 
         <div className="review-receive-modal-body public-photo-modal-body">
           <div className={`public-photo-modal-note${isLocked ? " is-locked" : ""}`}>
-            <strong>
-              {isLocked
-                ? "사진 수정이 잠겼습니다."
-                : hasExistingSubmission
-                  ? "새 사진으로 재제출하면 기존 사진은 모두 교체됩니다."
-                  : "사진을 제출하면 바로 반영됩니다."}
-            </strong>
+            {(isLocked || !hasExistingSubmission) && (
+              <strong>{isLocked ? "사진 수정이 잠겼습니다." : "사진을 제출하면 바로 반영됩니다."}</strong>
+            )}
             <p>
               {isLocked
                 ? "관리자가 리뷰완료 처리한 행은 더 이상 수정할 수 없습니다."
@@ -251,13 +234,6 @@ export default function PublicPhotoUploadModal({
               />
               {hasExistingSubmission ? "새 사진 선택하기" : "사진 선택하기"}
             </label>
-            <span className="public-photo-upload-summary">
-              {canSubmitReplacement
-                ? `${submitButtonLabel.replace("하기", "")} 예정 ${totalAfterSave}장`
-                : hasExistingSubmission
-                  ? "새 사진을 추가하면 기존 사진이 교체됩니다."
-                  : "제출할 사진을 추가해주세요."}
-            </span>
           </div>
 
           {isDesktopDragEnabled && (
@@ -283,11 +259,6 @@ export default function PublicPhotoUploadModal({
           <div className="public-photo-modal-section">
             <div className="public-photo-modal-section-header">
               <h3>{hasExistingSubmission ? "재제출할 새 사진" : "제출할 사진"}</h3>
-              <p>
-                {hasExistingSubmission
-                  ? "여기에 있는 사진들로 기존 사진 전체가 교체됩니다."
-                  : "여기에 있는 사진들이 새로 제출됩니다."}
-              </p>
             </div>
             <div className="public-photo-grid">
               {newPhotos.length === 0 ? (
@@ -300,7 +271,6 @@ export default function PublicPhotoUploadModal({
                     <img src={photo.previewUrl} alt={`새 사진 ${index + 1}`} className="public-photo-card-image" />
                     <div className="public-photo-card-body">
                       <strong>{photo.file.name}</strong>
-                      <p>{formatFileSize(photo.file.size)}</p>
                     </div>
                     <Button
                       type="button"
