@@ -130,6 +130,9 @@ export default function AdminReviewReceiveSubmissionSection({
     const hasActiveColumnFilters = hasActiveReviewReceiveRowFilters(columnFilters);
     const selectedRowsInSection = filteredRows.filter((row) => selectedRowIds.has(row.id));
     const selectedRowsInSectionCount = selectedRowsInSection.length;
+    const tableColumnCount = isPurchaseSection
+      ? showPurchaseActions ? 16 : 15
+      : showPurchaseActions ? 18 : 17;
     const countLabel =
       totalRows.length === filteredRows.length ? `${filteredRows.length}건` : `${filteredRows.length}/${totalRows.length}건`;
     const emptyMessage =
@@ -290,7 +293,7 @@ export default function AdminReviewReceiveSubmissionSection({
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isPurchaseSection ? (showPurchaseActions ? 16 : 15) : 17}>{emptyMessage}</TableCell>
+                    <TableCell colSpan={tableColumnCount}>{emptyMessage}</TableCell>
                   </TableRow>
                 ) : (
                   filteredRows.map((row) => (
@@ -555,7 +558,7 @@ export default function AdminReviewReceiveSubmissionSection({
                     </TableRow>
                     {showPurchaseActions && row.isEditing && (
                       <TableRow className="review-receive-inline-fill-row" data-row-editor-id={row.id}>
-                        <TableCell colSpan={16}>
+                        <TableCell colSpan={tableColumnCount}>
                           <div className="review-receive-inline-fill-box">
                             <label className="review-receive-inline-fill-label" htmlFor={`inline-purchase-info-${row.id}`}>
                               구매정보 빠른입력
@@ -585,7 +588,7 @@ export default function AdminReviewReceiveSubmissionSection({
               )}
               {showAddRow && (
                 <TableRow className="review-receive-add-row">
-                  <TableCell colSpan={15}>
+                  <TableCell colSpan={tableColumnCount}>
                     <Button
                       type="button"
                       className="review-receive-add-row-button"
