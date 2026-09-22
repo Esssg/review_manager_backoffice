@@ -33,10 +33,14 @@ type DataOperationConfig = {
 const DATA_OPERATION_RPC: Record<string, DataOperationConfig> = {
   "products.list": { rpc: "admin_gateway_get_products", actorParam: "p_actor_admin_id" },
   "review_receive.list": {
-    rpc: "get_admin_review_receive_product_summaries_gateway",
+    rpc: "get_admin_review_receive_product_summaries_gateway_v2",
     actorParam: "p_actor_admin_id"
   },
-  "review_receive.detail": { rpc: "get_admin_review_receive_detail", actorParam: "p_actor_admin_id" },
+  "review_receive.list.sorted": {
+    rpc: "get_admin_review_receive_product_summaries_gateway_v2",
+    actorParam: "p_actor_admin_id"
+  },
+  "review_receive.detail": { rpc: "get_admin_review_receive_detail_v2", actorParam: "p_actor_admin_id" },
   "review_receive.product.create": {
     rpc: "create_admin_review_receive_product",
     actorParam: "p_actor_admin_id"
@@ -58,7 +62,15 @@ const DATA_OPERATION_RPC: Record<string, DataOperationConfig> = {
     actorParam: "p_actor_admin_id"
   },
   "review_receive.photos": {
-    rpc: "get_admin_evidence_photos",
+    rpc: "get_admin_evidence_photos_v2",
+    actorParam: "p_actor_admin_id"
+  },
+  "review_receive.product_reviewer_bulk": {
+    rpc: "create_admin_review_receive_product_reviewer_bulk",
+    actorParam: "p_actor_admin_id"
+  },
+  "review_receive.product_reviewer.bulk_v2": {
+    rpc: "create_admin_review_receive_product_reviewer_bulk_v2",
     actorParam: "p_actor_admin_id"
   },
   "review_receive.submission.create": {
@@ -104,18 +116,22 @@ const DATA_OPERATION_RPC: Record<string, DataOperationConfig> = {
     actorParam: "p_actor_admin_id"
   },
   "product_overview.list": {
-    rpc: "get_admin_product_overview_rows_gateway",
+    rpc: "get_admin_product_overview_rows_gateway_v2",
+    actorParam: "p_actor_admin_id"
+  },
+  "product_overview.list.sorted": {
+    rpc: "get_admin_product_overview_rows_gateway_v2",
     actorParam: "p_actor_admin_id"
   },
   "product_overview.submissions.delete": {
     rpc: "delete_admin_product_overview_submissions",
     actorParam: "p_actor_admin_id"
   },
-  "dashboard.read": { rpc: "get_admin_dashboard_data", actorParam: "p_actor_admin_id" },
+  "dashboard.read": { rpc: "get_admin_dashboard_data_v2", actorParam: "p_actor_admin_id" },
   "export.read": { rpc: "get_admin_export_data", actorParam: "p_actor_admin_id" },
-  "export.photos.read": { rpc: "get_admin_photo_export_data", actorParam: "p_actor_admin_id" },
+  "export.photos.read": { rpc: "get_admin_photo_export_data_v2", actorParam: "p_actor_admin_id" },
   "file_upload.apply": { rpc: "apply_admin_file_upload", actorParam: "p_actor_admin_id" },
-  "bulk_edit.rows": { rpc: "get_admin_bulk_edit_rows", actorParam: "p_actor_admin_id" },
+  "bulk_edit.rows": { rpc: "get_admin_bulk_edit_rows_v2", actorParam: "p_actor_admin_id" },
   "bulk_edit.apply": {
     rpc: "apply_admin_bulk_submission_updates_gateway",
     actorParam: "p_actor_admin_id"
@@ -142,6 +158,7 @@ const DATA_OPERATION_RPC: Record<string, DataOperationConfig> = {
 const DATA_OPERATION_PERMISSION_CODES: Record<string, string[]> = {
   "products.list": ["product.read"],
   "review_receive.list": ["product.read", "submission.read"],
+  "review_receive.list.sorted": ["product.read", "submission.read"],
   "review_receive.detail": ["product.read", "submission.read"],
   "review_receive.product.create": ["product.create"],
   "review_receive.product.update": ["product.update"],
@@ -161,6 +178,8 @@ const DATA_OPERATION_PERMISSION_CODES: Record<string, string[]> = {
   ],
   "review_receive.submission.status": ["submission.update"],
   "review_receive.photos": ["submission.photo.read"],
+  "review_receive.product_reviewer_bulk": ["product.create", "submission.create"],
+  "review_receive.product_reviewer.bulk_v2": ["submission.create"],
   "review_receive.submission.create": ["submission.create"],
   "review_receive.submission.update": ["submission.update"],
   "review_receive.submission.delete": ["submission.delete", "submission.photo.delete"],
@@ -174,6 +193,7 @@ const DATA_OPERATION_PERMISSION_CODES: Record<string, string[]> = {
   "product_detail.submission.by_order": ["submission.read"],
   "product_detail.submission.create": ["submission.create"],
   "product_overview.list": ["product.read", "submission.read"],
+  "product_overview.list.sorted": ["product.read", "submission.read"],
   "product_overview.submissions.delete": ["submission.delete", "submission.photo.delete"],
   "dashboard.read": ["menu.dashboard"],
   "export.read": ["export.execute"],
@@ -334,21 +354,183 @@ const CLIENT_IDENTITY_KEYS = new Set([
   "managerId"
 ]);
 
-function stripClientIdentity(value: unknown): unknown {
+const MANAGER_IDENTITY_KEYS = new Set(["manager_id", "managerId"]);
+const MANAGER_FILTER_OPERATIONS = new Set([
+  "review_receive.list",
+  "review_receive.list.sorted",
+  "product_overview.list",
+  "product_overview.list.sorted"
+]);
+
+const SORTED_LIST_OPERATION_KEYS = Object.freeze({
+  "review_receive.list.sorted": new Set([
+    "registered_date",
+    "company_name",
+    "product_name",
+    "option_name",
+    "review_type",
+    "product_fee_deposit_GB",
+    "review_fee_deposit_GB",
+    "product_link",
+    "manager_id"
+  ]),
+  "product_overview.list.sorted": new Set([
+    "manager_id",
+    "title",
+    "description",
+    "product_link",
+    "company_name",
+    "product_name",
+    "option_name",
+    "review_type",
+    "assign_name",
+    "review_photos",
+    "order_number",
+    "buyer_name",
+    "recipient_name",
+    "purchase_account",
+    "contact",
+    "address",
+    "bank_name",
+    "bank_account",
+    "account_holder",
+    "amount",
+    "review_fee",
+    "planned_depositor_name",
+    "is_review_verified",
+    "is_deposit_verified",
+    "deposited_at",
+    "actual_depositor_name",
+    "product_fee_deposit_GB",
+    "review_fee_deposit_GB"
+  ])
+});
+type StripClientIdentityOptions = {
+  preserveManagerFilter?: boolean;
+  inFilterObject?: boolean;
+};
+
+function stripClientIdentity(value: unknown, options: StripClientIdentityOptions = {}): unknown {
   if (Array.isArray(value)) {
-    return value.map(stripClientIdentity);
+    return value.map((item) => stripClientIdentity(item, options));
   }
 
   if (!value || typeof value !== "object") {
     return value;
   }
 
+  const inFilterObject = options.inFilterObject === true;
+
   return Object.fromEntries(
-    Object.entries(value).filter(([key]) => !CLIENT_IDENTITY_KEYS.has(key)).map(([key, child]) => [
-      key,
-      stripClientIdentity(child)
-    ])
+    Object.entries(value)
+      .filter(([key]) =>
+        !CLIENT_IDENTITY_KEYS.has(key) ||
+        (options.preserveManagerFilter && inFilterObject && MANAGER_IDENTITY_KEYS.has(key))
+      )
+      .map(([key, child]) => [
+        key,
+        stripClientIdentity(child, {
+          preserveManagerFilter: options.preserveManagerFilter,
+          inFilterObject: options.preserveManagerFilter && (inFilterObject || key === "p_filters")
+        })
+      ])
   );
+}
+
+function validateSortedListPayload(operation: string, payload: unknown) {
+  const allowedKeys = SORTED_LIST_OPERATION_KEYS[operation as keyof typeof SORTED_LIST_OPERATION_KEYS];
+
+  if (!allowedKeys) {
+    return;
+  }
+
+  const record = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : {};
+  const sort = record.p_sort;
+
+  if (!Array.isArray(sort) || sort.length === 0 || sort.length > allowedKeys.size) {
+    throw new GatewayError(
+      ERROR_CODES.REQUEST_INVALID,
+      "정렬 조건이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const seenKeys = new Set<string>();
+
+  for (const entry of sort) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new GatewayError(ERROR_CODES.REQUEST_INVALID, "정렬 조건이 올바르지 않습니다.", 400);
+    }
+
+    const candidate = entry as Record<string, unknown>;
+    const key = typeof candidate.key === "string" ? candidate.key.trim() : "";
+    const direction = typeof candidate.direction === "string" ? candidate.direction.trim().toLowerCase() : "";
+
+    if (!allowedKeys.has(key) || !["asc", "desc"].includes(direction) || seenKeys.has(key)) {
+      throw new GatewayError(ERROR_CODES.REQUEST_INVALID, "정렬 조건이 올바르지 않습니다.", 400);
+    }
+
+    seenKeys.add(key);
+  }
+
+  if (record.p_cursor != null &&
+      (typeof record.p_cursor !== "object" || Array.isArray(record.p_cursor))) {
+    throw new GatewayError(ERROR_CODES.REQUEST_INVALID, "페이지 cursor가 올바르지 않습니다.", 400);
+  }
+}
+function getBulkPayloadStats(payload: unknown) {
+  const payloadObject = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : {};
+  const groups = Array.isArray(payloadObject.groups) ? payloadObject.groups : [];
+  const reviewerCount = groups.reduce((total, group) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) {
+      return total;
+    }
+
+    const submissions = (group as Record<string, unknown>).submissions;
+    return total + (Array.isArray(submissions) ? submissions.length : 0);
+  }, 0);
+
+  return { groupCount: groups.length, reviewerCount };
+}
+
+function getBulkResultStats(data: unknown) {
+  const dataObject = data && typeof data === "object" && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : {};
+  const products = Array.isArray(dataObject.products) ? dataObject.products : [];
+  const submissions = Array.isArray(dataObject.submissions) ? dataObject.submissions : [];
+  const summary = dataObject.summary && typeof dataObject.summary === "object"
+    ? dataObject.summary as Record<string, unknown>
+    : {};
+
+  return {
+    productCount: Number(summary.createdProductCount ?? products.length) || 0,
+    submissionCount: Number(summary.createdSubmissionCount ?? submissions.length) || 0
+  };
+}
+
+function logBulkOperation(
+  request: Request,
+  payload: unknown,
+  data: unknown,
+  errorCode: string | null,
+  startedAt: number
+) {
+  const payloadStats = getBulkPayloadStats(payload);
+  const resultStats = getBulkResultStats(data);
+
+  console.info("admin-gateway bulk operation", {
+    requestId: request.headers.get("x-request-id")?.trim() || null,
+    operation: "review_receive.product_reviewer.bulk_v2",
+    ...payloadStats,
+    durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    ...resultStats,
+    errorCode
+  });
 }
 
 function isSchemaNotReadyMessage(message: string) {
@@ -643,7 +825,7 @@ function clearSessionCookie(request: Request) {
 function getAction(request: Request) {
   const segments = new URL(request.url).pathname.split("/").filter(Boolean);
   const lastTwo = segments.slice(-2).join("/");
-  const rawAction = ["settings/update", "permissions/update"].includes(lastTwo)
+  const rawAction = ["settings/update", "permissions/update", "permissions/update-pair"].includes(lastTwo)
     ? lastTwo
     : segments.at(-1) || "";
 
@@ -709,6 +891,7 @@ async function handleAccess(request: Request, supabase: ReturnType<typeof create
 }
 
 async function handleData(request: Request, supabase: ReturnType<typeof createServiceClient>) {
+  const startedAt = performance.now();
   const adminId = await verifySession(request);
   const body = await readJsonBody(request);
   const operation = String(body.operation ?? "").trim();
@@ -737,7 +920,10 @@ async function handleData(request: Request, supabase: ReturnType<typeof createSe
     );
   }
 
-  const payload = stripClientIdentity(body.payload ?? {});
+  const payload = stripClientIdentity(body.payload ?? {}, {
+    preserveManagerFilter: MANAGER_FILTER_OPERATIONS.has(operation)
+  });
+  validateSortedListPayload(operation, payload);
   const rpcPayload = {
     ...(payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {}),
     [operationConfig.actorParam]: adminId
@@ -745,7 +931,14 @@ async function handleData(request: Request, supabase: ReturnType<typeof createSe
   const result = await supabase.rpc(operationConfig.rpc, rpcPayload);
 
   if (result.error) {
+    if (operation === "review_receive.product_reviewer.bulk_v2") {
+      logBulkOperation(request, payload, null, result.error.code ?? "ADMIN_DATA_OPERATION_FAILED", startedAt);
+    }
     throw getDataOperationError(result.error);
+  }
+
+  if (operation === "review_receive.product_reviewer.bulk_v2") {
+    logBulkOperation(request, payload, result.data, null, startedAt);
   }
 
   return jsonWithRefreshedSession(request, adminId, { data: result.data });
@@ -858,6 +1051,34 @@ async function handlePermissionUpdate(request: Request, supabase: ReturnType<typ
   return jsonWithRefreshedSession(request, adminId, { data: result.data });
 }
 
+async function handlePermissionPairUpdate(request: Request, supabase: ReturnType<typeof createServiceClient>) {
+  const adminId = await verifySession(request);
+  const body = await readJsonBody(request);
+  const targetAdminId = String(body.targetAdminId ?? body.target_admin_id ?? "").trim();
+  const permissions = Array.isArray(body.permissions) ? body.permissions : [];
+
+  if (!targetAdminId || permissions.length !== 2) {
+    throw new GatewayError(ERROR_CODES.REQUEST_INVALID, "대상 계정과 상품·제출 조회 권한 쌍을 확인해주세요.", 400);
+  }
+
+  const result = await supabase.rpc("update_admin_permission_pair", {
+    p_actor_admin_id: adminId,
+    p_target_admin_id: targetAdminId,
+    p_permissions: permissions
+  });
+
+  if (result.error) {
+    const isSchemaNotReady = /update_admin_permission_pair|function|does not exist|schema cache/i.test(result.error.message ?? "");
+    throw new GatewayError(
+      isSchemaNotReady ? ERROR_CODES.SCHEMA_NOT_READY : ERROR_CODES.PERMISSION_UPDATE_FAILED,
+      isSchemaNotReady ? "상품·제출 조회 권한 쌍 저장 DB 구조가 아직 준비되지 않았습니다." : result.error.message,
+      isSchemaNotReady ? 503 : 400
+    );
+  }
+
+  return jsonWithRefreshedSession(request, adminId, { data: result.data });
+}
+
 async function handleLogout(request: Request) {
   return json(request, { data: { loggedOut: true } }, 200, { "Set-Cookie": clearSessionCookie(request) });
 }
@@ -909,6 +1130,10 @@ Deno.serve(async (request) => {
 
     if (action === "permissions/update") {
       return await handlePermissionUpdate(request, supabase);
+    }
+
+    if (action === "permissions/update-pair") {
+      return await handlePermissionPairUpdate(request, supabase);
     }
 
     throw new GatewayError(ERROR_CODES.REQUEST_INVALID, "지원하지 않는 gateway 작업입니다.", 404);

@@ -16,9 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAppToast } from "@/hooks/useAppToast";
 import { useBackdropDismiss } from "@/hooks/useBackdropDismiss";
 import { useModalEnterConfirm } from "@/hooks/useModalEnterConfirm";
-import { useAdminCapabilities } from "@/hooks/useAdminCapabilities";
+import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
 import { useAdminPermissions } from "@/hooks/useAdminPermission";
 import { useAdminAccessContext } from "@/contexts/AdminAccessContext";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 import { ADMIN_PERMISSION_CODE, ADMIN_SETTING_KEY } from "@/constants/adminAccess";
 import {
   ADMIN_STORAGE_KEY,
@@ -28,7 +29,6 @@ import {
   buildProductDepositGb,
   getProductDepositGbPartValues
 } from "@/constants/admin";
-import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import {
   createAdminReviewReceiveProduct,
   deleteAdminReviewReceiveProduct,
@@ -72,6 +72,10 @@ import {
   normalizeProductReviewerRowForSave,
   parseProductReviewerBulkInput
 } from "@/utils/reviewReceiveProductReviewerBulkInput";
+import {
+  createAdminReviewReceiveProductReviewerBulk,
+  isProductReviewerBulkTimeout
+} from "@/services/adminReviewReceiveProductReviewerBulk";
 import { normalizeProductDescriptionAndLink } from "@/utils/productLink";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "@/utils/photoItems";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
@@ -467,8 +471,13 @@ export default function AdminReviewReceiveDetailPage() {
   }, [adminAccess?.settings]);
   const {
     adminProfile,
-    isLoadingCapabilities
-  } = useAdminCapabilities(adminId);
+    scopePolicy,
+    isLoadingCapabilities,
+    isIncludeCompanyDataReady
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: [ADMIN_PERMISSION_CODE.PRODUCT_READ, ADMIN_PERMISSION_CODE.SUBMISSION_READ],
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_REVIEW_RECEIVE]
+  });
   const permissions = useAdminPermissions([
     ADMIN_PERMISSION_CODE.PRODUCT_READ,
     ADMIN_PERMISSION_CODE.SUBMISSION_READ,
@@ -521,6 +530,7 @@ export default function AdminReviewReceiveDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [detailReloadKey, setDetailReloadKey] = useState(0);
+  const detailRequestIdRef = useRef(0);
   const [updatingRowId, setUpdatingRowId] = useState(null);
   const [editingRowId, setEditingRowId] = useState(null);
   const [deleteTargetRow, setDeleteTargetRow] = useState(null);
@@ -637,9 +647,14 @@ export default function AdminReviewReceiveDetailPage() {
   }, [editingProductItem, isProductItemModalOpen, isProductReviewerBulkModalOpen, productDefaults]);
 
   useEffect(() => {
-    if (isLoadingCapabilities || !isReadPermissionReady) {
+    if (isLoadingCapabilities || !isIncludeCompanyDataReady || !isReadPermissionReady) {
       return;
     }
+
+    const requestId = detailRequestIdRef.current + 1;
+    detailRequestIdRef.current = requestId;
+    let isCancelled = false;
+    const isStaleRequest = () => isCancelled || requestId !== detailRequestIdRef.current;
 
     const loadDetail = async () => {
       setIsLoading(true);
@@ -658,7 +673,11 @@ export default function AdminReviewReceiveDetailPage() {
         productResult: { data: productData, error: productError },
         productsResult: { data: productItemsData, error: productItemsError },
         submissionsResult: { data: submissionData, error: submissionsError }
-      } = await fetchReviewReceiveDetail(productId, adminId, { adminProfile });
+      } = await fetchReviewReceiveDetail(productId, adminId, { adminProfile, scopePolicy });
+
+      if (isStaleRequest()) {
+        return;
+      }
 
       if (productError || productItemsError || submissionsError) {
         setErrorMessage(
@@ -682,8 +701,12 @@ export default function AdminReviewReceiveDetailPage() {
 
       const submissionIds = (submissionData ?? []).map((item) => item.id);
       const { data: photoData, error: photoError } = canReadPhotos
-        ? await fetchReviewReceiveEvidencePhotos(submissionIds)
+        ? await fetchReviewReceiveEvidencePhotos(submissionIds, { scopePolicy, previewOnly: true })
         : { data: [], error: null };
+
+      if (isStaleRequest()) {
+        return;
+      }
 
       if (photoError) {
         setErrorMessage(photoError.message);
@@ -720,7 +743,11 @@ export default function AdminReviewReceiveDetailPage() {
     };
 
     loadDetail();
-  }, [adminId, adminProfile, canReadPhotos, canReadProduct, canReadSubmission, detailReloadKey, isLoadingCapabilities, isReadPermissionReady, productId]);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [adminId, adminProfile, canReadPhotos, canReadProduct, canReadSubmission, detailReloadKey, isIncludeCompanyDataReady, isLoadingCapabilities, isReadPermissionReady, productId, scopePolicy]);
 
   const requestDetailReload = () => {
     setDetailReloadKey((value) => value + 1);
@@ -1411,11 +1438,46 @@ export default function AdminReviewReceiveDetailPage() {
       }
     };
 
+    if (isAdminGatewayConfigured()) {
+      const reusableProductId = reusableShellProducts[0]?.id ?? null;
+      const bulkResult = await createAdminReviewReceiveProductReviewerBulk({
+        productGroups: groupPayloads,
+        reusableProductId,
+        targetBundleId: reusableProductId == null ? bundleId : null
+      });
+
+      if (bulkResult.error || !bulkResult.data) {
+        if (isProductReviewerBulkTimeout(bulkResult.error)) {
+          setDetailReloadKey((previousKey) => previousKey + 1);
+          setProductReviewerBulkMessage(
+            "저장 결과를 확인하지 못했습니다. 상세 화면에서 실제 반영 여부를 확인해주세요. 자동 재시도하지 않았습니다.",
+            "error"
+          );
+        } else {
+          setProductReviewerBulkMessage(
+            bulkResult.error?.message || "상품/리뷰어 일괄 저장에 실패했습니다. 저장된 데이터가 있는지 확인해주세요.",
+            "error"
+          );
+        }
+        setIsSavingProductReviewerBulk(false);
+        return;
+      }
+
+      savedProducts.push(...(bulkResult.data.products ?? []));
+      createdSubmissions.push(...(bulkResult.data.submissions ?? []));
+      reflectSavedProducts();
+      setProductReviewerBulk(createInitialProductReviewerBulkState({ defaults: productDefaults }));
+      setIsProductReviewerBulkModalOpen(false);
+      setIsSavingProductReviewerBulk(false);
+      showToast(`품목 ${savedProducts.length}건과 리뷰어 ${createdSubmissions.length}건을 등록했습니다.`, "success");
+      return;
+    }
+
     for (let groupIndex = 0; groupIndex < groupPayloads.length; groupIndex += 1) {
       const reusableShellProduct = reusableShellProducts.shift() ?? null;
       const productResult = reusableShellProduct
         ? await updateAdminReviewReceiveProduct(reusableShellProduct.id, adminId, groupPayloads[groupIndex].productPayload, {
-            scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
+            scopePolicy,
             adminProfile
           })
         : await createAdminReviewReceiveProduct(groupPayloads[groupIndex].productPayload);
@@ -1529,7 +1591,7 @@ export default function AdminReviewReceiveDetailPage() {
     const isFillingEmptyShell = Boolean(editingProductItem && isProductItemEmptyShell(editingProductItem));
     const result = editingProductItem
       ? await updateAdminReviewReceiveProduct(editingProductItem.id, adminId, payload, {
-          scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
+          scopePolicy,
           adminProfile
         })
       : await createAdminReviewReceiveProduct(payload);
@@ -1590,7 +1652,7 @@ export default function AdminReviewReceiveDetailPage() {
     setErrorMessage("");
 
     const result = await deleteAdminReviewReceiveProduct(deleteTargetProductItem.id, adminId, {
-      scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL,
+      scopePolicy,
       adminProfile
     });
 
@@ -2483,15 +2545,48 @@ export default function AdminReviewReceiveDetailPage() {
     await applyReviewBatch();
   };
 
-  const openPhotoViewer = (photos, activeIndex) => {
+  const openPhotoViewer = async (row, activeIndex) => {
     if (!canReadPhotos) {
       return;
     }
 
     setPhotoViewer({
       isOpen: true,
-      photos,
-      activeIndex
+      photos: row?.photos ?? [],
+      activeIndex: Math.max(0, Math.min(activeIndex, (row?.photos?.length ?? 1) - 1))
+    });
+
+    const submissionId = Number(row?.id);
+    if (!Number.isSafeInteger(submissionId)) {
+      return;
+    }
+
+    const photoResult = await fetchReviewReceiveEvidencePhotos([submissionId], { scopePolicy });
+    if (photoResult.error) {
+      showToast(photoResult.error.message ?? "전체 사진을 불러오지 못했습니다.", "error");
+      return;
+    }
+
+    const fullPhotos = Array.isArray(photoResult.data) ? photoResult.data : [];
+    if (fullPhotos.length === 0) {
+      return;
+    }
+
+    setRows((previousRows) => previousRows.map((previousRow) => (
+      Number(previousRow?.id) === submissionId
+        ? { ...previousRow, photos: fullPhotos }
+        : previousRow
+    )));
+    setPhotoViewer((previousViewer) => {
+      if (!previousViewer.isOpen) {
+        return previousViewer;
+      }
+
+      return {
+        ...previousViewer,
+        photos: fullPhotos,
+        activeIndex: Math.min(previousViewer.activeIndex, fullPhotos.length - 1)
+      };
     });
   };
 
@@ -3338,7 +3433,7 @@ export default function AdminReviewReceiveDetailPage() {
                                 key={`${row.id}-${getPhotoId(photo) ?? url}-${photoIndex}`}
                                 type="button"
                                 className="photo-thumb-button"
-                                onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                                onClick={() => openPhotoViewer(row, photoIndex)}
                                 disabled={!canReadPhotos}
                                 aria-label={`처리 대상 증빙 이미지 ${photoIndex + 1} 열기`}
                               >

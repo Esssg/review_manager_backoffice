@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ADMIN_STORAGE_KEY } from "@/constants/admin";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
 import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { useAdminIncludeCompanyData } from "@/hooks/useAdminCapabilities";
 import { fetchAdminDashboardData } from "@/services/dashboardMetrics";
@@ -15,10 +16,16 @@ export default function useAdminDashboard() {
     adminProfile,
     scopePolicy,
     handleIncludeCompanyDataChange,
+    isCompanyScopeAvailable: isCompanyScopeAllowed,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
-  } = useAdminIncludeCompanyData(adminId);
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: [
+      ADMIN_PERMISSION_CODE.PRODUCT_READ,
+      ADMIN_PERMISSION_CODE.SUBMISSION_READ
+    ]
+  });
   const [dashboardData, setDashboardData] = useState({
     products: [],
     submissions: [],
@@ -154,6 +161,7 @@ export default function useAdminDashboard() {
     handleIncludeCompanyDataChange,
     dashboardData,
     scopeInfo,
+    isCompanyScopeAvailable: isCompanyScopeAllowed,
     scopeMessage,
     lastUpdatedAt,
     refreshDashboard,

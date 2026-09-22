@@ -1,7 +1,9 @@
 import { memo } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import ProductLinkCopy from "@/components/common/ProductLinkCopy";
 import { PRODUCT_OVERVIEW_PAGE_SIZE } from "@/services/productOverview";
 import { PRODUCT_OVERVIEW_COLUMNS } from "@/utils/productOverviewRows";
+import { getSortEntry, getSortPriority } from "@/utils/tableSort";
 import { getPhotoId, getPhotoUrl } from "@/utils/photoItems";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -160,6 +162,8 @@ export function ProductOverviewTable({
   rows,
   filters,
   onFilterChange,
+  sortState = [],
+  onSortChange = NOOP,
   emptyMessage,
   onOpenPhotoViewer = NOOP,
   selectedSubmissionIds = EMPTY_SELECTION_IDS,
@@ -203,9 +207,37 @@ export function ProductOverviewTable({
                 </label>
               </TableHead>
             )}
-            {PRODUCT_OVERVIEW_COLUMNS.map((column) => (
-              <TableHead key={column.key}>{column.label}</TableHead>
-            ))}
+            {PRODUCT_OVERVIEW_COLUMNS.map((column) => {
+              const sortEntry = getSortEntry(sortState, column.key);
+              const sortPriority = getSortPriority(sortState, column.key);
+              const sortLabel = sortEntry
+                ? `${column.label} ${sortEntry.direction === "asc" ? "오름차순" : "내림차순"} 정렬 ${sortPriority}순위`
+                : `${column.label} 정렬`;
+
+              return (
+                <TableHead
+                  key={column.key}
+                  aria-sort={sortEntry ? (sortEntry.direction === "asc" ? "ascending" : "descending") : "none"}
+                  className={sortEntry ? "product-overview-sortable-header is-sorted" : "product-overview-sortable-header"}
+                >
+                  <button
+                    type="button"
+                    className="product-overview-sort-trigger"
+                    onClick={() => onSortChange(column.key)}
+                    aria-label={sortLabel}
+                    title="헤더를 눌러 오름차순, 내림차순, 정렬없애기를 순환합니다."
+                  >
+                    <span className="product-overview-sort-label">{column.label}</span>
+                    <span className="product-overview-sort-indicator" aria-hidden="true">
+                      {sortEntry ? <span className="product-overview-sort-priority">{sortPriority}</span> : null}
+                      {sortEntry?.direction === "asc" ? <ArrowUp /> : null}
+                      {sortEntry?.direction === "desc" ? <ArrowDown /> : null}
+                      {!sortEntry ? <ChevronsUpDown /> : null}
+                    </span>
+                  </button>
+                </TableHead>
+              );
+            })}
           </TableRow>
           <TableRow className="product-overview-filter-row">
             {showSelection && <TableHead className="product-overview-selection-column" />}
@@ -237,7 +269,8 @@ export function ProductOverviewTable({
                   </Select>
                 ) : (
                   <Input
-                    type="text"
+                    type={column.type === "date" ? "date" : column.type === "number" ? "number" : "text"}
+                    inputMode={column.type === "number" ? "decimal" : undefined}
                     className="table-cell-input product-overview-filter-input"
                     value={filters[column.key] ?? ""}
                     onChange={(event) => onFilterChange(column.key, event.target.value)}

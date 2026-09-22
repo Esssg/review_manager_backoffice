@@ -206,6 +206,34 @@ staging 메모: 2026-08-29 `vm-app-01`에서 정규화 권한·gateway RPC·Q49 
   - `bundle_items`, `bundle_visible_items` JSONB
 - 비고: 리뷰받기 목록에서 `products` 전체와 `submissions` 원본 row 전체를 프런트로 가져오지 않기 위해 추가. 관리자 범위, `bundle_id` 기준 묶음, 진행/완료 상태, 열 필터, 커서 기반 다음 페이지 제한을 DB에서 처리합니다.
 
+## `create_admin_review_receive_product_reviewer_bulk_v2(p_actor_admin_id text, p_payload jsonb)`
+- 용도: 관리자 리뷰받기 목록과 상품 상세의 상품·리뷰어 일괄입력 저장
+- 입력
+  - `p_actor_admin_id`: gateway 세션에서 확인한 실행 관리자 ID
+  - `p_payload.groups`: `{ product, submissions }` 배열
+  - `p_payload.reusable_product_id`: 상세 화면에서 재사용할 빈 상품 ID. 목록 화면은 생략
+  - `p_payload.target_bundle_id`: 빈 상품 재사용 없이 상세 화면에서 기존 묶음에 추가할 때의 대상 상품/묶음 ID. RPC가 canonical `bundle_id`로 해석하고 actor의 `product.create` 범위를 재검증합니다.
+- 제한: 전체 submission 행 최대 500개. 서버/DB 내부 처리 기준은 50행이지만 chunk별 commit은 하지 않습니다.
+- 동작
+  - 첫 group은 `reusable_product_id`가 있으면 빈 상품을 수정하고, 없으면 새 상품과 자기 자신을 가리키는 `bundle_id`를 생성
+  - `target_bundle_id`가 있으면 `reusable_product_id`가 없는 경우에도 새 품목을 기존 묶음에 연결하고, 후속 group은 같은 `bundle_id`를 사용
+  - `target_bundle_id`가 없고 재사용 상품도 없을 때만 새 상품과 자기 자신을 가리키는 새 `bundle_id`를 생성
+  - 모든 submissions를 같은 함수 호출 안에서 생성하며, 한 행이라도 실패하면 상품·submission 전체를 rollback
+  - 사용자가 같은 원문을 다시 붙여넣는 경우 새 상품·submission으로 추가. gateway timeout 뒤 자동 재시도는 하지 않음
+- 권한: `submission.create` 공통 진입 권한, 새 품목은 `product.create`, 빈 상품 재사용은 `product.update`; 각 submission의 입금완료·실제입금자명 권한과 상품 데이터 범위도 RPC에서 재확인
+- 반환: `products`, `submissions`, `summary`, `partial: false`, `scope` JSONB
+- 직접 실행 권한: 일반 앱 역할에는 `service_role`만 execute를 grant하고, `public`·`anon`·`authenticated` 직접 호출은 revoke한다. 함수 owner/DB 관리자 역할의 inherent 권한은 별도다.
+- 마이그레이션: `20260902090000_add_admin_review_receive_product_reviewer_bulk.sql`에서 v2 RPC를 추가하고, `20260903100000_fix_admin_review_receive_product_reviewer_bulk_bundle.sql`에서 기존 묶음 재입력 계약을 보완
+
+## 관리자 gateway 후속 v2 계약 (`20260901120000_fix_admin_scope_filters_photo_bulk.sql`, `20260902120000_fix_review_receive_detail_photo_preview.sql`)
+- `get_admin_review_receive_product_summaries_gateway_v2`, `get_admin_product_overview_rows_gateway_v2`, `get_admin_dashboard_data_v2`, `get_admin_photo_export_data_v2`, `get_admin_bulk_edit_rows_v2`, `get_admin_evidence_photos_v2`는 기존 RPC를 보존하면서 서버 scope·필터·사진 응답 계약을 보완합니다.
+- `update_admin_permission_pair`는 제품·제출 resource의 scope를 함께 저장하는 권한 pair 계약입니다.
+- `create_admin_review_receive_product_reviewer_bulk`는 기존 호환 경로의 상품·리뷰어 batch 저장 계약이며, canonical `bulk_v2` RPC와 구분해 gateway operation별 호환성을 유지합니다.
+- 리뷰받기 상세 v2는 첫 조회에서 submission별 대표 사진만 반환하고, 사진 미리보기 요청에서 전체 사진을 별도로 조회합니다.
+- 상품전체보기 v2는 `purchase_account`, `deposited_at`, 숫자·boolean·사진 존재 필터를 페이지 이전에 처리하고, 관리자 요청의 개인/회사 scope를 서버에서 clamp합니다.
+- 모든 신규 gateway 함수는 `security definer`, 고정 `search_path = pg_catalog, public`, `service_role` 전용 execute 계약을 사용하며 일반 앱 역할의 직접 실행 권한은 회수합니다.
+- 마이그레이션: `20260901120000_fix_admin_scope_filters_photo_bulk.sql`, `20260902120000_fix_review_receive_detail_photo_preview.sql`.
+
 ## `normalize_review_receive_filter_text(value text)`
 - 용도: 리뷰받기 목록 RPC 내부 열 필터 비교용 문자열 정규화
 - 동작: 소문자 변환 후 공백, `.`, `/`, `\`, `|`, `_`, `-` 제거
@@ -232,6 +260,20 @@ staging 메모: 2026-08-29 `vm-app-01`에서 정규화 권한·gateway RPC·Q49 
 ## `normalize_product_overview_filter_text(value text)`
 - 용도: 상품전체보기 목록 RPC 내부 열 필터 비교용 문자열 정규화
 - 동작: 소문자 변환 후 공백, `.`, `/`, `\`, `|`, `_`, `-` 제거
+
+## 목록 정렬 v2 RPC (`20260903120000_add_server_side_sorting.sql`)
+- 운영 상태: 2026-09-04 KST `vm-app-01`에 적용·검증 완료. 최초 runtime canary에서 `max(jsonb)` 오류를 찾아 단일 page row 추출을 `jsonb_agg(...)->0`으로 보정했으며 최종 migration SHA-256은 `702a06b4...`입니다. 적용 전 custom dump와 변경 전후 함수·ACL·count는 `/opt/supabase/backups/review-manager-server-sorting-20260904T003630KST`에 보존합니다.
+- 용도: 리뷰받기·상품전체보기의 전체 필터 결과를 서버에서 정렬하고 keyset cursor로 다음 페이지를 조회
+- 기존 RPC와의 관계: 기존 `review_receive.list`/`product_overview.list`와 legacy RPC는 보존합니다. 정렬 상태가 있을 때만 `*.sorted` operation과 v2 gateway RPC를 사용합니다.
+- 정렬 입력: 허용된 `{ key, direction }` 배열. `direction`은 `asc` 또는 `desc`이며 같은 열 중복, 미허용 열, 잘못된 cursor는 DB와 Edge에서 모두 거부합니다.
+- 리뷰받기 허용 열: `registered_date`, `company_name`, `product_name`, `option_name`, `review_type`, `product_fee_deposit_GB`, `review_fee_deposit_GB`, `product_link`, `manager_id`. `완료현황`, `No.`, `관리`는 제외합니다.
+- 상품전체보기 허용 열: `PRODUCT_OVERVIEW_COLUMNS`의 데이터 열 전체. `No.`, 선택 checkbox, `관리`는 제외합니다.
+- 값 기준: 텍스트는 소문자·앞뒤 공백 정규화, 금액은 숫자, 날짜는 날짜값, 사진은 사진 있음/없음, boolean은 예/아니오 상태값으로 비교합니다. null/빈값은 오름차순·내림차순 모두 마지막입니다. 사진·boolean은 오름차순에서 `있음/예`가 먼저입니다.
+- cursor: 현재 sort 배열, 각 정렬값, 안정적인 tie-breaker를 포함하는 opaque JSON입니다. 리뷰받기는 대표 bundle `id`, 상품전체보기는 `product_id`와 `submission_id`를 tie-breaker로 사용합니다.
+- 범위: gateway 함수가 `product.read`, `submission.read`, 사진 응답은 `submission.photo.read`의 manager scope를 요청 시작 시 한 번 계산해 사용하며, 개인 범위 요청은 `p_force_personal_scope = true`로 강제합니다.
+- 반환: 기존 rows shape를 유지하면서 `rows`, `scope`, `pageInfo.hasMore`, `pageInfo.nextCursor`, `pageInfo.pageSize`, `pageInfo.totalCount`를 JSONB로 반환합니다. 첫 페이지 크기는 리뷰받기 50건, 상품전체보기 300건입니다.
+- 직접 실행 권한: gateway v2 함수는 `public`·`anon`·`authenticated` execute를 회수하고 `service_role`만 허용합니다. Edge Function이 세션을 확인한 뒤 고정 operation으로 호출합니다.
+- 호환 경로: gateway가 비활성화된 구형 직접 조회 환경에서는 기존 legacy RPC와 기존 cursor를 유지하며 현재 받아온 페이지 안에서만 정렬합니다. 전체 데이터 정렬·keyset cursor 보장은 새 gateway operation과 v2 RPC가 준비된 환경에서 적용됩니다.
 
 ## `apply_admin_bulk_submission_updates(p_admin_id text, p_updates jsonb)`
 - 용도: 관리자 `/admin/bulk-edit`의 Excel 차이 반영 전용 submission 일괄 수정

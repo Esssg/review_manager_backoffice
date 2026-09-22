@@ -173,7 +173,15 @@ export default function AdminExportPhotosPage() {
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
-  } = useAdminIncludeCompanyData(adminId);
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: [
+      ADMIN_PERMISSION_CODE.EXPORT_EXECUTE,
+      ADMIN_PERMISSION_CODE.PRODUCT_READ,
+      ADMIN_PERMISSION_CODE.SUBMISSION_READ,
+      ADMIN_PERMISSION_CODE.PHOTO_READ
+    ],
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_EXPORT]
+  });
   const exportPermission = useAdminPermission(ADMIN_PERMISSION_CODE.EXPORT_EXECUTE, {
     legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_EXPORT]
   });

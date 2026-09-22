@@ -4,6 +4,7 @@ import {
   buildProductOverviewSelectionQueryKey,
   buildSelectedProductOverviewSubmissionIds
 } from "../src/utils/productOverviewSelection.ts";
+import { sortProductOverviewRows } from "../src/utils/productOverviewRows.ts";
 import { buildPurchaseBulkPreview } from "../src/utils/reviewReceiveBulkInput.ts";
 
 test("상품전체보기 선택 query key는 화면·상태·필터·회사 범위를 함께 구분한다", () => {
@@ -100,4 +101,28 @@ test("구매정보 bulk preview는 빈 행 매칭과 입력 순서를 유지한�
   assert.equal(result.create_new_rows, false);
   assert.equal(result.parsedEntries.length, 1);
   assert.equal(result.targetRows[0].submission_id, 21);
+});
+
+test("상품전체보기 정렬은 전체 값 기준으로 다중 우선순위·사진·boolean·null 순서를 적용한다", () => {
+  const rows = [
+    { submission_id: 1, company_name: "나우", amount: 100, review_photos: [], is_review_verified: false },
+    { submission_id: 2, company_name: "가나", amount: 100, review_photos: [{ id: 1 }], is_review_verified: true },
+    { submission_id: 3, company_name: null, amount: null, review_photos: [], is_review_verified: false }
+  ];
+
+  assert.deepEqual(
+    sortProductOverviewRows(rows, [
+      { key: "amount", direction: "asc" },
+      { key: "company_name", direction: "asc" }
+    ]).map((row) => row.submission_id),
+    [2, 1, 3]
+  );
+  assert.deepEqual(
+    sortProductOverviewRows(rows, [{ key: "review_photos", direction: "asc" }]).map((row) => row.submission_id),
+    [2, 1, 3]
+  );
+  assert.deepEqual(
+    sortProductOverviewRows(rows, [{ key: "is_review_verified", direction: "asc" }]).map((row) => row.submission_id),
+    [2, 1, 3]
+  );
 });

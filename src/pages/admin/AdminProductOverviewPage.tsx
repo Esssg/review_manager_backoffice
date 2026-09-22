@@ -33,6 +33,7 @@ import {
 } from "@/services/productOverview";
 import {
   createReviewReceiveSubmission,
+  fetchReviewReceiveEvidencePhotos,
   updateReviewReceiveSubmission
 } from "@/services/reviewReceive";
 import {
@@ -56,7 +57,12 @@ import { buildExportFilename, downloadExcel } from "@/utils/exportFile";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
 import { getPhotoId, getPhotoUrl, removePhotoById } from "@/utils/photoItems";
 import { ADMIN_TUTORIAL_EVENT, emitAdminTutorialAction } from "@/utils/adminTutorialEvents";
-import { getLocalStorageValue } from "@/utils/browserStorage";
+import {
+  getLocalStorageValue,
+  readSessionStorageJson,
+  writeSessionStorageJson
+} from "@/utils/browserStorage";
+import { cycleSortState, normalizeSortState } from "@/utils/tableSort";
 import {
   REVIEW_VERIFY_REQUIRED_FIELDS,
   formatMissingFieldLabels,
@@ -65,6 +71,29 @@ import {
 
 const PRODUCT_OVERVIEW_EXPORT_COLUMNS = PRODUCT_OVERVIEW_COLUMNS;
 const PRODUCT_OVERVIEW_EXPORT_COLUMN_KEYS = PRODUCT_OVERVIEW_EXPORT_COLUMNS.map((column) => column.key);
+const PRODUCT_OVERVIEW_SORT_STORAGE_KEY = "review_manager_product_overview_sort";
+
+function getProductOverviewSortStorageKey(adminId) {
+  return `${PRODUCT_OVERVIEW_SORT_STORAGE_KEY}:${adminId ?? "anonymous"}`;
+}
+
+function getProductOverviewSortKeys() {
+  return PRODUCT_OVERVIEW_COLUMNS.map((column) => column.key);
+}
+
+function readStoredProductOverviewSort(adminId) {
+  return normalizeSortState(
+    readSessionStorageJson(getProductOverviewSortStorageKey(adminId), []),
+    getProductOverviewSortKeys()
+  );
+}
+
+function writeStoredProductOverviewSort(adminId, sortState) {
+  writeSessionStorageJson(
+    getProductOverviewSortStorageKey(adminId),
+    normalizeSortState(sortState, getProductOverviewSortKeys())
+  );
+}
 
 function formatExcelCellValue(row, column) {
   const value = row[column.key];
@@ -226,7 +255,13 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
-  } = useAdminIncludeCompanyData(adminId);
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: [
+      ADMIN_PERMISSION_CODE.PRODUCT_READ,
+      ADMIN_PERMISSION_CODE.SUBMISSION_READ
+    ],
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_PRODUCT_OVERVIEW]
+  });
   const permissions = useAdminPermissions(
     [
       ADMIN_PERMISSION_CODE.PRODUCT_READ,
@@ -261,6 +296,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const [rows, setRows] = useState([]);
   const [filters, setFilters] = useState(createEmptyProductOverviewFilters);
   const [debouncedFilters, setDebouncedFilters] = useState(createEmptyProductOverviewFilters);
+  const [productSort, setProductSort] = useState(() => readStoredProductOverviewSort(adminId));
   const [activeStatusTab, setActiveStatusTab] = useState("purchase");
   const [selection, setSelection] = useState({
     mode: "ids",
@@ -278,6 +314,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [listReloadKey, setListReloadKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOverview, setHasLoadedOverview] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [photoViewer, setPhotoViewer] = useState({
     isOpen: false,
@@ -359,9 +396,10 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         viewMode,
         status: currentQueryStatus,
         filters: debouncedFilters,
-        includeCompanyData
+        includeCompanyData,
+        sort: productSort
       }),
-    [currentQueryStatus, debouncedFilters, includeCompanyData, viewMode]
+    [currentQueryStatus, debouncedFilters, includeCompanyData, productSort, viewMode]
   );
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const activeSelection = useMemo(
@@ -429,8 +467,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     ? productMap.get(Number(resolvedPurchaseAssignProductId)) ?? null
     : null;
   const purchaseAssignPositionMaps = useMemo(
-    () => buildProductOverviewRowPositionMaps(purchaseAssignVisibleRows),
-    [purchaseAssignVisibleRows]
+    () => buildProductOverviewRowPositionMaps(purchaseAssignVisibleRows, productSort),
+    [productSort, purchaseAssignVisibleRows]
   );
   const basePurchaseAssignPreview = useMemo(
     () =>
@@ -504,7 +542,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     [rows, shouldShowTutorialDemo]
   );
   const shouldRenderOverviewSection =
-    rows.length > 0 || (isTutorialRunning && !isStatusView && !isLoading && !errorMessage);
+    hasLoadedOverview &&
+    (rows.length > 0 || hasActiveFilters || (isTutorialRunning && !isStatusView && !isLoading && !errorMessage));
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -515,6 +554,10 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       window.clearTimeout(timeoutId);
     };
   }, [filters]);
+
+  useEffect(() => {
+    writeStoredProductOverviewSort(adminId, productSort);
+  }, [adminId, productSort]);
 
   useEffect(() => {
     const emptyFilters = createEmptyProductOverviewFilters();
@@ -596,6 +639,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         adminProfile,
         status: currentQueryStatus,
         filters: debouncedFilters,
+        sort: productSort,
         pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
       });
 
@@ -619,6 +663,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
       setProducts(productData ?? []);
       setRows(rowData ?? []);
+      setHasLoadedOverview(true);
       setPageInfo(
         nextPageInfo ?? {
           hasMore: false,
@@ -644,6 +689,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     isLoadingCapabilities,
     isReadPermissionReady,
     listReloadKey,
+    productSort,
     scopePolicy
   ]);
 
@@ -687,6 +733,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       adminProfile,
       status: currentQueryStatus,
       filters: debouncedFilters,
+      sort: productSort,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE,
       cursor: pageInfo.nextCursor
     });
@@ -772,6 +819,10 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     if (columnKey === "review_photos" && value === "has") {
       emitAdminTutorialAction("photo-filter");
     }
+  };
+
+  const handleSortChange = (columnKey) => {
+    setProductSort((previousSort) => cycleSortState(previousSort, columnKey, getProductOverviewSortKeys()));
   };
 
   const handleResetFilters = () => {
@@ -876,6 +927,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       adminProfile,
       status: currentQueryStatus,
       filters: debouncedFilters,
+      sort: productSort,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
     });
 
@@ -917,6 +969,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       adminProfile,
       status: currentQueryStatus,
       filters: debouncedFilters,
+      sort: productSort,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
     });
 
@@ -938,7 +991,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
 
       return Array.from(nextProductMap.values());
     });
-    setRows((previousRows) => mergeProductOverviewRows(previousRows, fetchedRows));
+    setRows((previousRows) => mergeProductOverviewRows(previousRows, fetchedRows, [], productSort));
     setPageInfo((previousPageInfo) => ({
       ...previousPageInfo,
       hasMore: false,
@@ -958,37 +1011,91 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
     currentQueryStatus,
     debouncedFilters,
     isReadPermissionReady,
+    productSort,
     scopePolicy,
     showToast
   ]);
 
   const openPhotoViewer = useCallback(
-    (row, photos, activeIndex, returnFocusElement) => {
+    async (row, photos, activeIndex, returnFocusElement) => {
       if (!canReadPhotos) {
         return;
       }
 
-      const navigationItems = buildPhotoNavigationItems(displayRows);
+      const previewNavigationItems = buildPhotoNavigationItems(displayRows);
       const activePhoto = photos?.[activeIndex];
       const activeKey = `${row?.submission_id}:${getPhotoNavigationKey(activePhoto)}:${activeIndex}`;
-      const navigationIndex = Math.max(
+      const previewNavigationIndex = Math.max(
         0,
-        navigationItems.findIndex((item) => item.key === activeKey)
+        previewNavigationItems.findIndex((item) => item.key === activeKey)
       );
 
       photoNavigationLoadedRef.current = !pageInfo.hasMore;
       setPhotoViewer({
         isOpen: true,
-        photos: navigationItems.map((item) => item.photo),
-        activeIndex: navigationItems.length > 0 ? navigationIndex : activeIndex,
-        navigationItems,
-        metadata: getPhotoNavigationMetadata(navigationItems[navigationIndex] ?? { row }),
+        photos: previewNavigationItems.map((item) => item.photo),
+        activeIndex: previewNavigationItems.length > 0 ? previewNavigationIndex : activeIndex,
+        navigationItems: previewNavigationItems,
+        metadata: getPhotoNavigationMetadata(previewNavigationItems[previewNavigationIndex] ?? { row }),
         navigationIsFullyLoaded: !pageInfo.hasMore,
         returnFocusElement
       });
       emitAdminTutorialAction("photo-open");
+
+      const submissionId = Number(row?.submission_id);
+      if (!Number.isSafeInteger(submissionId)) {
+        return;
+      }
+
+      const photoResult = await fetchReviewReceiveEvidencePhotos([submissionId], { scopePolicy });
+      if (photoResult.error) {
+        showToast(photoResult.error.message ?? "전체 사진을 불러오지 못했습니다.", "error");
+        return;
+      }
+
+      const fullPhotos = Array.isArray(photoResult.data) ? photoResult.data : [];
+      if (fullPhotos.length === 0) {
+        return;
+      }
+
+      const rowsWithFullPhotos = displayRows.map((displayRow) =>
+        Number(displayRow?.submission_id) === submissionId
+          ? { ...displayRow, review_photos: fullPhotos }
+          : displayRow
+      );
+      const fullNavigationItems = buildPhotoNavigationItems(rowsWithFullPhotos);
+
+      setRows((previousRows) => previousRows.map((currentRow) =>
+        Number(currentRow?.submission_id) === submissionId
+          ? { ...currentRow, review_photos: fullPhotos }
+          : currentRow
+      ));
+
+      setPhotoViewer((previousViewer) => {
+        if (!previousViewer.isOpen || Number(previousViewer.metadata?.submission_id) !== submissionId) {
+          return previousViewer;
+        }
+
+        const currentPhotoKey = getPhotoNavigationKey(previousViewer.photos?.[previousViewer.activeIndex]);
+        const nextActiveIndex = Math.max(
+          0,
+          fullNavigationItems.findIndex((item) =>
+            Number(item.row?.submission_id) === submissionId
+              && getPhotoNavigationKey(item.photo) === currentPhotoKey
+          )
+        );
+
+        return {
+          ...previousViewer,
+          photos: fullNavigationItems.map((item) => item.photo),
+          activeIndex: nextActiveIndex,
+          navigationItems: fullNavigationItems,
+          metadata: getPhotoNavigationMetadata(fullNavigationItems[nextActiveIndex]),
+          navigationIsFullyLoaded: !pageInfo.hasMore
+        };
+      });
     },
-    [canReadPhotos, displayRows, pageInfo.hasMore]
+    [canReadPhotos, displayRows, pageInfo.hasMore, scopePolicy, showToast]
   );
 
   const closePhotoViewer = useCallback(() => {
@@ -1424,6 +1531,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
       adminProfile,
       status: exportModal.scopeKey,
       filters: debouncedFilters,
+      sort: productSort,
       pageSize: PRODUCT_OVERVIEW_PAGE_SIZE
     });
 
@@ -2224,7 +2332,7 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
         </section>
       )}
 
-      {!isLoading && !errorMessage && shouldRenderOverviewSection && (
+      {!errorMessage && shouldRenderOverviewSection && (
         <>
           {!isStatusView ? (
             <ProductOverviewSection
@@ -2232,6 +2340,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
               rows={displayRows}
               filters={filters}
               onFilterChange={handleFilterChange}
+              sortState={productSort}
+              onSortChange={handleSortChange}
               onOpenPhotoViewer={openPhotoViewer}
               canReadPhotos={canReadPhotos}
               selectedSubmissionIds={selectedSubmissionIdSet}
@@ -2263,6 +2373,8 @@ export default function AdminProductOverviewPage({ viewMode = "all" }) {
               rows={activeStatusSection.rows}
               filters={filters}
               onFilterChange={handleFilterChange}
+              sortState={productSort}
+              onSortChange={handleSortChange}
               onOpenPhotoViewer={openPhotoViewer}
               canReadPhotos={canReadPhotos}
               selectedSubmissionIds={selectedSubmissionIdSet}

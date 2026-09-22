@@ -101,6 +101,7 @@ export default function ReviewReceiveProductList({
   onViewModeChange,
   statusSummaryText,
   isLoading,
+  hasLoadedOnce = false,
   errorMessage,
   productListScrollRef,
   productListLoadMoreRef,
@@ -109,6 +110,8 @@ export default function ReviewReceiveProductList({
   onProductFilterOpenChange,
   onProductFilterChange,
   onProductFilterReset,
+  productSort = [],
+  onProductSortChange = () => {},
   productFilterRef,
   products,
   filteredProducts,
@@ -144,10 +147,18 @@ export default function ReviewReceiveProductList({
           ariaLabel="리뷰받기 상태 선택"
         />
       </div>
-      {isLoading && <p className="login-message">리뷰받기 상품 데이터를 불러오는 중...</p>}
+      {isLoading && (
+        <p className="login-message">
+          {hasLoadedOnce ? "필터 조건을 적용하는 중..." : "리뷰받기 상품 데이터를 불러오는 중..."}
+        </p>
+      )}
       {!isLoading && errorMessage && <p className="login-error">{errorMessage}</p>}
-      {!isLoading && !errorMessage && (
-        <div className="review-receive-product-list-scroll" ref={productListScrollRef}>
+      {!errorMessage && (!isLoading || hasLoadedOnce) && (
+        <div
+          className="review-receive-product-list-scroll"
+          ref={productListScrollRef}
+          aria-busy={isLoading}
+        >
           <Table className="review-receive-product-list-table">
             <colgroup>
               <col style={{ width: `${REVIEW_RECEIVE_ROW_NUMBER_COLUMN_WIDTH_RATIO}%` }} />
@@ -172,6 +183,8 @@ export default function ReviewReceiveProductList({
                     onOpenChange={onProductFilterOpenChange}
                     onFilterChange={onProductFilterChange}
                     onFilterReset={onProductFilterReset}
+                    sortState={productSort}
+                    onSortChange={onProductSortChange}
                     menuRef={productFilterRef}
                   />
                 ))}
@@ -185,6 +198,8 @@ export default function ReviewReceiveProductList({
                     onOpenChange={onProductFilterOpenChange}
                     onFilterChange={onProductFilterChange}
                     onFilterReset={onProductFilterReset}
+                    sortState={productSort}
+                    onSortChange={onProductSortChange}
                     menuRef={productFilterRef}
                   />
                 ))}

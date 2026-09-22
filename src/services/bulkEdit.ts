@@ -21,8 +21,13 @@ export async function fetchBulkEditCurrentRows(adminId, submissionIds, options =
   const uniqueSubmissionIds = Array.from(new Set((submissionIds ?? []).map(Number).filter(Number.isSafeInteger)));
 
   if (isAdminGatewayConfigured()) {
+    const includeCompanyData = options.includeCompanyData == null
+      ? options.scopePolicy === "company" || options.scopePolicy === "all"
+      : Boolean(options.includeCompanyData);
     const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.BULK_EDIT_ROWS, {
-      p_submission_ids: uniqueSubmissionIds
+      p_submission_ids: uniqueSubmissionIds,
+      p_include_company_data: includeCompanyData,
+      p_force_personal_scope: options.scopePolicy === ADMIN_SCOPE_POLICY.PERSONAL
     });
     const rows = getGatewayArray(result.data, ["rows", "submissions"]);
 

@@ -1,11 +1,21 @@
 // @ts-nocheck
 
-import { useCallback, useContext, useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { ADMIN_SCOPE_POLICY, getAdminScopePolicy } from "@/constants/adminScope";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { ADMIN_PERMISSION_CODE } from "@/constants/adminAccess";
+import {
+  ADMIN_SCOPE_POLICY,
+  clampAdminRequestedScope,
+  getAdminScopePreferenceKey,
+  getDefaultAdminRequestedScope,
+  getEffectiveAdminScopePolicy,
+  getNarrowerAdminScope,
+  normalizeAdminRequestedScope
+} from "@/constants/adminScope";
 import { AdminAccessContext } from "@/contexts/AdminAccessContext";
 import { fetchAdminAccessBundle } from "@/services/adminAccess";
 import { getFallbackAdminCapabilities } from "@/utils/adminCapabilities";
+import { resolveAdminActionPermission } from "@/utils/adminActionAccess";
+import { getLocalStorageValue, setLocalStorageValue } from "@/utils/browserStorage";
 
 function useLocalAdminCapabilities(adminId, skipFetch) {
   const [capabilities, setCapabilities] = useState(() => getFallbackAdminCapabilities(adminId));
@@ -94,8 +104,41 @@ export function useAdminCapabilities(adminId) {
   return hasMatchingAccessContext ? accessContext : localAccess;
 }
 
-export function useAdminIncludeCompanyData(adminId) {
-  const location = useLocation();
+const DEFAULT_SCOPE_PERMISSION_CODES = [
+  ADMIN_PERMISSION_CODE.PRODUCT_READ,
+  ADMIN_PERMISSION_CODE.SUBMISSION_READ
+];
+
+function normalizePermissionCodes(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function getRoleMaximumScope(role) {
+  const normalizedRole = String(role ?? "").toLowerCase();
+
+  if (normalizedRole === "developer") {
+    return ADMIN_SCOPE_POLICY.ALL;
+  }
+
+  if (normalizedRole === "company_admin" || normalizedRole === "employee") {
+    return ADMIN_SCOPE_POLICY.COMPANY;
+  }
+
+  return ADMIN_SCOPE_POLICY.PERSONAL;
+}
+
+function getFallbackScope(capabilities, role) {
+  const legacyScope = capabilities?.includeCompanyDataInclude
+    ? String(role ?? "").toLowerCase() === "developer"
+      ? ADMIN_SCOPE_POLICY.ALL
+      : ADMIN_SCOPE_POLICY.COMPANY
+    : ADMIN_SCOPE_POLICY.PERSONAL;
+
+  return getNarrowerAdminScope(legacyScope, getRoleMaximumScope(role));
+}
+
+export function useAdminIncludeCompanyData(adminId, options = {}) {
   const {
     capabilities,
     adminProfile,
@@ -105,7 +148,63 @@ export function useAdminIncludeCompanyData(adminId) {
     isLoadingCapabilities,
     capabilitiesErrorMessage
   } = useAdminCapabilities(adminId);
-  const [includeCompanyData, setIncludeCompanyData] = useState(false);
+  const permissionCodes = useMemo(
+    () => normalizePermissionCodes(options.permissionCodes ?? DEFAULT_SCOPE_PERMISSION_CODES),
+    [options.permissionCodes]
+  );
+  const legacyMenuCodes = options.legacyMenuCodes;
+  const forcePersonalScope = Boolean(options.forcePersonalScope);
+  const companyName = typeof adminProfile?.company === "string" ? adminProfile.company.trim() : "";
+  const hasCompanyIdentity = Boolean(companyName || companyId);
+  const accessSnapshot = useMemo(
+    () => ({
+      adminId,
+      adminProfile,
+      role,
+      companyId,
+      capabilities,
+      permissionBindings,
+      isLoadingCapabilities,
+      capabilitiesErrorMessage,
+      menuErrorMessage: ""
+    }),
+    [
+      adminId,
+      adminProfile,
+      role,
+      companyId,
+      capabilities,
+      permissionBindings,
+      isLoadingCapabilities,
+      capabilitiesErrorMessage
+    ]
+  );
+  const maximumScope = useMemo(() => {
+    const fallbackScope = getFallbackScope(capabilities, role);
+
+    if (permissionCodes.length === 0) {
+      return fallbackScope;
+    }
+
+    return permissionCodes.reduce((scope, permissionCode) => {
+      const permission = resolveAdminActionPermission(permissionCode, accessSnapshot, {
+        legacyMenuCodes,
+        legacyFallbackAllowed: true
+      });
+
+      if (!permission.allowed) {
+        return ADMIN_SCOPE_POLICY.PERSONAL;
+      }
+
+      return getNarrowerAdminScope(
+        scope,
+        getNarrowerAdminScope(permission.dataScope ?? fallbackScope, getRoleMaximumScope(role))
+      );
+    }, ADMIN_SCOPE_POLICY.ALL);
+  }, [accessSnapshot, capabilities, legacyMenuCodes, permissionCodes, role]);
+  const isCompanyScopeAvailable = maximumScope !== ADMIN_SCOPE_POLICY.PERSONAL
+    && (maximumScope === ADMIN_SCOPE_POLICY.ALL || hasCompanyIdentity);
+  const [requestedScope, setRequestedScope] = useState(ADMIN_SCOPE_POLICY.PERSONAL);
   const [isIncludeCompanyDataReady, setIsIncludeCompanyDataReady] = useState(false);
 
   useEffect(() => {
@@ -117,23 +216,53 @@ export function useAdminIncludeCompanyData(adminId) {
       return;
     }
 
-    setIncludeCompanyData(Boolean(capabilities.includeCompanyDataInclude));
+    const storedScopeValue = getLocalStorageValue(getAdminScopePreferenceKey(adminId), "");
+    const hasStoredScope = Boolean(storedScopeValue);
+    const storedScope = normalizeAdminRequestedScope(storedScopeValue);
+    const defaultScope = getDefaultAdminRequestedScope(adminId, companyName);
+    const nextScope = forcePersonalScope
+      ? ADMIN_SCOPE_POLICY.PERSONAL
+      : clampAdminRequestedScope(
+          hasStoredScope ? storedScope : defaultScope,
+          maximumScope,
+          isCompanyScopeAvailable
+        );
+
+    setRequestedScope(nextScope);
+    if (!forcePersonalScope) {
+      setLocalStorageValue(getAdminScopePreferenceKey(adminId), nextScope);
+    }
     setIsIncludeCompanyDataReady(true);
-  }, [adminId, capabilities.includeCompanyDataInclude, isLoadingCapabilities, location.pathname]);
+  }, [
+    adminId,
+    companyName,
+    forcePersonalScope,
+    isCompanyScopeAvailable,
+    isLoadingCapabilities,
+    maximumScope
+  ]);
 
   const handleIncludeCompanyDataChange = useCallback(
     (event) => {
-      const nextChecked = Boolean(event.target.checked);
+      const requestedValue = event?.target?.value
+        ?? (event?.target?.checked ? ADMIN_SCOPE_POLICY.COMPANY : ADMIN_SCOPE_POLICY.PERSONAL);
+      const nextScope = forcePersonalScope
+        ? ADMIN_SCOPE_POLICY.PERSONAL
+        : clampAdminRequestedScope(requestedValue, maximumScope, isCompanyScopeAvailable);
 
-      setIncludeCompanyData(nextChecked);
+      setRequestedScope(nextScope);
+      if (!forcePersonalScope && adminId) {
+        setLocalStorageValue(getAdminScopePreferenceKey(adminId), nextScope);
+      }
     },
-    []
+    [adminId, forcePersonalScope, isCompanyScopeAvailable, maximumScope]
   );
-  const companyName = typeof adminProfile?.company === "string" ? adminProfile.company.trim() : "";
-  const isCompanyScopeAvailable = Boolean(companyName);
-  const scopePolicy = getAdminScopePolicy(includeCompanyData, role);
+  const scopePolicy = getEffectiveAdminScopePolicy(requestedScope, maximumScope, isCompanyScopeAvailable);
+  const includeCompanyData = scopePolicy !== ADMIN_SCOPE_POLICY.PERSONAL;
   const scopeMessage = scopePolicy === ADMIN_SCOPE_POLICY.ALL
     ? "모든 회사의 관리자 데이터를 함께 표시합니다."
+    : maximumScope === ADMIN_SCOPE_POLICY.PERSONAL
+    ? "이 계정은 본인 데이터 범위로 설정되어 회사 전체를 볼 수 없습니다."
     : includeCompanyData
     ? companyName
       ? `현재 계정과 같은 회사(${companyName}) 데이터를 함께 표시합니다.`
@@ -148,6 +277,8 @@ export function useAdminIncludeCompanyData(adminId) {
     permissionBindings,
     includeCompanyData,
     scopePolicy,
+    requestedScope,
+    maximumScope,
     handleIncludeCompanyDataChange,
     isCompanyScopeAvailable,
     scopeMessage,

@@ -20,6 +20,12 @@ export default function useAdminExportData(options = {}) {
     selectedColumnKeys = []
   } = options;
   const adminId = getLocalStorageValue(ADMIN_STORAGE_KEY);
+  const scopePermissionCodes = [
+    ADMIN_PERMISSION_CODE.EXPORT_EXECUTE,
+    ADMIN_PERMISSION_CODE.PRODUCT_READ,
+    ADMIN_PERMISSION_CODE.SUBMISSION_READ,
+    ...(includeApplications ? [ADMIN_PERMISSION_CODE.APPLICATION_READ] : [])
+  ];
   const {
     includeCompanyData,
     adminProfile,
@@ -28,7 +34,10 @@ export default function useAdminExportData(options = {}) {
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
-  } = useAdminIncludeCompanyData(adminId);
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: scopePermissionCodes,
+    forcePersonalScope
+  });
   const exportPermission = useAdminPermission(ADMIN_PERMISSION_CODE.EXPORT_EXECUTE, {
     legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_EXPORT]
   });

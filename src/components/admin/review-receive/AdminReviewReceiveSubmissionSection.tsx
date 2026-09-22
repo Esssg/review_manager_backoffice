@@ -438,7 +438,7 @@ export default function AdminReviewReceiveSubmissionSection({
                                   key={`${row.id}-${getPhotoId(photo) ?? url}-${photoIndex}`}
                                   type="button"
                                   className="photo-thumb-button"
-                                  onClick={() => openPhotoViewer(row.photos, photoIndex)}
+                                  onClick={() => openPhotoViewer(row, photoIndex)}
                                   disabled={!canReadPhotos}
                                 >
                                   <img src={url} alt={`증빙 이미지 ${photoIndex + 1}`} className="photo-thumb-image" />

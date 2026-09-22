@@ -86,7 +86,7 @@ export async function fetchAdminExportData(adminId, options = {}) {
   if (isAdminGatewayConfigured()) {
     const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.EXPORT_READ, {
       p_include_company_data: Boolean(includeCompanyData && !forcePersonalScope),
-      p_force_personal_scope: Boolean(forcePersonalScope),
+      p_force_personal_scope: Boolean(forcePersonalScope || !includeCompanyData),
       p_include_applications: Boolean(includeApplications),
       p_date_filter: dateFilter,
       p_product_id: productId == null ? null : Number(productId),

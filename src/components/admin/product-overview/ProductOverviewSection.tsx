@@ -9,6 +9,8 @@ export default function ProductOverviewSection({
   rows,
   filters,
   onFilterChange,
+  sortState,
+  onSortChange,
   onOpenPhotoViewer,
   canReadPhotos = true,
   selectedSubmissionIds,
@@ -48,6 +50,8 @@ export default function ProductOverviewSection({
         rows={rows}
         filters={filters}
         onFilterChange={onFilterChange}
+        sortState={sortState}
+        onSortChange={onSortChange}
         onOpenPhotoViewer={onOpenPhotoViewer}
         canReadPhotos={canReadPhotos}
         selectedSubmissionIds={selectedSubmissionIds}

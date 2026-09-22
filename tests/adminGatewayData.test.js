@@ -21,7 +21,7 @@ test("관리자 데이터 operation은 고정된 dot-name allowlist를 사용한
 
   assert.ok(operations.length > 0);
   assert.equal(new Set(operations).size, operations.length);
-  assert.ok(operations.every((operation) => /^[a-z]+(?:_[a-z]+)*(?:\.[a-z]+(?:_[a-z]+)*)*$/.test(operation)));
+  assert.ok(operations.every((operation) => /^[a-z0-9]+(?:_[a-z0-9]+)*(?:\.[a-z0-9]+(?:_[a-z0-9]+)*)*$/.test(operation)));
 });
 
 test("gateway payload의 client identity는 중첩 객체에서도 제거된다", () => {

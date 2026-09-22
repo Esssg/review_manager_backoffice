@@ -61,7 +61,8 @@ async function fetchBundleProducts(product, managerIds) {
 export async function fetchReviewReceiveDetail(productId, adminId, options = {}) {
   if (isAdminGatewayConfigured()) {
     const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_DETAIL, {
-      p_product_id: Number(productId)
+      p_product_id: Number(productId),
+      p_force_personal_scope: options.scopePolicy === ADMIN_SCOPE_POLICY.PERSONAL
     });
     const gatewayData = result.data ?? {};
     const product = gatewayData.product ?? gatewayData.productResult?.data ?? (gatewayData.id ? gatewayData : null);
@@ -91,7 +92,7 @@ export async function fetchReviewReceiveDetail(productId, adminId, options = {})
 
   const scope = await resolveAdminManagerScope(adminId, {
     ...options,
-    scopePolicy: ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL
+    scopePolicy: options.scopePolicy ?? ADMIN_SCOPE_POLICY.REVIEW_RECEIVE_DETAIL
   });
 
   if (scope.error) {
@@ -196,7 +197,7 @@ export async function updateReviewReceiveSubmissionStatus(submissionId, updates)
   return supabase.from("submissions").update(updates).eq("id", submissionId);
 }
 
-export async function fetchReviewReceiveEvidencePhotos(submissionIds) {
+export async function fetchReviewReceiveEvidencePhotos(submissionIds, options = {}) {
   if (submissionIds.length === 0) {
     return { data: [], error: null };
   }
@@ -204,7 +205,9 @@ export async function fetchReviewReceiveEvidencePhotos(submissionIds) {
   if (isAdminGatewayConfigured()) {
     const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PHOTOS, {
       p_submission_ids: submissionIds.map(Number).filter(Number.isSafeInteger),
-      p_photo_type: "review"
+      p_photo_type: "review",
+      p_force_personal_scope: options.scopePolicy === ADMIN_SCOPE_POLICY.PERSONAL,
+      p_preview_only: options.previewOnly === true
     });
 
     return {

@@ -62,3 +62,28 @@ export async function updateAdminMemberPermission(payload = {}) {
     };
   }
 }
+
+export async function updateAdminMemberPermissionPair(payload = {}) {
+  if (!isAdminGatewayConfigured()) {
+    return gatewayNotConfiguredResult();
+  }
+
+  try {
+    const data = await requestAdminGateway("permissions/update-pair", {
+      targetAdminId: payload.targetAdminId,
+      permissions: payload.permissions
+    });
+
+    return {
+      data,
+      error: null,
+      isLegacyCompatibility: false
+    };
+  } catch (error) {
+    return {
+      data: null,
+      error,
+      isLegacyCompatibility: false
+    };
+  }
+}

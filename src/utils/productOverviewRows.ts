@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { getProductDepositGbPartLabels } from "@/constants/admin";
+import { normalizeSortState } from "@/utils/tableSort";
 
 function normalizeFilterValue(value) {
   return String(value ?? "")
@@ -177,18 +178,107 @@ export function compareProductOverviewRows(left, right) {
   return Number(left.submission_id) - Number(right.submission_id);
 }
 
-export function sortProductOverviewRows(items) {
-  return items.slice().sort(compareProductOverviewRows);
+function normalizeSortText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLocaleLowerCase("ko-KR");
 }
 
-export function mergeProductOverviewRows(items, replacements, createdRows = []) {
+function getSortableValue(row, column) {
+  const value = row?.[column.key];
+
+  if (column.type === "photo" || column.type === "boolean") {
+    if (column.type === "photo") {
+      return Array.isArray(value) && value.length > 0 ? 0 : 1;
+    }
+
+    return value ? 0 : 1;
+  }
+
+  if (value == null || (column.type !== "number" && String(value).trim() === "")) {
+    return null;
+  }
+
+  if (column.type === "number") {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  }
+
+  if (column.type === "date") {
+    return toTimestamp(value, null);
+  }
+
+  return normalizeSortText(value);
+}
+
+function compareNullableSortValues(leftValue, rightValue, direction) {
+  const leftIsNull = leftValue == null;
+  const rightIsNull = rightValue == null;
+
+  if (leftIsNull || rightIsNull) {
+    if (leftIsNull && rightIsNull) {
+      return 0;
+    }
+
+    return leftIsNull ? 1 : -1;
+  }
+
+  if (leftValue === rightValue) {
+    return 0;
+  }
+
+  const comparison = leftValue > rightValue ? 1 : -1;
+  return direction === "desc" ? -comparison : comparison;
+}
+
+export function compareProductOverviewRowsBySort(left, right, sortState = []) {
+  const normalizedSortState = normalizeSortState(
+    sortState,
+    PRODUCT_OVERVIEW_COLUMNS.map((column) => column.key)
+  );
+
+  for (const sortEntry of normalizedSortState) {
+    const column = PRODUCT_OVERVIEW_COLUMNS.find((candidate) => candidate.key === sortEntry.key);
+
+    if (!column) {
+      continue;
+    }
+
+    const comparison = compareNullableSortValues(
+      getSortableValue(left, column),
+      getSortableValue(right, column),
+      sortEntry.direction
+    );
+
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+
+  return compareProductOverviewRows(left, right);
+}
+
+export function sortProductOverviewRows(items, sortState = []) {
+  const normalizedSortState = normalizeSortState(
+    sortState,
+    PRODUCT_OVERVIEW_COLUMNS.map((column) => column.key)
+  );
+
+  if (normalizedSortState.length === 0) {
+    return items.slice().sort(compareProductOverviewRows);
+  }
+
+  return items.slice().sort((left, right) => compareProductOverviewRowsBySort(left, right, normalizedSortState));
+}
+
+export function mergeProductOverviewRows(items, replacements, createdRows = [], sortState = []) {
   const replacementMap =
     replacements instanceof Map ? replacements : new Map((replacements ?? []).map((row) => [row.submission_id, row]));
 
   return sortProductOverviewRows([
     ...items.map((item) => replacementMap.get(item.submission_id) ?? item),
     ...createdRows
-  ]);
+  ], sortState);
 }
 
 export function replaceProductOverviewRows(items, replacements) {
@@ -198,8 +288,8 @@ export function replaceProductOverviewRows(items, replacements) {
   return items.map((item) => replacementMap.get(item.submission_id) ?? item);
 }
 
-export function buildProductOverviewRowPositionMaps(items) {
-  const sortedRows = sortProductOverviewRows(items);
+export function buildProductOverviewRowPositionMaps(items, sortState = []) {
+  const sortedRows = sortProductOverviewRows(items, sortState);
   const rowNumberMap = sortedRows.reduce((acc, row, index) => {
     acc[row.submission_id] = index + 1;
     return acc;

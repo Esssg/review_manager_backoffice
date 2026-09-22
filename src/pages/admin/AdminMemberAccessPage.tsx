@@ -16,7 +16,7 @@ import {
   ADMIN_ROLE
 } from "@/constants/adminAccess";
 import { useAdminAccessContext } from "@/contexts/AdminAccessContext";
-import { fetchAdminMembers, updateAdminMemberPermission } from "@/services/adminMembers";
+import { fetchAdminMembers, updateAdminMemberPermission, updateAdminMemberPermissionPair } from "@/services/adminMembers";
 import { getLocalStorageValue } from "@/utils/browserStorage";
 import { hasPermissionWithLegacyFallback, normalizePermissionBinding, resolvePermission } from "@/utils/permissionResolver";
 
@@ -61,6 +61,11 @@ const DATA_SCOPE_OPTIONS = [
   { value: ADMIN_PERMISSION_SCOPE.COMPANY, label: "회사" },
   { value: ADMIN_PERMISSION_SCOPE.ALL, label: "전체" }
 ];
+
+const DATA_SCOPE_PAIRED_PERMISSION_CODES = new Set([
+  ADMIN_PERMISSION_CODE.PRODUCT_READ,
+  ADMIN_PERMISSION_CODE.SUBMISSION_READ
+]);
 
 function getMemberId(member) {
   return member?.loginId ?? member?.login_id ?? "";
@@ -198,13 +203,21 @@ export default function AdminMemberAccessPage() {
   };
 
   const setDraft = (code, field, value) => {
-    const key = `${selectedMemberId}:${code}`;
     setPending((previous) => ({
       ...previous,
-      [key]: {
-        ...getDraft(code),
-        [field]: value
-      }
+      ...Array.from(
+        field === "dataScope" && DATA_SCOPE_PAIRED_PERMISSION_CODES.has(code)
+          ? DATA_SCOPE_PAIRED_PERMISSION_CODES
+          : [code]
+      ).reduce((next, permissionCode) => {
+        const key = `${selectedMemberId}:${permissionCode}`;
+        const currentDraft = previous[key] ?? getDraft(permissionCode);
+        next[key] = {
+          ...currentDraft,
+          [field]: value
+        };
+        return next;
+      }, {})
     }));
     setSuccessMessage("");
   };
@@ -224,8 +237,40 @@ export default function AdminMemberAccessPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
+    const handledPermissionCodes = new Set();
+    const pairedChanges = Array.from(DATA_SCOPE_PAIRED_PERMISSION_CODES).filter((code) =>
+      changes.some(([key]) => key === `${selectedMemberId}:${code}`)
+    );
+
+    if (pairedChanges.length > 0) {
+      const pairResult = await updateAdminMemberPermissionPair({
+        targetAdminId: selectedMemberId,
+        permissions: Array.from(DATA_SCOPE_PAIRED_PERMISSION_CODES).map((permissionCode) => {
+          const draft = getDraft(permissionCode);
+          handledPermissionCodes.add(permissionCode);
+          return {
+            permissionCode,
+            effect: draft.effect === "inherit" ? null : draft.effect,
+            dataScope: draft.dataScope,
+            remove: draft.effect === "inherit"
+          };
+        })
+      });
+
+      if (pairResult.error) {
+        setErrorMessage(`상품 조회·제출 조회 데이터 범위 저장 중 오류가 발생했습니다: ${pairResult.error.message}`);
+        setIsSaving(false);
+        return;
+      }
+    }
+
     for (const [key, draft] of changes) {
       const permissionCode = key.slice(`${selectedMemberId}:`.length);
+
+      if (handledPermissionCodes.has(permissionCode)) {
+        continue;
+      }
+
       const result = await updateAdminMemberPermission({
         targetAdminId: selectedMemberId,
         permissionCode,

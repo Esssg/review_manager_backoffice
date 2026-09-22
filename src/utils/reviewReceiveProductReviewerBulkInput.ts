@@ -4,6 +4,9 @@ import { parsePurchaseBulkInput } from "@/utils/reviewReceiveBulkInput";
 import { normalizeProductDescriptionAndLink } from "@/utils/productLink";
 import { formatPlannedDepositorName } from "@/utils/plannedDepositorName";
 
+export const MAX_PRODUCT_REVIEWER_BULK_ROWS = 500;
+export const PRODUCT_REVIEWER_BULK_CHUNK_SIZE = 50;
+
 function parseAmount(value) {
   const digits = String(value ?? "").replace(/[^\d]/g, "");
   return digits ? Number(digits) : null;
@@ -191,6 +194,10 @@ export function parseProductReviewerBulkInput(rawText, options = {}) {
 
   if (rows.length === 0) {
     throw new Error("상품/리뷰어 일괄 입력 데이터를 붙여넣어주세요.");
+  }
+
+  if (rows.length > MAX_PRODUCT_REVIEWER_BULK_ROWS) {
+    throw new Error(`상품/리뷰어 일괄입력은 최대 ${MAX_PRODUCT_REVIEWER_BULK_ROWS}행까지 지원합니다.`);
   }
 
   const productGroups = [];

@@ -59,7 +59,13 @@ export default function AdminBulkEditPage() {
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
-  } = useAdminIncludeCompanyData(adminId);
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: [
+      ADMIN_PERMISSION_CODE.BULK_EDIT_EXECUTE,
+      ADMIN_PERMISSION_CODE.SUBMISSION_READ
+    ],
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_BULK_EDIT]
+  });
   const permissions = useAdminPermissions(
     [
       ADMIN_PERMISSION_CODE.PRODUCT_READ,
@@ -298,7 +304,8 @@ export default function AdminBulkEditPage() {
 
       if (errors.length === 0) {
         const currentResult = await fetchBulkEditCurrentRows(adminId, parsed.rows.map((row) => row.submissionId), {
-          adminProfile
+          adminProfile,
+          scopePolicy
         });
 
         if (currentResult.error) {

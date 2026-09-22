@@ -58,10 +58,12 @@ async function fetchEvidencePhotos(submissionIds) {
 
 export async function fetchAdminPhotoExportData(adminId, options = {}) {
   if (isAdminGatewayConfigured()) {
+    const includeCompanyData = options.includeCompanyData == null
+      ? options.scopePolicy === "company" || options.scopePolicy === "all"
+      : Boolean(options.includeCompanyData);
     const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.EXPORT_PHOTOS_READ, {
-      p_include_company_data: options.includeCompanyData == null
-        ? options.scopePolicy === "company" || options.scopePolicy === "all"
-        : Boolean(options.includeCompanyData),
+      p_include_company_data: includeCompanyData,
+      p_force_personal_scope: !includeCompanyData,
       p_filters: options.filters ?? {},
       p_product_id: options.productId == null ? null : Number(options.productId)
     });

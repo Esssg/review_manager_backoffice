@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ADMIN_SCOPE_POLICY,
+  clampAdminRequestedScope,
+  getDefaultAdminRequestedScope,
+  getEffectiveAdminScopePolicy,
   getAdminScopePolicy,
   includesAdminScopeCompanyData,
+  normalizeAdminRequestedScope,
   resolveAdminScopePolicy
 } from "../src/constants/adminScope.ts";
 
@@ -39,4 +43,22 @@ test("고정 feature policy는 토글 값보다 우선해 현재 회사 범위�
 test("알 수 없는 policy는 안전한 토글 기준으로 되돌아간다", () => {
   assert.equal(resolveAdminScopePolicy({ scopePolicy: "unknown", includeCompanyData: false }), ADMIN_SCOPE_POLICY.PERSONAL);
   assert.equal(resolveAdminScopePolicy({ scopePolicy: "unknown", includeCompanyData: true }), ADMIN_SCOPE_POLICY.COMPANY);
+});
+
+test("요청 scope는 계정별로 기억하되 서버가 허용한 최대 범위를 넘지 않는다", () => {
+  assert.equal(getDefaultAdminRequestedScope("hyejin2054", "시나브로"), ADMIN_SCOPE_POLICY.COMPANY);
+  assert.equal(getDefaultAdminRequestedScope("other-admin", "시나브로"), ADMIN_SCOPE_POLICY.PERSONAL);
+  assert.equal(normalizeAdminRequestedScope("all"), ADMIN_SCOPE_POLICY.COMPANY);
+  assert.equal(
+    clampAdminRequestedScope(ADMIN_SCOPE_POLICY.COMPANY, ADMIN_SCOPE_POLICY.PERSONAL),
+    ADMIN_SCOPE_POLICY.PERSONAL
+  );
+  assert.equal(
+    getEffectiveAdminScopePolicy(ADMIN_SCOPE_POLICY.COMPANY, ADMIN_SCOPE_POLICY.ALL),
+    ADMIN_SCOPE_POLICY.ALL
+  );
+  assert.equal(
+    getEffectiveAdminScopePolicy(ADMIN_SCOPE_POLICY.COMPANY, ADMIN_SCOPE_POLICY.COMPANY),
+    ADMIN_SCOPE_POLICY.COMPANY
+  );
 });

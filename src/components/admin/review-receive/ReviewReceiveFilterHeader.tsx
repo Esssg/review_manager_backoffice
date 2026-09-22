@@ -1,12 +1,16 @@
-import { Filter } from "lucide-react";
+import { ArrowDown, ArrowUp, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableHead } from "@/components/ui/table";
-
-function FilterIcon() {
-  return <Filter aria-hidden="true" focusable="false" />;
-}
 
 export default function ReviewReceiveFilterHeader({
   sectionKey = "",
@@ -16,11 +20,17 @@ export default function ReviewReceiveFilterHeader({
   onOpenChange,
   onFilterChange,
   onFilterReset,
-  menuRef
+  menuRef,
+  sortState = [],
+  onSortChange = () => {}
 }) {
   const isDateRange = column.type === "dateRange";
   const isActive = isDateRange ? Boolean(filterValue?.start || filterValue?.end) : String(filterValue ?? "").trim() !== "";
   const filterKey = sectionKey ? `${sectionKey}:${column.key}` : column.key;
+  const normalizedSortState = Array.isArray(sortState) ? sortState : [];
+  const sortIndex = normalizedSortState.findIndex((entry) => entry?.key === column.key);
+  const sortEntry = sortIndex === -1 ? null : normalizedSortState[sortIndex];
+  const sortPriority = sortIndex === -1 ? null : sortIndex + 1;
   const emitFilterChange = (value) => {
     if (sectionKey) {
       onFilterChange(sectionKey, column.key, value);
@@ -38,27 +48,53 @@ export default function ReviewReceiveFilterHeader({
     onFilterReset(column.key);
   };
 
+  const emitSortChange = (direction) => {
+    onSortChange(column.key, direction);
+    onOpenChange("");
+  };
+
   return (
     <TableHead
       className={`review-receive-filterable-header${isDateRange ? " is-date-range" : ""}${isOpen ? " is-open" : ""}${isActive ? " is-filtered" : ""}`}
     >
       <div className="review-receive-column-filter" ref={isOpen ? menuRef : null}>
         <span className="review-receive-column-label">{column.label}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="review-receive-column-filter-button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenChange(isOpen ? "" : filterKey);
-          }}
-          aria-label={`${column.label} 필터 열기`}
-          aria-haspopup="dialog"
-          aria-expanded={isOpen}
-        >
-          <FilterIcon />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className={`review-receive-column-filter-button${sortEntry ? " is-sorted" : ""}`}
+              onClick={(event) => event.stopPropagation()}
+              aria-label={`${column.label} 정렬 및 필터 메뉴 열기`}
+            >
+              <MoreVertical aria-hidden="true" focusable="false" />
+              {sortPriority ? <span className="review-receive-sort-priority">{sortPriority}</span> : null}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="review-receive-column-menu-content">
+            <DropdownMenuLabel>{column.label} 정렬</DropdownMenuLabel>
+            <DropdownMenuItem
+              className={`review-receive-sort-menu-item${sortEntry?.direction === "asc" ? " is-selected" : ""}`}
+              onSelect={() => emitSortChange("asc")}
+            >
+              <ArrowUp aria-hidden="true" focusable="false" />
+              <span>{sortPriority ? `${sortPriority}순위 ` : ""}오름차순 정렬</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className={`review-receive-sort-menu-item${sortEntry?.direction === "desc" ? " is-selected" : ""}`}
+              onSelect={() => emitSortChange("desc")}
+            >
+              <ArrowDown aria-hidden="true" focusable="false" />
+              <span>{sortPriority ? `${sortPriority}순위 ` : ""}내림차순 정렬</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onOpenChange(isOpen ? "" : filterKey)}>
+              필터 입력
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {isOpen && (
           <div className="review-receive-column-filter-popover" role="dialog" aria-label={`${column.label} 필터`}>
             <div className="review-receive-column-filter-title">{column.label} 필터</div>

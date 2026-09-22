@@ -20,6 +20,7 @@ import { useAdminAccessContext } from "@/contexts/AdminAccessContext";
 import { ADMIN_PERMISSION_CODE, ADMIN_SETTING_KEY } from "@/constants/adminAccess";
 import { ADMIN_SCOPE_POLICY } from "@/constants/adminScope";
 import { useAdminPermissions } from "@/hooks/useAdminPermission";
+import { isAdminGatewayConfigured } from "@/services/adminGateway";
 import {
   ADMIN_STORAGE_KEY,
   PRODUCT_DEPOSIT_PARTY,
@@ -31,13 +32,22 @@ import {
 } from "@/constants/admin";
 import {
   createAdminReviewReceiveProduct,
+  createAdminReviewReceiveProductReviewerBulk as createLegacyAdminReviewReceiveProductReviewerBulk,
   deleteAdminReviewReceiveProduct,
   deleteAdminReviewReceiveProductBundle,
   fetchAdminReviewReceiveProducts,
   REVIEW_RECEIVE_SUMMARY_PAGE_SIZE,
   updateAdminReviewReceiveProduct
 } from "@/services/adminProducts";
-import { createReviewReceiveSubmission, fetchReviewReceiveDetail } from "@/services/reviewReceive";
+import { fetchReviewReceiveDetail } from "@/services/reviewReceive";
+import {
+  createAdminReviewReceiveProductReviewerBulk,
+  isProductReviewerBulkTimeout
+} from "@/services/adminReviewReceiveProductReviewerBulk";
+import {
+  createAdminReviewReceiveProductReviewerBulk,
+  isProductReviewerBulkTimeout
+} from "@/services/adminReviewReceiveProductReviewerBulk";
 import {
   normalizeProductReviewerRowForSave,
   parseProductReviewerBulkInput
@@ -48,6 +58,7 @@ import { readResolvedSetting } from "@/utils/settingsResolver";
 import { sortReviewReceiveRowsByCreatedAt } from "@/utils/reviewReceiveRows";
 import { getDeletionErrorMessage } from "@/utils/deletionContract";
 import { readSessionStorageJson, writeSessionStorageJson, getLocalStorageValue } from "@/utils/browserStorage";
+import { normalizeSortState, updateSortState } from "@/utils/tableSort";
 import {
   REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS,
   formatDateInputValue,
@@ -277,6 +288,7 @@ function getPublicReviewReceiveUrl(productId) {
 }
 
 const REVIEW_RECEIVE_PRODUCT_FILTERS_STORAGE_KEY = "review_manager_review_receive_product_filters";
+const REVIEW_RECEIVE_PRODUCT_SORT_STORAGE_KEY = "review_manager_review_receive_product_sort";
 const REVIEW_RECEIVE_PRODUCT_FILTER_DEBOUNCE_MS = 400;
 
 function createEmptyReviewReceiveProductFilters() {
@@ -329,6 +341,28 @@ function writeStoredReviewReceiveProductFilters(adminId, filters) {
   );
 }
 
+function getReviewReceiveProductSortStorageKey(adminId) {
+  return `${REVIEW_RECEIVE_PRODUCT_SORT_STORAGE_KEY}:${adminId ?? "anonymous"}`;
+}
+
+function getReviewReceiveProductSortKeys() {
+  return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.map((column) => column.key);
+}
+
+function readStoredReviewReceiveProductSort(adminId) {
+  return normalizeSortState(
+    readSessionStorageJson(getReviewReceiveProductSortStorageKey(adminId), []),
+    getReviewReceiveProductSortKeys()
+  );
+}
+
+function writeStoredReviewReceiveProductSort(adminId, sortState) {
+  writeSessionStorageJson(
+    getReviewReceiveProductSortStorageKey(adminId),
+    normalizeSortState(sortState, getReviewReceiveProductSortKeys())
+  );
+}
+
 function hasActiveReviewReceiveProductFilters(filters) {
   return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.some((column) => {
     const value = filters[column.key];
@@ -376,10 +410,17 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     adminProfile,
     scopePolicy,
     handleIncludeCompanyDataChange,
+    isCompanyScopeAvailable,
     isLoadingCapabilities,
     isIncludeCompanyDataReady,
     capabilitiesErrorMessage
-  } = useAdminIncludeCompanyData(adminId);
+  } = useAdminIncludeCompanyData(adminId, {
+    permissionCodes: [
+      ADMIN_PERMISSION_CODE.PRODUCT_READ,
+      ADMIN_PERMISSION_CODE.SUBMISSION_READ
+    ],
+    legacyMenuCodes: [ADMIN_PERMISSION_CODE.MENU_REVIEW_RECEIVE]
+  });
   const permissions = useAdminPermissions([
     ADMIN_PERMISSION_CODE.PRODUCT_READ,
     ADMIN_PERMISSION_CODE.SUBMISSION_READ,
@@ -417,12 +458,14 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   const [products, setProducts] = useState([]);
   const [productFilters, setProductFilters] = useState(() => readStoredReviewReceiveProductFilters(adminId));
   const [debouncedProductFilters, setDebouncedProductFilters] = useState(productFilters);
+  const [productSort, setProductSort] = useState(() => readStoredReviewReceiveProductSort(adminId));
   const [openProductFilterKey, setOpenProductFilterKey] = useState("");
   const [scopeInfo, setScopeInfo] = useState({
     companyName: null,
     isCompanyScopeAvailable: false
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedProductList, setHasLoadedProductList] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [listPageInfo, setListPageInfo] = useState({
     hasMore: false,
@@ -521,6 +564,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         adminProfile,
         viewMode,
         filters: debouncedProductFilters,
+        sort: productSort,
         pageSize: REVIEW_RECEIVE_SUMMARY_PAGE_SIZE
       });
 
@@ -538,6 +582,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         setProducts([]);
       } else {
         setProducts(data ?? []);
+        setHasLoadedProductList(true);
         setListPageInfo({
           hasMore: Boolean(pageInfo?.hasMore && pageInfo?.nextCursor),
           nextCursor: pageInfo?.nextCursor ?? null
@@ -552,6 +597,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     adminId,
     capabilitiesErrorMessage,
     debouncedProductFilters,
+    productSort,
     includeCompanyData,
     adminProfile,
     isIncludeCompanyDataReady,
@@ -567,6 +613,10 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
   useEffect(() => {
     writeStoredReviewReceiveProductFilters(adminId, productFilters);
   }, [adminId, productFilters]);
+
+  useEffect(() => {
+    writeStoredReviewReceiveProductSort(adminId, productSort);
+  }, [adminId, productSort]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -621,6 +671,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             adminProfile,
             viewMode,
             filters: debouncedProductFilters,
+            sort: productSort,
             pageSize: REVIEW_RECEIVE_SUMMARY_PAGE_SIZE,
             cursor: listPageInfo.nextCursor
           });
@@ -669,6 +720,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     adminId,
     capabilitiesErrorMessage,
     debouncedProductFilters,
+    productSort,
     errorMessage,
     includeCompanyData,
     adminProfile,
@@ -788,7 +840,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     const {
       productResult: { error: productError },
       submissionsResult: { data: submissions, error: submissionsError }
-    } = await fetchReviewReceiveDetail(product.id, adminId, { adminProfile });
+    } = await fetchReviewReceiveDetail(product.id, adminId, { adminProfile, scopePolicy });
 
     setActionProductId(null);
 
@@ -1068,67 +1120,70 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
       return;
     }
 
-    setIsSavingProductReviewerBulk(true);
-    setProductReviewerBulkMessage("");
+    if (isAdminGatewayConfigured()) {
+      setIsSavingProductReviewerBulk(true);
+      setProductReviewerBulkMessage("일괄 저장 중입니다...");
 
-    const createdProducts = [];
-    const createdSubmissions = [];
-    let bundleId = null;
+      const bulkResult = await createAdminReviewReceiveProductReviewerBulk({
+        productGroups: groupPayloads
+      });
 
-    const reflectPartialSave = () => {
-      if (createdProducts.length > 0) {
-        requestProductListReload();
-      }
-    };
-
-    for (let groupIndex = 0; groupIndex < groupPayloads.length; groupIndex += 1) {
-      const productPayload =
-        bundleId == null
-          ? groupPayloads[groupIndex].productPayload
-          : {
-              ...groupPayloads[groupIndex].productPayload,
-              bundle_id: bundleId
-            };
-      const productResult = await createAdminReviewReceiveProduct(productPayload);
-
-      if (productResult.error || !productResult.data) {
-        reflectPartialSave();
-        const productErrorMessage = productResult.error?.message;
-        setProductReviewerBulkMessage(
-          `${groupIndex + 1}번째 품목 저장 중 오류가 발생했습니다.${productErrorMessage ? ` ${productErrorMessage}` : ""} ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
-          "error"
-        );
+      if (bulkResult.error || !bulkResult.data) {
+        if (isProductReviewerBulkTimeout(bulkResult.error)) {
+          requestProductListReload();
+          setProductReviewerBulkMessage(
+            "저장 결과를 확인하지 못했습니다. 목록에서 실제 반영 여부를 확인해주세요. 자동 재시도하지 않았습니다.",
+            "error"
+          );
+        } else {
+          setProductReviewerBulkMessage(
+            bulkResult.error?.message || "상품/리뷰어 일괄 저장에 실패했습니다. 저장된 데이터가 있는지 확인해주세요.",
+            "error"
+          );
+        }
         setIsSavingProductReviewerBulk(false);
         return;
       }
 
-      bundleId = bundleId ?? productResult.data.bundle_id ?? productResult.data.id;
+      const savedProducts = bulkResult.data.products ?? [];
+      const savedSubmissions = bulkResult.data.submissions ?? [];
+      requestProductListReload();
+      showToast(`품목 ${savedProducts.length}건과 리뷰어 ${savedSubmissions.length}건을 등록했습니다.`, "success");
+      setProductReviewerBulk(createInitialProductReviewerBulkState(productDefaults));
+      setIsProductReviewerBulkModalOpen(false);
+      setIsSavingProductReviewerBulk(false);
+      return;
+    }
 
-      const productWithSubmissions = {
-        ...productResult.data,
-        submissions: []
-      };
-      createdProducts.push(productWithSubmissions);
+    setIsSavingProductReviewerBulk(true);
+    setProductReviewerBulkMessage("");
 
-      for (let reviewerIndex = 0; reviewerIndex < groupPayloads[groupIndex].reviewerPayloads.length; reviewerIndex += 1) {
-        const submissionResult = await createReviewReceiveSubmission({
-          product_id: productResult.data.id,
-          ...groupPayloads[groupIndex].reviewerPayloads[reviewerIndex]
-        });
+    const bulkResult = await createLegacyAdminReviewReceiveProductReviewerBulk(
+      groupPayloads.map((group) => ({
+        product: group.productPayload,
+        reviewers: group.reviewerPayloads
+      }))
+    );
+    const createdProducts = Array.isArray(bulkResult.data?.products)
+      ? bulkResult.data.products
+      : [];
+    const createdSubmissions = Array.isArray(bulkResult.data?.submissions)
+      ? bulkResult.data.submissions
+      : [];
+    const errors = Array.isArray(bulkResult.data?.errors) ? bulkResult.data.errors : [];
 
-        if (submissionResult.error) {
-          reflectPartialSave();
-          setProductReviewerBulkMessage(
-            `${groupIndex + 1}번째 품목의 ${reviewerIndex + 1}번째 리뷰어 저장 중 오류가 발생했습니다. ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어만 반영되었습니다.`,
-            "error"
-          );
-          setIsSavingProductReviewerBulk(false);
-          return;
-        }
-
-        productWithSubmissions.submissions.push(submissionResult.data);
-        createdSubmissions.push(submissionResult.data);
+    if (bulkResult.error || errors.length > 0) {
+      if (createdProducts.length > 0 || createdSubmissions.length > 0) {
+        requestProductListReload();
       }
+
+      const detail = bulkResult.error?.message ?? errors[0]?.message ?? "일부 항목을 저장하지 못했습니다.";
+      setProductReviewerBulkMessage(
+        `${detail} ${createdProducts.length}개 품목과 ${createdSubmissions.length}건의 리뷰어가 반영되었습니다.${errors.length > 1 ? ` 실패 ${errors.length}건.` : ""}`,
+        "error"
+      );
+      setIsSavingProductReviewerBulk(false);
+      return;
     }
 
     requestProductListReload();
@@ -1259,6 +1314,13 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
     }));
   };
 
+  const handleProductSortChange = (columnKey, direction) => {
+    setProductSort((previousSort) =>
+      updateSortState(previousSort, columnKey, direction, getReviewReceiveProductSortKeys())
+    );
+    setOpenProductFilterKey("");
+  };
+
   return (
     <>
       <header className="admin-header review-receive-page-header">
@@ -1273,7 +1335,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
             adminProfile={adminProfile}
             scopeMessage={scopeMessage}
             includeCompanyData={includeCompanyData}
-            isCompanyScopeAvailable={scopeInfo.isCompanyScopeAvailable}
+            isCompanyScopeAvailable={isCompanyScopeAvailable}
             onIncludeCompanyDataChange={handleIncludeCompanyDataChange}
           />
           <div className="review-receive-page-actions">
@@ -1295,6 +1357,7 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         onViewModeChange={(nextTab) => navigate(getReviewReceiveStatusPath(nextTab))}
         statusSummaryText={statusSummaryText}
         isLoading={isLoading}
+        hasLoadedOnce={hasLoadedProductList}
         errorMessage={errorMessage}
         productListScrollRef={productListScrollRef}
         productListLoadMoreRef={productListLoadMoreRef}
@@ -1303,6 +1366,8 @@ export default function AdminReviewReceivePage({ viewMode = "all" }) {
         onProductFilterOpenChange={setOpenProductFilterKey}
         onProductFilterChange={handleProductFilterChange}
         onProductFilterReset={handleProductFilterReset}
+        productSort={productSort}
+        onProductSortChange={handleProductSortChange}
         productFilterRef={productFilterRef}
         products={products}
         filteredProducts={filteredProducts}

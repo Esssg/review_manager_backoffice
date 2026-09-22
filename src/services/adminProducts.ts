@@ -4,7 +4,8 @@ import { supabase } from "@/lib/supabase";
 import { resolveAdminManagerScope } from "@/services/adminScope";
 import { deleteProductsWithRelatedData } from "@/services/adminDeletion";
 import { fetchAllRows, fetchAllRowsInChunks } from "@/services/paginatedQuery";
-import { includesAdminScopeCompanyData } from "@/constants/adminScope";
+import { createReviewReceiveSubmission } from "@/services/reviewReceive";
+import { ADMIN_SCOPE_POLICY, includesAdminScopeCompanyData } from "@/constants/adminScope";
 import {
   ADMIN_GATEWAY_OPERATION,
   buildGatewayScope,
@@ -14,6 +15,9 @@ import {
   omitManagerIdentity
 } from "@/services/adminGatewayData";
 import { isAdminGatewayConfigured } from "@/services/adminGateway";
+import { REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS } from "@/utils/reviewReceiveProductList";
+import { sortReviewReceiveProducts } from "@/utils/reviewReceiveProductSort";
+import { normalizeSortState } from "@/utils/tableSort";
 
 const ADMIN_PRODUCTS_SELECT = "id,title,product_name,manager_id,deposit_date,is_real_shipping,created_at";
 const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_BASE =
@@ -24,6 +28,10 @@ const ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT =
   `${ADMIN_REVIEW_RECEIVE_PRODUCTS_SELECT_WITH_DEPOSIT_GB},product_date`;
 const REVIEW_RECEIVE_SUMMARY_RPC = "get_admin_review_receive_product_summaries";
 export const REVIEW_RECEIVE_SUMMARY_PAGE_SIZE = 50;
+
+function getReviewReceiveSortKeys() {
+  return REVIEW_RECEIVE_PRODUCT_FILTER_COLUMNS.map((column) => column.key);
+}
 
 function normalizeReviewReceiveSummaryCount(value) {
   const numericValue = Number(value);
@@ -109,6 +117,32 @@ function isMissingReviewReceiveProductColumn(error) {
   return message.includes("product_date") || message.includes("deposit_GB") || message.includes("bundle_id");
 }
 
+function normalizeReviewReceiveSummaryPage(adminId, options, result, pageSize, scopeOverride = null) {
+  const gatewayRows = getGatewayArray(result.data, ["rows", "products"]);
+  const pageInfo = getGatewayPageInfo(result.data, pageSize);
+  const hasMore = Boolean(pageInfo.hasMore || gatewayRows.length > pageSize);
+  const pageRows = gatewayRows.length > pageSize ? gatewayRows.slice(0, pageSize) : gatewayRows;
+  const normalizedRows = pageRows.map(normalizeReviewReceiveSummaryRow);
+  const nextCursor = pageInfo.nextCursor ?? (hasMore ? getReviewReceiveSummaryCursor(normalizedRows.at(-1)) : null);
+  const scope =
+    scopeOverride ?? {
+      ...buildGatewayScope(adminId, options),
+      ...(result.data?.scope && typeof result.data.scope === "object" ? result.data.scope : {})
+    };
+
+  return {
+    data: result.error ? null : normalizedRows,
+    error: result.error,
+    scope,
+    pageInfo: {
+      hasMore: Boolean(hasMore && nextCursor),
+      nextCursor,
+      pageSize,
+      totalCount: Number(pageInfo.totalCount ?? 0)
+    }
+  };
+}
+
 function buildMissingProductColumnError(error) {
   if (!isMissingReviewReceiveProductColumn(error)) {
     return error;
@@ -161,40 +195,37 @@ export async function fetchAdminProducts(adminId) {
 }
 
 export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
+  const sort = normalizeSortState(options.sort, getReviewReceiveSortKeys());
+  const isSortedRequest = sort.length > 0;
+
   if (isAdminGatewayConfigured()) {
     const pageSize = Math.max(1, Math.min(Number(options.pageSize ?? REVIEW_RECEIVE_SUMMARY_PAGE_SIZE), 200));
-    const result = await callAdminGatewayOperation(ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_LIST, {
-      p_include_company_data:
-        options.includeCompanyData == null
-          ? includesAdminScopeCompanyData(options.scopePolicy)
-          : Boolean(options.includeCompanyData),
-      p_view_mode: options.viewMode ?? "all",
-      p_filters: options.filters ?? {},
-      p_page_size: pageSize,
-      p_cursor_product_date: options.cursor?.productDate ?? null,
-      p_cursor_product_id: options.cursor?.productId ?? null
-    });
-    const gatewayRows = getGatewayArray(result.data, ["rows", "products"]);
-    const pageInfo = getGatewayPageInfo(result.data, pageSize);
-    const hasMore = Boolean(pageInfo.hasMore || gatewayRows.length > pageSize);
-    const pageRows = gatewayRows.length > pageSize ? gatewayRows.slice(0, pageSize) : gatewayRows;
-    const normalizedRows = pageRows.map(normalizeReviewReceiveSummaryRow);
-    const nextCursor = pageInfo.nextCursor ?? (hasMore ? getReviewReceiveSummaryCursor(normalizedRows.at(-1)) : null);
-    const scope = {
-      ...buildGatewayScope(adminId, options),
-      ...(result.data?.scope && typeof result.data.scope === "object" ? result.data.scope : {})
-    };
-
-    return {
-      data: result.error ? null : normalizedRows,
-      error: result.error,
-      scope,
-      pageInfo: {
-        hasMore: Boolean(hasMore && nextCursor),
-        nextCursor,
-        pageSize
+    const result = await callAdminGatewayOperation(
+      isSortedRequest
+        ? ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_LIST_SORTED
+        : ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_LIST,
+      {
+        p_include_company_data:
+          options.includeCompanyData == null
+            ? includesAdminScopeCompanyData(options.scopePolicy)
+            : Boolean(options.includeCompanyData),
+        p_force_personal_scope: options.scopePolicy === ADMIN_SCOPE_POLICY.PERSONAL,
+        p_view_mode: options.viewMode ?? "all",
+        p_filters: options.filters ?? {},
+        p_page_size: pageSize,
+        ...(isSortedRequest
+          ? {
+              p_sort: sort,
+              p_cursor: options.cursor ?? null
+            }
+          : {
+              p_cursor_product_date: options.cursor?.productDate ?? null,
+              p_cursor_product_id: options.cursor?.productId ?? null
+            })
       }
-    };
+    );
+
+    return normalizeReviewReceiveSummaryPage(adminId, options, result, pageSize);
   }
 
   const scope = await resolveAdminManagerScope(adminId, options);
@@ -239,10 +270,15 @@ export async function fetchAdminReviewReceiveProducts(adminId, options = {}) {
   const hasMore = rows.length > pageSize;
   const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
   const normalizedRows = pageRows.map(normalizeReviewReceiveSummaryRow);
-  const nextCursor = hasMore ? getReviewReceiveSummaryCursor(normalizedRows.at(-1)) : null;
+  const nextCursor = hasMore
+    ? getReviewReceiveSummaryCursor(normalizeReviewReceiveSummaryRow(pageRows.at(-1)))
+    : null;
 
   return {
-    data: normalizedRows,
+    // gateway가 준비되지 않은 legacy direct 경로에서는 기존 RPC가 반환한
+    // 현재 페이지 범위만 로컬 정렬한다. 운영 전체 데이터 정렬은 gateway
+    // sorted operation이 담당하며, direct 경로의 legacy cursor 계약은 보존한다.
+    data: isSortedRequest ? sortReviewReceiveProducts(normalizedRows, sort) : normalizedRows,
     error: null,
     scope,
     pageInfo: {
@@ -285,6 +321,76 @@ export async function createAdminReviewReceiveProduct(payload) {
   return {
     ...bundleResult,
     error: buildMissingProductColumnError(bundleResult.error)
+  };
+}
+
+export async function createAdminReviewReceiveProductReviewerBulk(groups = []) {
+  if (isAdminGatewayConfigured()) {
+    const result = await callAdminGatewayOperation(
+      ADMIN_GATEWAY_OPERATION.REVIEW_RECEIVE_PRODUCT_REVIEWER_BULK,
+      {
+        p_groups: (groups ?? []).map((group) => ({
+          product: omitManagerIdentity(group?.product ?? {}),
+          reviewers: Array.isArray(group?.reviewers) ? group.reviewers : []
+        }))
+      }
+    );
+
+    return {
+      data: result.data ?? null,
+      error: buildMissingProductColumnError(result.error)
+    };
+  }
+
+  const products = [];
+  const submissions = [];
+  const errors = [];
+  let bundleId = null;
+
+  for (let groupIndex = 0; groupIndex < (groups ?? []).length; groupIndex += 1) {
+    const group = groups[groupIndex] ?? {};
+    const productPayload = bundleId == null
+      ? group.product ?? {}
+      : { ...(group.product ?? {}), bundle_id: bundleId };
+    const productResult = await createAdminReviewReceiveProduct(productPayload);
+
+    if (productResult.error || !productResult.data) {
+      errors.push({
+        type: "product",
+        groupIndex,
+        message: productResult.error?.message ?? "상품을 저장하지 못했습니다."
+      });
+      continue;
+    }
+
+    const product = { ...productResult.data, submissions: [] };
+    products.push(product);
+    bundleId = bundleId ?? productResult.data.bundle_id ?? productResult.data.id;
+
+    for (let reviewerIndex = 0; reviewerIndex < (group.reviewers ?? []).length; reviewerIndex += 1) {
+      const submissionResult = await createReviewReceiveSubmission({
+        product_id: productResult.data.id,
+        ...(group.reviewers[reviewerIndex] ?? {})
+      });
+
+      if (submissionResult.error || !submissionResult.data) {
+        errors.push({
+          type: "submission",
+          groupIndex,
+          reviewerIndex,
+          message: submissionResult.error?.message ?? "리뷰어를 저장하지 못했습니다."
+        });
+        continue;
+      }
+
+      product.submissions.push(submissionResult.data);
+      submissions.push(submissionResult.data);
+    }
+  }
+
+  return {
+    data: { products, submissions, errors },
+    error: null
   };
 }
 
