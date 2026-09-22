@@ -24,6 +24,12 @@
   color: var(--foreground);
 }
 
+.public-photo-success-toast {
+  z-index: 1700;
+  pointer-events: none;
+  animation-duration: 3s;
+}
+
 .public-review-route-loading {
   display: grid;
   min-height: 100vh;

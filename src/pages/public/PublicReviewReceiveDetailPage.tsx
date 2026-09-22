@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import AppAlertDialog from "@/components/common/AppAlertDialog";
 import PhotoViewerModal from "@/components/admin/product-detail/PhotoViewerModal";
 import PublicPhotoUploadModal from "@/components/public/PublicPhotoUploadModal";
 import PublicLoadingIndicator from "@/components/public/PublicLoadingIndicator";
@@ -27,6 +28,7 @@ const PUBLIC_LOOKUP_OPTIONS = [
 const UNREGISTERED_PRODUCT_ITEM_TEXT = "품목 미등록";
 const PUBLIC_PHOTO_UPLOAD_MAX_FILE_COUNT = 10;
 const PUBLIC_PHOTO_UPLOAD_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const PHOTO_SUCCESS_TOAST_DURATION_MS = 3000;
 const PUBLIC_PHOTO_UPLOAD_ERROR_MESSAGES = {
   "00001": "이미지 파일만 업로드할 수 있습니다.",
   "00002": "비어 있거나 읽을 수 없는 이미지 파일입니다.",
@@ -430,6 +432,8 @@ export default function PublicReviewReceiveDetailPage() {
   const [lookupErrorMessage, setLookupErrorMessage] = useState("");
   const [formErrorMessage, setFormErrorMessage] = useState("");
   const [photoStatusMessage, setPhotoStatusMessage] = useState("");
+  const [photoErrorAlertMessage, setPhotoErrorAlertMessage] = useState("");
+  const [photoSuccessMessage, setPhotoSuccessMessage] = useState("");
   const [photoEditor, setPhotoEditor] = useState(createEmptyPhotoEditor);
   const [photoViewer, setPhotoViewer] = useState({
     isOpen: false,
@@ -438,6 +442,28 @@ export default function PublicReviewReceiveDetailPage() {
   });
   const photoDraftsRef = useRef(photoDrafts);
   const photoEditorRef = useRef(photoEditor);
+  const photoSuccessToastTimerRef = useRef(null);
+
+  const clearPhotoSuccessToast = () => {
+    if (photoSuccessToastTimerRef.current) {
+      window.clearTimeout(photoSuccessToastTimerRef.current);
+      photoSuccessToastTimerRef.current = null;
+    }
+
+    setPhotoSuccessMessage("");
+  };
+
+  const showPhotoSuccessToast = (message) => {
+    if (photoSuccessToastTimerRef.current) {
+      window.clearTimeout(photoSuccessToastTimerRef.current);
+    }
+
+    setPhotoSuccessMessage(message);
+    photoSuccessToastTimerRef.current = window.setTimeout(() => {
+      setPhotoSuccessMessage("");
+      photoSuccessToastTimerRef.current = null;
+    }, PHOTO_SUCCESS_TOAST_DURATION_MS);
+  };
 
   useEffect(() => startReviewReceivePhotoSyncNetworkMonitor(), []);
 
@@ -461,6 +487,10 @@ export default function PublicReviewReceiveDetailPage() {
           photoDraftsRef.current[String(photoEditorRef.current.row?.id)]
         );
       }
+
+      if (photoSuccessToastTimerRef.current) {
+        window.clearTimeout(photoSuccessToastTimerRef.current);
+      }
     };
   }, []);
 
@@ -481,6 +511,8 @@ export default function PublicReviewReceiveDetailPage() {
 
     photoDraftsRef.current = {};
     setPhotoDrafts({});
+    setPhotoErrorAlertMessage("");
+    clearPhotoSuccessToast();
     setLookupName(storedName);
     setLookupType(storedLookupType);
     setActiveName(storedName);
@@ -731,10 +763,7 @@ export default function PublicReviewReceiveDetailPage() {
 
     if (error) {
       console.warn("Public review photo selection failed", error);
-      setPhotoEditor((prev) => ({
-        ...prev,
-        feedbackMessage: formatPhotoUploadError(error)
-      }));
+      setPhotoErrorAlertMessage(formatPhotoUploadError(error));
       return;
     }
 
@@ -753,10 +782,7 @@ export default function PublicReviewReceiveDetailPage() {
       });
 
       console.warn("Public review photo preview failed", normalizedError);
-      setPhotoEditor((prev) => ({
-        ...prev,
-        feedbackMessage: formatPhotoUploadError(normalizedError)
-      }));
+      setPhotoErrorAlertMessage(formatPhotoUploadError(normalizedError));
       return;
     }
 
@@ -814,10 +840,7 @@ export default function PublicReviewReceiveDetailPage() {
     const nextDraft = buildSavedPhotoDraft(photoEditor);
 
     if (nextDraft.newPhotos.length === 0) {
-      setPhotoEditor((prev) => ({
-        ...prev,
-        feedbackMessage: "재제출할 새 사진을 먼저 추가해주세요."
-      }));
+      setPhotoErrorAlertMessage("재제출할 새 사진을 먼저 추가해주세요.");
       return;
     }
 
@@ -828,16 +851,14 @@ export default function PublicReviewReceiveDetailPage() {
 
     if (draftValidation.error) {
       console.warn("Public review photo draft validation failed", draftValidation.error);
-      setPhotoEditor((prev) => ({
-        ...prev,
-        feedbackMessage: formatPhotoUploadError(draftValidation.error)
-      }));
+      setPhotoErrorAlertMessage(formatPhotoUploadError(draftValidation.error));
       return;
     }
 
     const rowIdKey = String(photoEditor.row.id);
 
     const persistPhotoChanges = async () => {
+      setPhotoErrorAlertMessage("");
       setPhotoEditor((prev) => ({
         ...prev,
         isSaving: true,
@@ -898,7 +919,8 @@ export default function PublicReviewReceiveDetailPage() {
               : row
           )
         );
-        setPhotoStatusMessage(`순번 ${photoEditor.rowNumber ?? "-"} 행의 사진 변경사항을 저장했습니다.`);
+        setPhotoStatusMessage("");
+        showPhotoSuccessToast("사진이 업로드되었습니다.");
         setPhotoEditor(createEmptyPhotoEditor());
       } catch (error) {
         const normalizedError = normalizePhotoUploadError(error, "00090", {
@@ -929,10 +951,11 @@ export default function PublicReviewReceiveDetailPage() {
           rollbackCode: normalizedError.rollbackCode || ""
         });
 
+        setPhotoErrorAlertMessage(formatPhotoUploadError(normalizedError));
         setPhotoEditor((prev) => ({
           ...prev,
           isSaving: false,
-          feedbackMessage: formatPhotoUploadError(normalizedError)
+          feedbackMessage: ""
         }));
       }
     };
@@ -1011,6 +1034,24 @@ export default function PublicReviewReceiveDetailPage() {
           onResetDraft={handleResetPhotoDraft}
           onSaveDraft={handleSavePhotoDraft}
         />
+
+        <AppAlertDialog
+          isOpen={Boolean(photoErrorAlertMessage)}
+          variant="danger"
+          badgeLabel="사진 업로드 오류"
+          title="사진 업로드에 실패했습니다."
+          message={photoErrorAlertMessage}
+          showCancel={false}
+          confirmLabel="확인"
+          onCancel={() => setPhotoErrorAlertMessage("")}
+          onConfirm={() => setPhotoErrorAlertMessage("")}
+        />
+
+        {photoSuccessMessage && (
+          <div className="app-toast public-photo-success-toast" role="status" aria-live="polite">
+            {photoSuccessMessage}
+          </div>
+        )}
 
         <PhotoViewerModal
           photoViewer={photoViewer}

@@ -22,6 +22,7 @@ export default function AppAlertDialog({
   busyConfirmLabel,
   isBusy = false,
   isLoading = false,
+  showCancel = true,
   onCancel,
   onConfirm,
   confirmButtonClassName,
@@ -95,9 +96,11 @@ export default function AppAlertDialog({
             actionsChildren
           ) : (
             <>
-              <AlertDialogCancel onClick={onCancel} disabled={isActionBusy}>
-                {cancelLabel}
-              </AlertDialogCancel>
+              {showCancel && (
+                <AlertDialogCancel onClick={onCancel} disabled={isActionBusy}>
+                  {cancelLabel}
+                </AlertDialogCancel>
+              )}
               <AlertDialogAction
                 variant={variant === "danger" ? "destructive" : "default"}
                 className={confirmButtonClassName}
